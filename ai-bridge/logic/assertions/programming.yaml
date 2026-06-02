@@ -1,0 +1,19 @@
+# 编程领域断言规则
+category: programming
+rules:
+  - name: code_review_detected
+    pattern: "(审查|review|优化|重构|代码|bug|报错|异常|日志|修复|重构|performance|refactor)"
+    score: 0.8
+    recommend_tool: query_jira_issues
+    
+  - name: deployment_detected
+    pattern: "(部署|发布|上线|deploy|release|打包|构建|编译)"
+    score: 0.7
+    action: alert
+    message: "部署操作风险较高，建议先在沙盒环境验证"
+    
+  - name: sql_injection
+    pattern: '(drop\s+table|delete\s+from|union\s+select|1=1|--)'
+    score: 1.0
+    action: block
+    message: "检测到潜在 SQL 注入操作，已拦截"

@@ -1,0 +1,104 @@
+# Alice V2.0 Tool Registry — 复刻 LlamaIndex Document Summary Index 层级检索
+# 4 原子工具，完全解耦，通过标准 Tool Calling 协议由 LLM 自主决策调用顺序
+#
+# 设计思想:
+#   search_docs_catalog  = LlamaIndex "获取所有 summary_ids + LLM 选择"
+#   read_specific_doc     = LlamaIndex "docstore.get_nodes(summary_id)"
+#   query_jira_metadata   = Jira 元数据查询 (标题/状态/经办人)
+#   get_issue_commits     = SVN 双跳 Diff 检索
+#
+tools:
+  - name: query_jira_metadata
+    display: "Jira 元数据"
+    description: >
+      获取指定 Jira 任务的元数据信息（标题、状态、经办人）。
+      这是轻量级查询，仅返回核心字段，不包含描述和评论。
+      如果你需要详细描述、评论、或代码提交记录，请使用其他工具。
+    category: jira
+    icon: "🎫"
+    risk: readonly
+    function:
+      parameters:
+        issue_key:
+          type: string
+          description: "Jira 任务编号，例如 CT-11112"
+          required: true
+
+  - name: get_issue_commits
+    display: "代码提交检索"
+    description: >
+      获取指定 Jira 任务关联的 SVN 代码提交记录和 Diff 变更内容。
+      通过 FishEye 双跳算法精确检索：Jira Issue Key → SVN 提交 → Diff 文本。
+      返回实际的代码变更内容，可用于代码审查和变更分析。
+    category: jira
+    icon: "📝"
+    risk: readonly
+    function:
+      parameters:
+        issue_key:
+          type: string
+          description: "Jira 任务编号，例如 CT-11112"
+          required: true
+
+  - name: search_docs_catalog
+    display: "文档目录检索"
+    description: >
+      【复刻 LlamaIndex Document Summary Index 的"查目录"阶段】
+      在知识库（Notion/Google Drive）中搜索匹配的文档标题和摘要。
+      此工具仅返回文档的目录信息（标题、来源、文档ID、简短摘要），不返回正文。
+      获取候选列表后，请使用 read_specific_doc 工具读取你感兴趣的文档全文。
+      重要: 此工具不是全文搜索！它只返回文档的标题和摘要，供你筛选。
+    category: knowledge
+    icon: "📚"
+    risk: readonly
+    function:
+      parameters:
+        query:
+          type: string
+          description: "搜索关键词。⚠️绝不能传入完整的自然语言句子！必须从中提取 1 到 2 个最核心的业务名词（例如用户说'详细说明下球员系统设计文档'，只能传入'球员系统'）。"
+          required: true
+        source:
+          type: string
+          enum: ["notion", "gdrive", "all"]
+          description: "指定搜索的知识库来源"
+          default: "all"
+
+  - name: read_specific_doc
+    display: "文档详情阅读"
+    description: >
+      【核心约束：仅限知识库文档】通过精确的 doc_id 读取 Notion 或 GDrive 等知识库文档的全文。
+      【绝对禁止】：严禁将此工具用于读取代码文件！严禁传入 SVN/Git 的文件路径！
+      doc_id 必须且只能来源于 search_docs_catalog 工具返回的结果！
+      此工具会返回文档的完整正文（前 8000 字符）。
+      【跨工具关联】：读取文档后，如果你需要查找与文档内容相关的 Jira 任务，
+      请从文档内容中提取最具区分度的业务术语（而非用户原话），再用 search_jira_issues 搜索。
+    category: knowledge
+    icon: "📖"
+    risk: readonly
+    function:
+      parameters:
+        doc_id:
+          type: string
+          description: "search_docs_catalog 返回的文档 ID"
+          required: true
+        source:
+          type: string
+          enum: ["notion", "gdrive"]
+          description: "文档来源（与 search_docs_catalog 返回值一致）"
+          required: true
+
+  - name: search_jira_issues
+    display: "Jira 关键词搜索"
+    description: >
+      通过关键词在 Jira 中搜索相关的任务列表。
+      当你不知道具体的 Issue Key，但需要查找与某个主题、文档或模块相关的 Jira 任务时，必须使用此工具！
+      返回匹配的任务列表（key, summary, status, assignee）。
+    category: jira
+    icon: "🔍"
+    risk: readonly
+    function:
+      parameters:
+        keyword:
+          type: string
+          description: "搜索关键词。⚠️关键词必须是你从文档内容或上下文中提取的最具区分度的业务术语，而非用户原话！例如：文档中提到'展示系数'、'命名规范'，就用这些词搜索，而不是用文档标题。每次只传1-2个核心术语。"
+          required: true

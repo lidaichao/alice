@@ -1,0 +1,56 @@
+{
+  "name": "alice-jira-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "爱丽丝 Jira AI 桌面端",
+  "main": "main.js",
+  "scripts": {
+    "dev": "set NODE_ENV=development && electron main.js",
+    "start": "electron main.js",
+    "pack": "electron-builder --win --dir",
+    "dist": "electron-builder --win nsis",
+    "postinstall": "electron-rebuild -f -w better-sqlite3"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.3"
+  },
+  "devDependencies": {
+    "@electron/fuses": "^2.1.1",
+    "@electron/rebuild": "^4.0.4",
+    "@electron/universal": "^3.0.4",
+    "electron": "^28.3.3",
+    "electron-builder": "^26.8.1",
+    "electron-reload": "^2.0.0-alpha.1"
+  },
+  "build": {
+    "appId": "com.alice.desktop.jira",
+    "productName": "爱丽丝JiraAI",
+    "directories": {
+      "output": "dist"
+    },
+    "artifactName": "爱丽丝JiraAI.${ext}",
+    "files": [
+      "main.js",
+      "preload.js",
+      "conversations.js",
+      "package.json",
+      "ui/**/*",
+      "!node_modules",
+      "!dist"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "爱丽丝 Jira AI"
+    }
+  }
+}

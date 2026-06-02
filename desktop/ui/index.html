@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alice Jira AI</title>
+<link rel="stylesheet" href="./styles.css">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={theme:{extend:{colors:{surface:'#ffffff',border:'#dfe1e6',primary:'#0052cc','text-primary':'#172b4d','text-secondary':'#5e6c84','sidebar-bg':'#1d2125'}}}};</script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body class="flex flex-col h-screen overflow-hidden" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg)">
+<!-- ═══════════════ 自定义标题栏 ═══════════════ -->
+<header class="dt-titlebar">
+  <div class="dt-titlebar-brand">
+    <span class="dt-logo">Alice</span>
+    <span class="dt-subtitle">Jira AI</span>
+  </div>
+  <div class="dt-titlebar-status">
+    <span id="bridgeStatus" class="dt-status-dot dt-status-starting"></span>
+    <span id="bridgeStatusText">connecting</span>
+  </div>
+  <div class="dt-titlebar-center">
+    <div id="agentDropdown" class="agent-dropdown" onclick="toggleAgentDropdown()">
+      <span id="agentCurrent">&#x1F468;&#x200D;&#x1F4BC; 全能助理</span>
+      <span class="agent-arrow">&#9660;</span>
+      <div id="agentMenu" class="agent-menu hidden"></div>
+    </div>
+  </div>
+  <div class="dt-titlebar-actions">
+    <button id="btnMinimize" class="dt-tb-btn">&minus;</button>
+    <button id="btnMaximize" class="dt-tb-btn">&#9744;</button>
+    <button id="btnClose" class="dt-tb-btn dt-tb-close">&times;</button>
+  </div>
+</header>
+
+<!-- ═══════════════ 主体布局（弹性分屏） ═══════════════ -->
+<div class="dt-shell" id="mainShell">
+  <aside class="dt-sidebar">
+    <div class="dt-sidebar-header">
+      <span class="dt-sidebar-title">Sessions</span>
+      <button id="btnNewConv" class="dt-btn-primary dt-btn-sm">+ New</button>
+    </div>
+    <div id="convList" class="dt-conv-list"></div>
+  </aside>
+
+  <section class="dt-chat" id="chatSection">
+    <div id="chatHeader" class="dt-chat-header">
+      <span id="activeConvTitle">Select or create a session</span>
+    </div>
+    <div id="chatBody" class="dt-chat-body"></div>
+    <form id="chatForm" class="dt-composer">
+      <div class="flex flex-col flex-1 gap-1">
+        <div id="attachPreview" class="hidden flex flex-wrap gap-1.5 px-1"></div>
+        <div class="relative flex-1">
+          <textarea id="chatInput" rows="2" placeholder="Ask anything about Jira... Enter to send"></textarea>
+          <div class="absolute right-2 top-1 flex gap-1">
+            <button id="btnPasteClip" type="button" class="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors text-sm"
+                    title="Paste clipboard (paste error logs quickly)">&#128203;</button>
+            <label for="fileUploadInput" class="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors text-sm cursor-pointer"
+                   title="Upload file">&#128206;</label>
+            <input id="fileUploadInput" type="file" accept=".txt,.json,.csv,.log,.md,.js,.py,.java,.xml,.yaml,.yml,.sh,.bat,.cfg,.ini,.sql,.html,.css" class="hidden" multiple>
+          </div>
+        </div>
+      </div>
+      </div>
+      <button id="btnSend" type="submit">Send</button>
+    </form>
+  </section>
+
+  <!-- ═══════════ Artifacts 右侧面板 ═══════════════ -->
+  <section id="artifactPanel" class="hidden flex flex-col border-l border-[var(--border)] bg-white transition-all duration-300 ease-in-out"
+           style="width:0;min-width:0;overflow:hidden;">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] bg-gray-50 flex-shrink-0">
+      <div class="flex items-center gap-2">
+        <span id="artifactIcon" class="text-lg"></span>
+        <span id="artifactTitle" class="text-sm font-semibold text-[var(--text)]"></span>
+        <span id="artifactBadge" class="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 font-mono uppercase"></span>
+      </div>
+      <button id="btnCloseArtifact" class="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+    </div>
+    <div id="artifactContent" class="flex-1 overflow-auto p-4 text-sm font-mono bg-gray-50"></div>
+  </section>
+</div>
+
+<script>
+// ═══════════════ Alice Desktop — Artifacts Engine ═══════════════
+(function() {
+  'use strict';
+  // Alice V2.0: SERVER_URL 可配置化 (支持 B/S 架构演进)
+  // 优先级: localStorage > 默认值
+  const SERVER_URL = (function() {
+    try {
+      const stored = localStorage.getItem('alice_server_url');
+      if (stored && stored.startsWith('http')) return stored;
+    } catch(e) {}
+    return 'http://127.0.0.1:9099';
+  })();
+  let activeConvId = null;
+  let convs = [];
+  let isStreaming = false;
+
+  // ── Artifacts 状态 ──
+  let activeArtifact = null; // { type:'code'|'table', language, content, title }
+
+  // ── 附件状态 ──
+  let currentAttachments = []; // [{ name, type, content }]
+
+  // ── Agent 配置 ──
+  let currentAgentId = 'alice';
+  const AGENTS = [
+    { id:'alice',       name:'\u5168\u80FD\u52A9\u7406',   icon:'\u{1F468}\u200D\u{1F4BC}', color:'#374151', prompt:null },
+    { id:'reviewer',    name:'\u4EE3\u7801\u5BA1\u67E5\u4E13\u5BB6', icon:'\u{1F575}\uFE0F', color:'#059669', prompt:'\u4F60\u662F\u4E00\u4E2A\u6781\u5176\u82DB\u523B\u7684\u8D44\u6DF1C++/Lua\u4E3B\u7A0B\u3002\u53EA\u56DE\u7B54\u4E0E\u4EE3\u7801\u7ED3\u6784\u3001\u6027\u80FD\u3001\u5185\u5B58\u6CC4\u6F0F\u3001\u8FB9\u754C\u5F02\u5E38\u76F8\u5173\u7684\u95EE\u9898\u3002\u4E25\u7981\u56DE\u7B54\u4E0E\u4EE3\u7801\u65E0\u5173\u7684\u95F2\u804A\u3002' },
+    { id:'designer',    name:'\u7B56\u5212\u6848\u5206\u6790\u5E08', icon:'\u{1F4DD}', color:'#7c3aed', prompt:'\u4F60\u662F\u4E00\u4E2A\u8D44\u6DF1\u6E38\u620F\u4E3B\u7B56\u3002\u8BF7\u4EE5\u6E38\u620F\u7B56\u5212\u7684\u89C6\u89D2\uFF0C\u6DF1\u5EA6\u5206\u6790\u8868\u683C\u6570\u636E\u3001\u6570\u503C\u5E73\u8861\u4E0E\u7CFB\u7EDF\u8BBE\u8BA1\u3002' },
+    { id:'jira_master', name:'\u9879\u76EE\u7BA1\u7406\u523A\u5BA2', icon:'\u{1F4CA}', color:'#dc2626', prompt:'\u4F60\u662F\u94C1\u9762\u65E0\u79C1\u7684\u9879\u76EE\u7ECF\u7406\u3002\u5728\u56DE\u7B54 Jira \u95EE\u9898\u65F6\uFF0C\u91CD\u70B9\u5173\u6CE8\u201C\u5DF2\u5EF6\u671F\u201D\u201C\u65E0\u53CD\u9988\u201D\u7684\u4EFB\u52A1\uFF0C\u5E76\u4F7F\u7528\u6781\u5176\u76F4\u63A5\u3001\u50AC\u529E\u7684\u8BED\u6C14\u3002' },
+  ];
+
+  function renderAgentMenu() {
+    const menu = $('agentMenu');
+    const agent = AGENTS.find(a => a.id === currentAgentId) || AGENTS[0];
+    $('agentCurrent').innerHTML = agent.icon + ' ' + agent.name;
+    $('agentCurrent').style.color = agent.color;
+    menu.innerHTML = AGENTS.map(a => {
+      const active = a.id === currentAgentId;
+      return `<div class="agent-item ${active ? 'agent-item-active' : ''}" onclick="event.stopPropagation();selectAgent('${a.id}')" style="${active ? 'color:'+a.color : ''}">${a.icon} ${a.name}${active ? ' \u2713' : ''}</div>`;
+    }).join('');
+  }
+
+  window.toggleAgentDropdown = function() {
+    const menu = $('agentMenu');
+    if (menu.classList.contains('hidden')) { renderAgentMenu(); menu.classList.remove('hidden'); }
+    else { menu.classList.add('hidden'); }
+  };
+
+  window.selectAgent = function(id) {
+    currentAgentId = id;
+    $('agentMenu').classList.add('hidden');
+    renderAgentMenu();
+  };
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#agentDropdown')) $('agentMenu').classList.add('hidden');
+  });
+
+  // ── DOM 缓存 ──
+  const $ = (sel) => document.getElementById(sel);
+  const shell = $('mainShell');
+  const chatSec = $('chatSection');
+  const panel = $('artifactPanel');
+  const panelContent = $('artifactContent');
+  const artifactIcon = $('artifactIcon');
+  const artifactTitle = $('artifactTitle');
+  const artifactBadge = $('artifactBadge');
+
+  function openArtifact(artifact) {
+    activeArtifact = artifact;
+    // 切换分屏布局
+    chatSec.style.flex = '0 0 42%';
+    chatSec.style.maxWidth = '42%';
+    panel.classList.remove('hidden');
+    panel.style.width = '58%';
+    panel.style.minWidth = '400px';
+    panel.style.overflow = 'auto';
+
+    // 渲染标题栏
+    artifactIcon.textContent = artifact.type === 'code' ? '\u{1F4C4}' : '\u{1F4CA}';
+    artifactTitle.textContent = artifact.title || 'Artifact';
+    artifactBadge.textContent = artifact.language || '';
+
+    // 语法高亮渲染内容
+    if (artifact.type === 'code') {
+      const lang = artifact.language || 'plaintext';
+      panelContent.innerHTML = `<pre><code class="language-${lang}">${escapeHtml(artifact.content)}</code></pre>`;
+      try { hljs.highlightElement(panelContent.querySelector('code')); } catch(e) {}
+    } else {
+      panelContent.innerHTML = artifact.content;
+    }
+  }
+
+  function closeArtifact() {
+    activeArtifact = null;
+    chatSec.style.flex = '';
+    chatSec.style.maxWidth = '';
+    panel.classList.add('hidden');
+    panel.style.width = '0';
+    panel.style.minWidth = '0';
+    panel.style.overflow = 'hidden';
+    panelContent.innerHTML = '';
+  }
+
+  $('btnCloseArtifact').onclick = closeArtifact;
+
+  // ── Init ──
+  async function init() {
+    loadConversations();
+    $('btnNewConv').onclick = () => createConv();
+    $('btnMinimize').onclick = () => window.desktopAPI.minimizeWindow();
+    $('btnMaximize').onclick = () => window.desktopAPI.toggleMaximize();
+    $('btnClose').onclick = () => window.desktopAPI.closeWindow();
+    $('chatForm').onsubmit = (e) => { e.preventDefault(); sendMessage(); };
+    $('btnPasteClip').onclick = async () => {
+      const text = await window.desktopAPI.clipboard.readText();
+      if (text && text.trim()) {
+        const input = $('chatInput');
+        input.value = input.value ? input.value + '\n' + text : text;
+        input.focus();
+      }
+    };
+    // ── File Upload ──
+    setupFileUpload();
+    // ── Drag & Drop ──
+    setupDragDrop();
+    checkHealth();
+  }
+
+  async function checkHealth() {
+    try {
+      const r = await fetch(SERVER_URL + '/health');
+      const d = await r.json();
+      if (d.status === 'ok') {
+        $('bridgeStatus').className = 'dt-status-dot dt-status-online';
+        $('bridgeStatusText').textContent = 'connected';
+      }
+    } catch(e) {
+      $('bridgeStatus').className = 'dt-status-dot dt-status-offline';
+      $('bridgeStatusText').textContent = 'offline';
+    }
+  }
+
+  // ── Sessions ──
+  async function loadConversations() {
+    const data = await window.desktopAPI.listConversations();
+    convs = data.conversations;
+    activeConvId = data.activeId;
+    if (activeConvId) {
+      const conv = await window.desktopAPI.getConversation(activeConvId);
+      $('activeConvTitle').textContent = conv?.title || 'New Session';
+      renderMessages(conv?.messages || []);
+    }
+    renderConvList();
+  }
+
+  function renderConvList() {
+    const el = $('convList');
+    el.innerHTML = convs.map(c => `
+      <div class="dt-conv-item ${c.id === activeConvId ? 'active' : ''}" data-id="${c.id}">
+        <span class="dt-conv-title" onclick="switchConv('${c.id}')">${escapeHtml(c.title)}</span>
+        <span class="dt-conv-actions">
+          <button class="dt-icon-btn" onclick="renameConv('${c.id}')" title="Rename">&#9998;</button>
+          <button class="dt-icon-btn" onclick="deleteConv('${c.id}')" title="Delete">&#128465;</button>
+        </span>
+      </div>
+    `).join('') || '<div class="dt-conv-empty">No sessions yet. Click + New</div>';
+  }
+
+  window.switchConv = async function(id) {
+    activeConvId = id;
+    closeArtifact();
+    await window.desktopAPI.setActiveConversation(id);
+    const conv = await window.desktopAPI.getConversation(id);
+    $('activeConvTitle').textContent = conv?.title || 'New Session';
+    renderMessages(conv?.messages || []);
+    renderConvList();
+  };
+  window.createConv = async function() {
+    await window.desktopAPI.createConversation('New Session');
+    await loadConversations();
+  };
+  window.renameConv = async function(id) {
+    const title = prompt('New name:');
+    if (title) { await window.desktopAPI.renameConversation(id, title); await loadConversations(); }
+  };
+  window.deleteConv = async function(id) {
+    if (!confirm('Delete this session?')) return;
+    await window.desktopAPI.deleteConversation(id);
+    await loadConversations();
+  };
+
+  // ── Messages ──
+  function renderMessages(messages) {
+    const el = $('chatBody');
+    if (!messages || messages.length === 0) {
+      el.innerHTML = '<div class="dt-hint">Start a conversation</div>';
+      return;
+    }
+    el.innerHTML = messages.map((m, i) => `
+      <div class="dt-msg dt-msg-${m.role} group" data-id="${m.id || i}" data-role="${m.role}">
+        <div class="dt-msg-content">${m.html || escapeHtml(m.content || '')}</div>
+        <div class="msg-toolbar">${msgToolbarHTML(m.role)}</div>
+      </div>
+    `).join('');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function appendMessage(role, content, html) {
+    const el = $('chatBody');
+    const div = document.createElement('div');
+    div.className = `dt-msg dt-msg-${role} group`;
+    div.setAttribute('data-role', role);
+    if (html) {
+      div.innerHTML = `<div class="dt-msg-content">${renderAIHtml(html)}</div><div class="msg-toolbar">${msgToolbarHTML(role)}</div>`;
+    } else {
+      div.innerHTML = `<div class="dt-msg-content">${escapeHtml(content)}</div><div class="msg-toolbar">${msgToolbarHTML(role)}</div>`;
+    }
+    el.appendChild(div);
+    el.scrollTop = el.scrollHeight;
+    window.desktopAPI.appendMessage(activeConvId, { role, content, html: html || '' });
+  }
+
+  // ── File Upload Helpers ──
+  const TEXT_EXTENSIONS = ['.txt','.json','.csv','.log','.md','.js','.py','.java','.xml','.yaml','.yml','.sh','.bat','.cfg','.ini','.sql','.html','.css'];
+
+  function getFileIcon(name) {
+    const ext = (name||'').split('.').pop().toLowerCase();
+    const map = { py:'\u{1F40D}', js:'\u{1F4DC}', java:'\u{2615}', json:'\u{1F4CB}', xml:'\u{1F4C4}',
+      csv:'\u{1F4CA}', log:'\u{1F4DC}', md:'\u{1F4DD}', html:'\u{1F310}', css:'\u{1F3A8}',
+      yaml:'\u{2699}', yml:'\u{2699}', sql:'\u{1F500}', sh:'\u{1F4BB}', bat:'\u{1F4BB}' };
+    return map[ext] || '\u{1F4C4}';
+  }
+
+  function renderAttachmentCapsules() {
+    const el = $('attachPreview');
+    if (!currentAttachments.length) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+    el.classList.remove('hidden');
+    el.innerHTML = currentAttachments.map((a,i) => `
+      <div class="attach-capsule">
+        <span class="text-sm">${getFileIcon(a.name)}</span>
+        <span class="text-xs text-gray-700 truncate max-w-[120px]">${escapeHtml(a.name)}</span>
+        <button type="button" onclick="removeAttachment(${i})" class="text-gray-400 hover:text-red-500 text-xs leading-none">&times;</button>
+      </div>
+    `).join('');
+  }
+
+  window.removeAttachment = function(i) {
+    currentAttachments.splice(i, 1);
+    renderAttachmentCapsules();
+  };
+
+  // ── 常量 ──
+  const SIZE_LIMIT = 500000; // 500KB 字符上限，超出截断并提示
+
+  function showToast(message, isError) {
+    const toast = document.createElement('div');
+    toast.className = 'toast-msg' + (isError ? ' toast-error' : '');
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('toast-show'));
+    setTimeout(() => { toast.classList.remove('toast-show'); setTimeout(() => toast.remove(), 300); }, 3000);
+  }
+
+  function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+      const ext = '.' + (file.name.split('.').pop()||'').toLowerCase();
+      if (!TEXT_EXTENSIONS.includes(ext)) { reject(new Error('Unsupported: ' + ext)); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result;
+        if (result && result.length > SIZE_LIMIT) {
+          reject(new Error('SizeExceeded: ' + file.name + ' (' + (result.length/1000).toFixed(0) + 'KB > ' + (SIZE_LIMIT/1000) + 'KB)'));
+          return;
+        }
+        resolve({ name: file.name, type: file.type||ext, content: result });
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(file, 'UTF-8');
+    });
+  }
+
+  function handleFiles(files) {
+    let invalidCount = 0;
+    const promises = [];
+    for (const f of files) {
+      const ext = '.' + (f.name.split('.').pop()||'').toLowerCase();
+      if (!TEXT_EXTENSIONS.includes(ext)) { invalidCount++; continue; }
+      promises.push(readFileAsText(f).catch(e => {
+        const msg = e && e.message ? e.message : '';
+        if (msg.startsWith('SizeExceeded:')) {
+          showToast('\u26A0\uFE0F \u6587\u4EF6\u8FC7\u5927\uFF0C\u8D85\u51FA AI \u4E0A\u4E0B\u6587\u9650\u5236: ' + f.name, true);
+        }
+        return null;
+      }));
+    }
+    if (invalidCount > 0) {
+      showToast('\u26A0\uFE0F \u5F53\u524D AI \u5F15\u64CE\u6682\u4E0D\u652F\u6301\u56FE\u7247\u6216\u4E8C\u8FDB\u5236\u6587\u4EF6\u89E3\u6790\uFF0C\u8BF7\u4E0A\u4F20\u6587\u672C/\u65E5\u5FD7\u7C7B\u6587\u4EF6\u3002', true);
+    }
+    Promise.all(promises).then(results => {
+      const valid = results.filter(r => r !== null);
+      if (valid.length) { currentAttachments = currentAttachments.concat(valid); renderAttachmentCapsules(); }
+    });
+  }
+
+  function setupFileUpload() {
+    $('fileUploadInput').onchange = (e) => {
+      if (e.target.files.length) handleFiles(e.target.files);
+      e.target.value = '';
+    };
+  }
+
+  function setupDragDrop() {
+    const composer = $('chatForm');
+    let dragCounter = 0;
+    composer.addEventListener('dragenter', (e) => { e.preventDefault(); dragCounter++; composer.classList.add('dt-composer-dragover'); });
+    composer.addEventListener('dragleave', (e) => { e.preventDefault(); dragCounter--; if (dragCounter<=0){dragCounter=0;composer.classList.remove('dt-composer-dragover');} });
+    composer.addEventListener('dragover', (e) => { e.preventDefault(); });
+    composer.addEventListener('drop', (e) => {
+      e.preventDefault(); dragCounter = 0; composer.classList.remove('dt-composer-dragover');
+      if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+    });
+  }
+
+  // ── Send (SSE streaming) ──
+  async function sendMessage() {
+    if (isStreaming) return;
+    const input = $('chatInput');
+    const text = input.value.trim();
+    if (!text && !currentAttachments.length) return;
+    if (!activeConvId) await window.createConv();
+
+    // ── 拼接附件内容 ──
+    let fullText = text;
+    if (currentAttachments.length) {
+      const attachBlocks = currentAttachments.map(a =>
+        `\n\n[附件: ${a.name}]\n\`\`\`\n${a.content}\n\`\`\``
+      ).join('');
+      fullText = (text || '请分析以下附件内容') + attachBlocks;
+    }
+
+    isStreaming = true;
+    $('btnSend').disabled = true;
+    input.value = '';
+
+    appendMessage('user', fullText, escapeHtml(text || '[Attachments]'));
+
+    // ── 清空附件 ──
+    currentAttachments = [];
+    renderAttachmentCapsules();
+
+    // ── Thought Chain Container ──
+    const aiDiv = document.createElement('div');
+    aiDiv.className = 'dt-msg dt-msg-ai';
+
+    const tcWrap = document.createElement('details');
+    tcWrap.className = 'thought-chain';
+    tcWrap.open = true;
+    const tcSummary = document.createElement('summary');
+    tcSummary.className = 'text-xs text-gray-500 cursor-pointer select-none py-1 px-2 rounded hover:bg-gray-100 transition-colors';
+    tcSummary.textContent = '\u{1F4E1} Thinking...';
+    tcWrap.appendChild(tcSummary);
+    const tcBody = document.createElement('div');
+    tcBody.className = 'thought-chain-body';
+    tcWrap.appendChild(tcBody);
+    aiDiv.appendChild(tcWrap);
+
+    const aiContent = document.createElement('div');
+    aiContent.className = 'dt-msg-content';
+    aiDiv.appendChild(aiContent);
+    $('chatBody').appendChild(aiDiv);
+
+    // ── Thought Chain state ──
+    const thoughtSteps = {}; // { toolName: { el, status } }
+    let thoughtCount = 0;
+    let thoughtDone = 0;
+
+    function ensureThoughtStep(toolName) {
+      if (thoughtSteps[toolName]) return thoughtSteps[toolName];
+      const label = TOOL_LABELS[toolName] || toolName;
+      const step = document.createElement('div');
+      step.className = 'thought-step';
+      step.setAttribute('data-tool', toolName);
+      step.innerHTML =
+        `<span class="thought-icon thought-icon-running">` + SVG_SPINNER + `</span>` +
+        `<span class="thought-label">${label}</span>` +
+        `<span class="thought-time text-[10px] text-gray-400 ml-auto"></span>`;
+      tcBody.appendChild(step);
+      thoughtSteps[toolName] = { el: step, status: 'running' };
+      thoughtCount++;
+      tcSummary.textContent = `\u{1F4E1} Working (${thoughtCount - thoughtDone} active)`;
+      return thoughtSteps[toolName];
+    }
+
+    function markThoughtDone(toolName) {
+      const rec = thoughtSteps[toolName];
+      if (!rec || rec.status !== 'running') return;
+      rec.status = 'done';
+      rec.el.querySelector('.thought-icon').innerHTML = SVG_CHECK;
+      rec.el.querySelector('.thought-icon').className = 'thought-icon thought-icon-done';
+      rec.el.querySelector('.thought-label').className = 'thought-label thought-label-done';
+      thoughtDone++;
+      if (thoughtDone >= thoughtCount) {
+        tcSummary.innerHTML = `\u{2705} Completed <span class="text-gray-400 ml-1">${thoughtCount} retrieval${thoughtCount>1?'s':''}</span>`;
+        tcWrap.open = false;
+      } else {
+        tcSummary.textContent = `\u{2705} ${thoughtDone}/${thoughtCount} done`;
+      }
+    }
+
+    function markThoughtError(toolName, errMsg) {
+      const rec = thoughtSteps[toolName];
+      if (!rec) return;
+      rec.status = 'error';
+      rec.el.querySelector('.thought-icon').innerHTML = SVG_WARN;
+      rec.el.querySelector('.thought-icon').className = 'thought-icon thought-icon-error';
+      rec.el.querySelector('.thought-label').className = 'thought-label thought-label-error';
+      rec.el.setAttribute('title', errMsg || 'Unknown error');
+      thoughtDone++;
+      if (thoughtDone >= thoughtCount) tcWrap.open = false;
+    }
+
+    let fullReply = '';
+    // ── 组装 messages（注入 Agent Prompt）──
+    const msgs = [
+      { role: 'system', content: 'You are a professional Jira project assistant. Answer concisely in Markdown.' },
+    ];
+    if (currentAgentId !== 'alice') {
+      const agent = AGENTS.find(a => a.id === currentAgentId);
+      if (agent && agent.prompt) msgs.unshift({ role: 'system', content: agent.prompt });
+    }
+    msgs.push({ role: 'user', content: fullText });
+
+    try {
+      const response = await fetch(SERVER_URL + '/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: msgs })
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const json = line.slice(6).trim();
+          if (json === '[DONE]') continue;
+          try {
+            const chunk = JSON.parse(json);
+
+            // ── Plugin State Intercept ──
+            if (chunk.custom_type === 'plugin_state' && chunk.plugin) {
+              const { name, status } = chunk.plugin;
+              if (status === 'running') {
+                ensureThoughtStep(name);
+              } else if (status === 'done') {
+                markThoughtDone(name);
+              } else if (status === 'error') {
+                markThoughtError(name, chunk.plugin.message || '');
+              }
+              continue;
+            }
+
+            const c = chunk.choices?.[0]?.delta?.content || '';
+            if (c) { fullReply += c; aiContent.innerHTML = renderAIHtml(fullReply); colorizeDiffBlocks(aiContent); }
+          } catch(e) {}
+        }
+        $('chatBody').scrollTop = $('chatBody').scrollHeight;
+      }
+    } catch(e) {
+      aiContent.innerHTML = `<span style="color:#ef4444">Connection error: ${e.message}</span>`;
+      // Mark any still-running steps as error
+      for (const [name, rec] of Object.entries(thoughtSteps)) {
+        if (rec.status === 'running') markThoughtError(name, e.message);
+      }
+    }
+
+    if (fullReply) {
+      const html = renderAIHtml(fullReply);
+      aiContent.innerHTML = html;
+      colorizeDiffBlocks(aiContent);
+      window.desktopAPI.appendMessage(activeConvId, { role: 'ai', content: fullReply, html });
+    }
+
+    isStreaming = false;
+    $('btnSend').disabled = false;
+    $('chatInput').focus();
+  }
+
+  // ── Markdown Renderer ──
+  function formatReply(text) {
+    let html = text
+      .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    // Fenced code blocks (BEFORE \n→<br> conversion — preserves \n in tables below)
+    let codeBlockId = 0;
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(m, lang, code) {
+      code = code.trimEnd();
+      const lineCount = code.split('\n').length;
+      const isLongForm = ['diff','xml','json','yaml','sql'].includes(lang.toLowerCase());
+      const isLarge = lineCount > 15 || isLongForm;
+      if (isLarge) {
+        return `<div data-artifact="code" data-lang="${lang||'plaintext'}" data-title="${lang||'code'}" data-code="${encodeURIComponent(code)}"></div>`;
+      }
+      // Small code block: rendered inline with copy button + collapse
+      const cid = 'cb-' + (++codeBlockId);
+      const isDiff = lang.toLowerCase() === 'diff';
+      const collapsible = lineCount > 12;
+      return `<div class="code-block-wrapper" data-lines="${lineCount}">
+        <div class="code-block-toolbar">
+          <span class="code-block-lang">${lang||'plaintext'}</span>
+          <button class="code-block-copy-btn" onclick="copyCodeBlock('${cid}')">📋</button>
+        </div>
+        <div class="code-block-body${collapsible ? ' code-collapsed' : ''}" id="${cid}">
+          <pre${isDiff ? ' class="diff-highlight"' : ''}><code class="language-${lang||'plaintext'}">${code}</code></pre>
+        </div>
+        ${collapsible ? `<button class="code-block-expand" onclick="toggleCodeBlock('${cid}',this)">展开全部 (${lineCount} 行) ▼</button>` : ''}
+      </div>`;
+    });
+
+    // Tables — detect with \n BEFORE conversion to <br> (BUG-A fix)
+    html = html.replace(/(^|\n)(\|[^\n]+\|\n\|[:\-\s|]+\|\n(\|[^\n]+\|\n?)+)/gm, function(match, prefix, tableBlock) {
+      const lines = tableBlock.trim().split('\n');
+      if (lines.length > 10) {
+        const tableHtml = '<table class="dt-table">' + lines.map((l,i) => {
+          const cells = l.split('|').filter(c => c.trim());
+          const tag = i === 1 ? 'th' : 'td';
+          return `<tr>${cells.map(c => `<${tag}>${c.trim()}</${tag}>`).join('')}</tr>`;
+        }).join('') + '</table>';
+        return `${prefix || ''}<div data-artifact="table" data-lang="" data-title="Data Table" data-code="${encodeURIComponent(tableHtml)}"></div>`;
+      }
+      // Short table: render inline
+      const tableHtml = '<table class="dt-table">' + lines.map((l,i) => {
+        const cells = l.split('|').filter(c => c.trim());
+        const tag = i === 1 ? 'th' : 'td';
+        return `<tr>${cells.map(c => `<${tag}>${c.trim()}</${tag}>`).join('')}</tr>`;
+      }).join('') + '</table>';
+      return (prefix || '') + tableHtml;
+    });
+
+    // Inline formatting
+    html = html
+      .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+      .replace(/^- (.+)$/gm, '<li>$1</li>')
+      .replace(/\n/g, '<br>');
+
+    return html;
+  }
+
+  function interceptArtifacts(html) {
+    return html.replace(/<div data-artifact="(code|table)" data-lang="([^"]*)" data-title="([^"]*)" data-code="([^"]*)"><\/div>/g,
+      function(m, type, lang, title, encoded) {
+        const content = decodeURIComponent(encoded);
+        const lineCount = content.split('\n').length;
+        const icon = type === 'code' ? getLangIcon(lang) : '\u{1F4CA}';
+        const label = type === 'code' ? `View ${lang||'code'} (${lineCount} lines)` : `View table (${lineCount} rows)`;
+
+        return `<div class="artifact-card"
+          onclick="openArtifactInline('${type}','${escapeAttr(lang)}','${escapeAttr(title)}','${encodeURIComponent(content)}')"
+          style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:12px 14px;margin:8px 0;background:#f0f4ff;border:1px solid #c7d2fe;border-radius:8px;transition:all .15s"
+          onmouseover="this.style.background='#e0e7ff';this.style.borderColor='#a5b4fc'"
+          onmouseout="this.style.background='#f0f4ff';this.style.borderColor='#c7d2fe'">
+          <span style="font-size:20px">${icon}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;color:#3730a3">${escapeHtml(title)}</div>
+            <div style="font-size:11px;color:#6b7280">${label}</div>
+          </div>
+          <span style="font-size:12px;color:#4f46e5;font-weight:500;white-space:nowrap">Open &rarr;</span>
+        </div>`;
+      }
+    );
+  }
+
+  // ── Combined render pipeline ──
+  function renderAIHtml(text) {
+    return interceptArtifacts(interceptJQLError(interceptCitations(formatReply(text))));
+  }
+
+  // ── Diff Colorization (post-render) ──
+  function colorizeDiffBlocks(root) {
+    const pres = root.querySelectorAll ? root.querySelectorAll('pre.diff-highlight') : [];
+    pres.forEach(pre => {
+      const code = pre.querySelector('code');
+      if (!code) return;
+      const lines = code.innerHTML.split('\n');
+      code.innerHTML = lines.map(line => {
+        const trimmed = line.replace(/<[^>]*>/g, '').trim();
+        if (trimmed.startsWith('+') && !trimmed.startsWith('+++'))
+          return `<span style="background:rgba(22,163,74,.12);color:#16a34a;display:block;width:100%">${line}</span>`;
+        if (trimmed.startsWith('-') && !trimmed.startsWith('---'))
+          return `<span style="background:rgba(220,38,38,.08);color:#dc2626;display:block;width:100%">${line}</span>`;
+        if (trimmed.startsWith('@@'))
+          return `<span style="background:rgba(99,102,241,.08);color:#4f46e5;display:block;width:100%;font-weight:600">${line}</span>`;
+        return `<span style="display:block">${line}</span>`;
+      }).join('');
+    });
+    return root;
+  }
+
+  // ── Inline Citation Pills ──
+  function interceptCitations(html) {
+    const re = /\[(Jira|Notion|SVN|GDrive)\s*[:：]\s*([^\]]+)\]/gi;
+    return html.replace(re, function(match, source, value) {
+      const pill = CITATION_PILLS[source.toLowerCase()] || CITATION_PILLS['default'];
+      return `<span class="citation-pill ${pill.class}">${pill.icon} ${escapeHtml(value)}</span>`;
+    });
+  }
+
+  const CITATION_PILLS = {
+    jira:   { icon: '\u{1F3AB}', class: 'bg-blue-50 text-blue-700 border-blue-200' },
+    notion: { icon: '\u{1F4DD}', class: 'bg-gray-100 text-gray-600 border-gray-300' },
+    svn:    { icon: '\u{1F4C2}', class: 'bg-indigo-50 text-indigo-600 border-indigo-200' },
+    gdrive: { icon: '\u{1F4C1}', class: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
+    default:{ icon: '\u{1F4CE}', class: 'bg-gray-50 text-gray-500 border-gray-200' },
+  };
+
+  window.openArtifactInline = function(type, lang, title, encoded) {
+    const content = decodeURIComponent(encoded);
+    openArtifact({ type, language: lang, title, content });
+  };
+
+  // ── Language icon helper ──
+  function getLangIcon(lang) {
+    const map = { python:'\u{1F40D}', javascript:'\u{1F4DC}', java:'\u{2615}', cs:'\u{2699}', sql:'\u{1F50D}',
+      json:'\u{1F4CB}', xml:'\u{1F4C4}', yaml:'\u{2699}', bash:'\u{1F4BB}', sh:'\u{1F4BB}',
+      diff:'\u{1F504}', html:'\u{1F310}', css:'\u{1F3A8}', plaintext:'\u{1F4C4}' };
+    return map[lang.toLowerCase()] || '\u{1F4C4}';
+  }
+
+  function escapeAttr(s) { return (s||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+  // ── Thought Chain: Tool Labels & SVG Icons ──
+  const TOOL_LABELS = {
+    query_jira_issues:     'Jira \u67E5\u8BE2',
+    search_knowledge_base: '\u77E5\u8BC6\u5E93\u68C0\u7D22',
+    get_issue_commits:     'SVN \u63D0\u4EA4\u8BB0\u5F55',
+    get_issue_diff:        '\u4EE3\u7801\u5DEE\u5F02\u5206\u6790',
+    add_jira_comment:      'Jira \u8BC4\u8BBA',
+    list_jira_comments:    '\u8BC4\u8BBA\u5217\u8868',
+  };
+
+  const SVG_SPINNER = '<svg class="animate-spin" width="14" height="14" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#9ca3af" stroke-width="3" stroke-dasharray="32" stroke-linecap="round"/></svg>';
+  const SVG_CHECK   = '<svg width="14" height="14" fill="none" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const SVG_WARN    = '<svg width="14" height="14" fill="none" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="10" stroke="#ef4444" stroke-width="2"/></svg>';
+
+  // ── Message Toolbar ──
+  function msgToolbarHTML(role) {
+    if (role === 'user') return '<button class="tb-btn" data-action="edit" title="Edit">&#9998;</button>';
+    return '<button class="tb-btn" data-action="copy" title="Copy">&#128203;</button><button class="tb-btn" data-action="regenerate" title="Regenerate">&#128260;</button>';
+  }
+
+  // ── Toolbar click delegation ──
+  $('chatBody').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const msg = btn.closest('.dt-msg');
+    if (!msg) return;
+    const action = btn.dataset.action;
+    const role = msg.dataset.role;
+    const content = msg.querySelector('.dt-msg-content')?.textContent || '';
+
+    if (action === 'copy') {
+      navigator.clipboard.writeText(content).then(() => {
+        btn.textContent = '\u2705';
+        setTimeout(() => { btn.textContent = '\u{1F4CB}'; }, 1500);
+      }).catch(() => {});
+    }
+
+    if (action === 'edit' && role === 'user') {
+      const input = $('chatInput');
+      input.value = content;
+      input.focus();
+      // Truncate messages from this point
+      const msgId = parseInt(msg.dataset.id) || 0;
+      if (activeConvId && msgId) {
+        window.desktopAPI.db.truncateMessages(activeConvId, msgId);
+        // Remove all messages including and after this one from DOM
+        let el = msg;
+        while (el) { const next = el.nextElementSibling; el.remove(); el = next; }
+      }
+    }
+
+    if (action === 'regenerate' && role === 'ai') {
+      const prevMsg = msg.previousElementSibling;
+      if (prevMsg && prevMsg.dataset.role === 'user') {
+        const prevContent = prevMsg.querySelector('.dt-msg-content')?.textContent || '';
+        const msgId = parseInt(msg.dataset.id) || 0;
+        if (activeConvId && msgId) {
+          window.desktopAPI.db.truncateMessages(activeConvId, msgId);
+          // Remove this ai message from DOM
+          msg.remove();
+          // Re-send the user message
+          const input = $('chatInput');
+          input.value = prevContent;
+          sendMessage();
+        }
+      }
+    }
+  });
+
+  function escapeHtml(s) { return (s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  // ── Code Block Helpers ──
+  window.copyCodeBlock = function(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const text = el.textContent || '';
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = el.closest('.code-block-wrapper')?.querySelector('.code-block-copy-btn');
+      if (btn) { btn.textContent = '✅'; setTimeout(() => { btn.textContent = '📋'; }, 1500); }
+    }).catch(() => {});
+  };
+
+  window.toggleCodeBlock = function(id, btn) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const isCollapsed = el.classList.contains('code-collapsed');
+    if (isCollapsed) {
+      el.classList.remove('code-collapsed');
+      btn.innerHTML = '收起 ▲';
+    } else {
+      el.classList.add('code-collapsed');
+      const lines = el.closest('.code-block-wrapper')?.dataset.lines || '';
+      btn.innerHTML = `展开全部 (${lines} 行) ▼`;
+    }
+  };
+
+  // ── JQL Error Card Interception ──
+  function interceptJQLError(html) {
+    const re = /\{"_ui_type":\s*"jql_error",\s*"status":\s*"error",\s*"original_jql":\s*"((?:[^"\\]|\\.)*)",\s*"error_msg":\s*"((?:[^"\\]|\\.)*)"[^}]*\}/g;
+    return html.replace(re, function(match, originalJqlRaw, errorMsgRaw) {
+      const jql = originalJqlRaw.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+      const errMsg = errorMsgRaw.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+      const id = 'jql-card-' + Math.random().toString(36).slice(2,8);
+      return `<div class="jql-error-card" id="${id}" style="background:#fff5f5;border:1px solid #fecaca;border-left:4px solid #ef4444;border-radius:10px;padding:16px;margin:12px 0;font-size:13px;">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="text-lg">&#9888;&#65039;</span>
+          <span class="font-semibold text-red-700">JQL \u67E5\u8BE2\u62A5\u9519</span>
+        </div>
+        <div class="text-xs text-red-600 bg-red-50 rounded px-3 py-2 mb-3 font-mono whitespace-pre-wrap">${escapeHtml(errMsg)}</div>
+        <label class="block text-xs text-gray-600 font-medium mb-1">\u4FEE\u6B63 JQL:</label>
+        <textarea class="jql-edit w-full text-xs font-mono border border-gray-300 rounded-md p-2 mb-3 bg-white resize-y focus:border-blue-400 focus:ring-1 focus:ring-blue-200 outline-none"
+          rows="2">${escapeHtml(jql)}</textarea>
+        <div class="flex gap-2">
+          <button class="jql-retry-btn px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-md transition-colors"
+            data-card-id="${id}">&#x1F504; \u4FEE\u6B63\u5E76\u91CD\u8BD5</button>
+          <button class="jql-copy-btn px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-300 rounded-md transition-colors"
+            data-card-id="${id}">\uD83D\uDCCB \u590D\u5236 JQL</button>
+        </div>
+      </div>`;
+    });
+  }
+
+  // ── Delegate JQL card button clicks ──
+  $('chatBody').addEventListener('click', function(e) {
+    const card = e.target.closest('.jql-error-card');
+    if (!card) return;
+
+    if (e.target.closest('.jql-retry-btn')) {
+      const textarea = card.querySelector('.jql-edit');
+      const jql = textarea ? textarea.value.trim() : '';
+      if (!jql) return;
+      // Replace card with user message + auto send
+      const input = $('chatInput');
+      input.value = `\u8BF7\u4F7F\u7528\u6B64 JQL \u91CD\u65B0\u67E5\u8BE2: ${jql}`;
+      sendMessage();
+      // Collapse/remove card
+      card.style.opacity = '0.5';
+      card.querySelectorAll('button').forEach(b => b.disabled = true);
+    }
+
+    if (e.target.closest('.jql-copy-btn')) {
+      const textarea = card.querySelector('.jql-edit');
+      if (textarea) {
+        navigator.clipboard.writeText(textarea.value).catch(() => {});
+        // brief flash feedback
+        const btn = e.target.closest('.jql-copy-btn');
+        const orig = btn.textContent;
+        btn.textContent = '\u2705 Copied';
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+      }
+    }
+  });
+
+  // ── Shortcuts ──
+  $('chatInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+  // Escape closes artifact panel
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && activeArtifact) { closeArtifact(); }
+  });
+
+  init();
+})();
+</script>
+</body>
+</html>

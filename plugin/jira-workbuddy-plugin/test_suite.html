@@ -1,0 +1,1504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorkBuddy AI Plugin — 本地验证套件</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f4f5f7;color:#172b4d;display:flex;height:100vh;overflow:hidden}
+.sidebar{width:440px;min-width:440px;background:#fff;overflow-y:auto;border-right:1px solid #dfe1e6;padding:20px}
+.main{flex:1;display:flex;flex-direction:column;background:#f4f5f7}
+
+.sidebar h1{font-size:20px;margin-bottom:2px}
+.sidebar .sub{color:#6b778c;font-size:12px;margin-bottom:20px}
+.section{background:#fff;border-radius:8px;padding:20px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.06);border:1px solid #ebecf0}
+.section h2{font-size:14px;color:#0052CC;margin-bottom:4px}
+.section .desc{font-size:11px;color:#6b778c;margin-bottom:16px;line-height:1.5}
+.fg{margin-bottom:12px}
+.fg label{display:block;font-size:12px;font-weight:600;color:#172b4d;margin-bottom:2px}
+.fg .hint{font-size:10px;color:#6b778c;margin-bottom:4px}
+.fg input,.fg textarea,.fg select{width:100%;padding:7px 10px;border:1.5px solid #dfe1e6;border-radius:5px;font-size:12px;font-family:inherit;outline:none}
+.fg input:focus,.fg textarea:focus,.fg select:focus{border-color:#0052CC}
+.fg textarea{resize:vertical;min-height:45px;font-family:monospace}
+.row{display:flex;gap:10px}.row .fg{flex:1}
+.fg.error input,.fg.error textarea{border-color:#ff5630;background:#fff9f8}
+.fg.error .hint{color:#ff5630}
+.fg .err-msg{display:none;font-size:10px;color:#ff5630;margin-top:2px}
+.fg.error .err-msg{display:block}
+
+.test-btn{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border:1.5px solid #0052CC;color:#0052CC;background:#fff;border-radius:5px;font-size:11px;cursor:pointer;margin-top:2px}
+.test-btn:hover{background:#f0f7ff}
+.test-btn.ok{border-color:#36b37e;color:#36b37e;background:#e3fcef}
+.test-btn.fail{border-color:#ff5630;color:#ff5630;background:#fff0ed}
+.test-btn:disabled{opacity:.6;cursor:wait}
+.test-result{font-size:12px;font-weight:600;margin-top:4px;min-height:18px}
+.test-result.ok{color:#36b37e}
+.test-result.fail{color:#ff5630}
+
+.actions{display:flex;gap:8px;justify-content:flex-end;padding-top:10px}
+.actions button{padding:8px 18px;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer;border:none}
+.btn-p{background:#0052CC;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:none}
+.btn-p:hover{background:#0043a8}
+.btn-s{background:#fff;color:#0052CC;border:1.5px solid #0052CC}
+.msg{font-size:12px;padding:8px 12px;border-radius:5px;margin-bottom:12px}
+.msg.ok{background:#e3fcef;color:#006644}
+.msg.err{background:#fff0ed;color:#bf2600}
+
+/* ═══ Chat Theme ═══ */
+:root {
+  --c-chat-bg:#FFFFFF; --c-chat-header:#2E6FF2; --c-chat-header-text:#FFF;
+  --c-issue-bg:#EEF3FF; --c-issue-text:#48566A; --c-issue-border:#D6E2FC;
+  --c-user-bubble:#2E6FF2; --c-user-text:#FFF;
+  --c-input-card:#EEF3FF; --c-input-card-border:#D6E2FC; --c-input-bg:#FFF;
+  --c-input-border:#CDD6E8; --c-input-focus:#2E6FF2;
+  --c-send-btn:#2E6FF2; --c-send-text:#FFF;
+  --c-chip-bg:#2E6FF2; --c-chip-text:#FFF; --c-chip-hover:#2563DB;
+  --c-ai-text:#1D1D1F; --c-ai-label:#8C98A8; --c-divider:#E6EAF0;
+  --c-h2-border:#D6E0F0; --c-table-th:#DCE6FA; --c-table-th-border:#C8D6F0;
+  --c-table-td-border:#E6EAF0; --c-code-bg:#EDEFF3;
+  --c-blockquote-bg:#F2F5FA; --c-blockquote-border:#2E6FF2;
+  --c-typing-dot:#8C98A8; --c-stop-btn:#E84040;
+  --c-btn-copy-bg:#FFF; --c-btn-copy-border:#D6DCE8; --c-btn-copy-text:#6B788E;
+}
+[data-theme="dark"] {
+  --c-chat-bg:#1B1D23; --c-chat-header:#22263A; --c-chat-header-text:#E2E4EA;
+  --c-issue-bg:#242837; --c-issue-text:#9BA3B4; --c-issue-border:#363C50;
+  --c-user-bubble:#3B82F6; --c-user-text:#FFF;
+  --c-input-card:#22252F; --c-input-card-border:#363C50; --c-input-bg:#2A2D37;
+  --c-input-border:#40455A; --c-input-focus:#3B82F6;
+  --c-send-btn:#3B82F6; --c-send-text:#FFF;
+  --c-chip-bg:#3B82F6; --c-chip-text:#FFF; --c-chip-hover:#2563EB;
+  --c-ai-text:#C8CCD4; --c-ai-label:#6B7288; --c-divider:#363C50;
+  --c-h2-border:#3A3F55; --c-table-th:#2A3048; --c-table-th-border:#3A3F55;
+  --c-table-td-border:#363C50; --c-code-bg:#2A2D37;
+  --c-blockquote-bg:#242837; --c-blockquote-border:#3B82F6;
+  --c-typing-dot:#6B7288; --c-stop-btn:#D94444;
+  --c-btn-copy-bg:#2A2D37; --c-btn-copy-border:#40455A; --c-btn-copy-text:#9BA3B4;
+}
+
+/* Chat panel */
+.chat-header{background:var(--c-chat-header);color:var(--c-chat-header-text);padding:12px 18px;font-size:15px;font-weight:700;flex-shrink:0;display:flex;justify-content:space-between;align-items:center}
+.chat-issue{background:var(--c-issue-bg);padding:6px 18px;font-size:12px;color:var(--c-issue-text);border-bottom:0.5px solid var(--c-issue-border);display:flex;align-items:center;gap:8px}
+.quick-actions{display:none}
+.chat-body{flex:1;overflow-y:auto;padding:16px 20px;line-height:1.7;background:var(--c-chat-bg)}
+.chat-body .hint-box{text-align:center;color:var(--c-ai-label);font-size:13px;padding:40px 20px}
+.chat-input-card{background:var(--c-input-card);border-top:0.5px solid var(--c-input-card-border);flex-shrink:0;padding:10px 18px 14px}
+.chat-input-toolbar{display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+.chat-input-toolbar .toolbar-chip{background:var(--c-chip-bg);border:none;border-radius:14px;padding:4px 12px;font-size:12px;cursor:pointer;color:var(--c-chip-text);transition:all .15s;white-space:nowrap}
+.chat-input-toolbar .toolbar-chip:hover{background:var(--c-chip-hover)}
+.chat-input-toolbar select{border:0.5px solid var(--c-input-border);border-radius:14px;padding:4px 8px;font-size:12px;background:var(--c-input-bg);color:var(--c-ai-text);cursor:pointer}
+.chat-input-row{display:flex;gap:8px;align-items:flex-end}
+.chat-input-row textarea{flex:1;border:1.5px solid var(--c-input-border);border-radius:12px;padding:10px 14px;font-size:14px;outline:none;resize:none;min-height:42px;max-height:200px;line-height:1.5;font-family:inherit;background:var(--c-input-bg);color:var(--c-ai-text);transition:min-height .2s,border-color .15s}
+.chat-input-row textarea:focus{min-height:84px;border-color:var(--c-input-focus)}
+.chat-input-row button{background:var(--c-send-btn);color:var(--c-send-text);border:none;border-radius:12px;font-size:16px;cursor:pointer;font-weight:600;white-space:nowrap;transition:opacity .15s}
+
+/* Input right column */
+.chat-input-right{display:flex;flex-direction:column;gap:4px;flex-shrink:0;align-self:flex-end}
+.chat-input-right .role-btn-sm{width:100%;text-align:center}
+.chat-input-right .send-icon-btn{display:flex;align-items:center;justify-content:center;padding:10px;min-width:40px;min-height:40px;border-radius:12px}
+.chat-input-right .send-icon-btn:hover{opacity:.9}
+.chat-input-row button:hover{opacity:.9}
+.msg-b{margin-bottom:14px}
+.msg-b.ai{background:none;padding:0 0 14px 0;border:none;line-height:1.75;position:relative;color:var(--c-ai-text)}
+.msg-b.user{background:var(--c-user-bubble);color:var(--c-user-text);padding:10px 16px;border-radius:12px;margin-left:auto;word-break:break-word;max-width:85%;position:relative}
+.msg-b.user::after{content:'';position:absolute;right:-6px;top:14px;border-left:7px solid var(--c-user-bubble);border-top:5px solid transparent;border-bottom:5px solid transparent}
+.msg-b .lbl{font-size:10px;color:var(--c-ai-label);margin-bottom:4px}
+.msg-b .btn-copy-large{display:inline-block;background:var(--c-btn-copy-bg);border:1px solid var(--c-btn-copy-border);color:var(--c-btn-copy-text);font-size:12px;cursor:pointer;padding:4px 12px;border-radius:4px;margin-right:6px}
+.msg-b .btn-copy-large:hover{background:var(--c-btn-copy-bg);border-color:var(--c-input-focus);color:var(--c-input-focus)}
+.msg-b .btn-copy-large.copied{background:#065f4618;border-color:#36b37e;color:#36b37e}
+.msg-b .btn-comment{display:inline-block;background:var(--c-btn-copy-bg);border:1px solid var(--c-btn-copy-border);color:var(--c-btn-copy-text);font-size:12px;cursor:pointer;padding:4px 12px;border-radius:4px;margin-right:6px}
+.msg-b .btn-comment:hover{background:var(--c-btn-copy-bg);border-color:var(--c-input-focus);color:var(--c-input-focus)}
+.msg-b .btn-comment.copied{background:#065f4618;border-color:#36b37e;color:#36b37e}
+.msg-b .btn-comment.fail{background:#b91c1c18;border-color:#ef4444;color:#ef4444}
+
+.stop-btn{background:var(--c-stop-btn);color:#fff;border:none;border-radius:6px;padding:6px 16px;font-size:12px;font-weight:600;cursor:pointer;margin-right:8px}
+.stop-btn:hover{opacity:.85}
+
+/* Bubble tail for user messages */
+/* AI message typography */
+/* AI message typography */
+.msg-b h2{font-size:1.35em;font-weight:600;margin:1.4em 0 .6em;padding-bottom:8px;border-bottom:1.5px solid var(--c-h2-border);color:var(--c-ai-text)}
+.msg-b h3{font-size:1.15em;font-weight:600;margin:1.1em 0 .5em;color:var(--c-ai-text)}
+.msg-b h4{font-size:1.05em;font-weight:600;margin:.9em 0 .4em;color:var(--c-ai-text)}
+.msg-b h5,.msg-b h6{font-size:.9em;font-weight:600;margin:.7em 0 .3em;color:var(--c-ai-label);text-transform:uppercase;letter-spacing:.5px}
+.msg-b p{margin:.5em 0}
+.msg-b ul,.msg-b ol{margin:.4em 0;padding-left:1.4em}
+.msg-b li{margin:3px 0;line-height:1.6}
+.msg-b li::marker{color:var(--c-ai-label)}
+.msg-b table{width:100%;border-collapse:collapse;margin:.8em 0;font-size:.95em;border-radius:8px;overflow:hidden}
+.msg-b th{background:var(--c-table-th);padding:8px 12px;text-align:left;border:1px solid var(--c-table-th-border);font-weight:600;color:var(--c-ai-text);font-size:.9em}
+.msg-b td{padding:8px 12px;border:1px solid var(--c-table-td-border);color:var(--c-ai-text)}
+.msg-b tr:nth-child(even) td{background:var(--c-code-bg)}
+.msg-b code{background:var(--c-code-bg);padding:2px 6px;border-radius:4px;font-family:"Cascadia Code","Fira Code",Consolas,monospace;font-size:.88em;color:#e0435d}
+.msg-b pre{background:var(--c-code-bg);padding:12px 16px;border-radius:0 8px 8px 0;overflow-x:auto;margin:.6em 0;position:relative;border-left:3px solid var(--c-blockquote-border)}
+.msg-b pre code{background:none;padding:0;border-radius:0;font-size:.85em;color:var(--c-ai-text);line-height:1.6}
+.msg-b .btn-copy-code{position:absolute;top:6px;right:8px;background:var(--c-btn-copy-bg);border:1px solid var(--c-btn-copy-border);color:var(--c-btn-copy-text);font-size:11px;cursor:pointer;padding:2px 8px;border-radius:4px;opacity:0;transition:opacity .15s}
+.msg-b pre:hover .btn-copy-code{opacity:1}
+.msg-b .btn-copy-code:hover{background:var(--c-btn-copy-bg);border-color:var(--c-input-focus);color:var(--c-input-focus)}
+.msg-b .btn-copy-user{position:absolute;bottom:4px;right:4px;background:rgba(0,0,0,.15);border:none;color:#fff;font-size:11px;cursor:pointer;padding:2px 6px;border-radius:4px;opacity:0;transition:opacity .15s}
+.msg-b.user:hover .btn-copy-user{opacity:1}
+.msg-b blockquote{border-left:3px solid var(--c-blockquote-border);margin:.8em 0;padding:8px 16px;background:var(--c-blockquote-bg);border-radius:0 6px 6px 0;color:var(--c-ai-text);font-style:italic}
+.msg-b blockquote p{margin:.3em 0}
+.msg-b hr{border:none;border-top:1px solid var(--c-divider);margin:1em 0}
+.msg-b img{max-width:100%;border-radius:6px}
+.msg-b a{color:var(--c-input-focus);text-decoration:none}
+.msg-b a:hover{text-decoration:underline}
+.msg-b strong{font-weight:600;color:var(--c-ai-text)}
+.msg-b em{font-style:italic;color:var(--c-ai-label)}
+
+/* Role cards (sidebar, not themed) */
+.role-card{background:#f4f5f7;border-radius:8px;padding:12px;margin-bottom:8px;border:1px solid #dfe1e6}
+.role-card.active{border-color:#0052CC;background:#f0f7ff}
+.role-card h3{font-size:13px;margin-bottom:2px;display:flex;justify-content:space-between;align-items:center}
+.role-card .desc{font-size:11px;color:#6b778c;margin-bottom:4px}
+.role-card .role-fields{display:none;margin-top:8px}
+.role-card.expanded .role-fields{display:block}
+.role-card textarea{width:100%;min-height:60px;font-size:11px;font-family:inherit;margin-bottom:6px;border:1px solid #dfe1e6;border-radius:4px;padding:6px}
+.role-card .kb-toggles{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.role-card .kb-toggles label{font-size:11px;display:flex;align-items:center;gap:3px;cursor:pointer}
+.role-card .role-actions{display:flex;gap:6px}
+.role-card .role-actions button{font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid #dfe1e6;background:#fff;cursor:pointer}
+.role-card .role-actions button.del{border-color:#ff5630;color:#ff5630}
+
+/* Typing indicator */
+.typing{padding:6px 0;font-size:13px;color:var(--c-ai-label);display:flex;align-items:center;gap:6px}
+.typing-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--c-typing-dot);animation:typingBounce 1.4s ease-in-out infinite}
+.typing-dot:nth-child(2){animation-delay:.2s}
+.typing-dot:nth-child(3){animation-delay:.4s}
+@keyframes typingBounce{0%,80%,100%{transform:scale(.6);opacity:.4}40%{transform:scale(1);opacity:1}}
+
+/* Dark mode toggle */
+.theme-toggle{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:var(--c-chat-header-text);font-size:11px;cursor:pointer;padding:4px 10px;border-radius:4px;margin-left:8px;transition:all .2s}
+.theme-toggle:hover{background:rgba(255,255,255,.25)}
+
+/* Custom role dropdown */
+.role-dropdown{position:relative}
+.role-btn{background:var(--c-chip-bg);color:var(--c-chip-text);border:none;border-radius:10px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.role-btn:hover{opacity:.9}
+.role-btn-sm{padding:3px 8px;font-size:11px;min-height:28px}
+.role-menu{position:absolute;bottom:100%;left:0;margin-bottom:4px;min-width:160px;background:var(--c-input-bg);border:0.5px solid var(--c-input-border);border-radius:10px;overflow:hidden;z-index:100;box-shadow:0 -2px 12px rgba(0,0,0,.08)}
+.role-menu .role-item{display:block;width:100%;padding:8px 14px;font-size:12px;text-align:left;border:none;background:var(--c-input-bg);color:var(--c-ai-text);cursor:pointer;font-family:inherit;transition:background .1s}
+.role-menu .role-item:hover{background:var(--c-user-bubble);color:var(--c-user-text)}
+.role-menu .role-item.active{background:var(--c-input-card);color:var(--c-input-focus);font-weight:600}
+.role-menu .role-divider{height:1px;background:var(--c-divider);margin:4px 0}
+
+/* Font size popup */
+.font-popup{position:absolute;top:100%;right:0;margin-top:6px;background:var(--c-input-bg);border:0.5px solid var(--c-input-border);border-radius:10px;padding:6px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,.1);display:flex;gap:4px}
+.font-popup button{padding:6px 12px;border:0.5px solid var(--c-input-border);border-radius:6px;background:var(--c-input-bg);color:var(--c-ai-text);cursor:pointer;font-family:inherit;white-space:nowrap;transition:all .1s}
+.font-popup button:hover{border-color:var(--c-input-focus);background:var(--c-input-card)}
+.font-popup button.active{background:var(--c-user-bubble);color:var(--c-user-text);border-color:var(--c-user-bubble)}
+.msg-b p{margin:4px 0}
+.msg-b hr{border:none;border-top:1px solid #dfe1e6;margin:10px 0}
+.typing{color:#6b778c;font-style:italic;padding:10px 16px;font-size:12px}
+.hint-box{background:#f0f4ff;padding:14px 18px;border-radius:10px;margin-bottom:12px;font-size:12px;color:#0052CC;line-height:1.6}
+code.badge{background:#f4f5f7;padding:1px 5px;border-radius:3px;font-size:10px;font-family:monospace;color:#0052CC}
+.top-tab{padding:10px 18px;font-size:13px;color:#6b778c;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s;display:inline-block}
+.top-tab.active{color:#0052CC;border-bottom-color:#0052CC;font-weight:600}
+.top-tab:hover{color:#0052CC}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+
+<!-- ═══ 左侧配置 ═══ -->
+<div class="sidebar" id="sidebar">
+  <h1>🤖 WorkBuddy AI · 本地验证</h1>
+  <p class="sub">配置连接服务与 AI 角色。保存后右侧聊天面板可用。</p>
+  <div id="msg-area"></div>
+
+  <!-- ═══ 顶级标签页 ═══ -->
+  <div style="display:flex;border-bottom:2px solid #dfe1e6;margin-bottom:16px;gap:0">
+    <div class="top-tab active" onclick="switchTopTab('config', this)">🔧 基础配置</div>
+    <div class="top-tab" onclick="switchTopTab('roles', this)">🎭 角色配置</div>
+    <div class="top-tab" onclick="switchTopTab('quick', this)">⚡ 快捷发言</div>
+  </div>
+
+  <!-- ═══ 基础配置 ═══ -->
+  <div id="tab-config">
+
+  <!-- Jira 连接 + 项目选择（合并） -->
+  <div class="section">
+    <h2>🔗 Jira 连接 <span class="badge" style="background:#fff3cd;color:#856404;font-size:10px;font-weight:400">仅本地测试需要 · 部署到 Jira 后无需填写</span></h2>
+    <p class="desc" style="font-size:11px">测试套件是独立页面，需要 PAT 远程连接 Jira。真实插件部署在 Jira 内部，不需要这些字段。</p>
+    <div class="fg" id="fg-ju"><label>服务器地址</label><input id="jira_url" placeholder="http://ctjira1.lmdgame.com:8080" onblur="vURL(this,'fg-ju')"><div class="err-msg">需以 http:// 或 https:// 开头</div></div>
+    <div class="fg" id="fg-pat"><label>Personal Access Token (PAT)</label><div class="hint">Jira → 头像 → 个人设置 → 个人访问令牌 → 创建</div><input type="password" id="jira_pat" placeholder="PAT" onblur="vLen(this,'fg-pat',10)"><div class="err-msg">至少 10 个字符</div></div>
+    <button class="test-btn" id="btn-test-jira" onclick="testJira()">🔍 测试连接</button>
+    <div class="test-result" id="res-test-jira"></div>
+    <hr style="border:none;border-top:1px solid #dfe1e6;margin:14px 0">
+    <h3 style="font-size:13px;margin-bottom:6px">📋 纳入知识库的项目</h3>
+    <p class="desc">勾选后 AI 可以跨项目搜索 Issues。连接成功后自动拉取。</p>
+    <div id="jira-projects-list"><span style="color:#6b778c;font-size:12px">先保存 Jira 连接 → 再点刷新</span></div>
+    <button class="test-btn" onclick="fetchJiraProjects()" style="margin-top:6px">🔄 刷新项目列表</button>
+    <input type="hidden" id="jira_projects_cfg" value="">
+  </div>
+
+  <!-- SVN -->
+  <div class="section">
+    <h2>📦 SVN 代码仓库</h2>
+    <div class="fg" id="fg-svn-url"><label>仓库地址</label><div class="hint">完整 SVN 路径</div><input id="svn_url" placeholder="https://192.168.8.162/svn/proj/branches/v3" onblur="vURL(this,'fg-svn-url')"><div class="err-msg">需以 https:// 或 svn:// 开头</div></div>
+    <div class="row"><div class="fg"><label>用户名</label><input id="svn_user"></div><div class="fg"><label>密码</label><input type="password" id="svn_pass"></div></div>
+    <div class="fg"><label>FishEye 地址</label><div class="hint">SVN 浏览器地址</div><input id="fs_url" placeholder="http://192.168.8.34:8060"></div>
+    <button class="test-btn" id="btn-test-svn" onclick="testSvn()">🔍 测试 SVN 连接</button>
+    <div class="test-result" id="res-test-svn"></div>
+  </div>
+
+  <!-- Notion -->
+  <div class="section">
+    <h2>📝 Notion</h2>
+    <div class="fg" id="fg-nk"><label>API Key</label><div class="hint">以 ntn_ 或 secret_ 开头</div><input type="password" id="notion_key" placeholder="ntn_..." onblur="vPrefix(this,'fg-nk','ntn_','secret_')"><div class="err-msg">格式错误</div></div>
+    <div class="fg" id="fg-ndb"><label>数据库 ID <span style="font-weight:400;color:#6b778c">（可选，留空自动检测）</span></label><div class="hint">一般无需手动填写。保存 Notion Key 后点击右侧「🔍 自动检测」，插件会自动扫描你分享过的数据库并填充此字段。</div><input id="notion_db" placeholder="留空则自动检测"><div class="err-msg">格式应为 wiki- + 32位hex 或 xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</div></div>
+    <div style="display:flex;gap:8px">
+      <button class="test-btn" id="btn-test-notion" onclick="testNotion()">🔍 测试 Notion 连接</button>
+      <div class="test-result" id="res-test-notion"></div>
+      <button class="test-btn" id="btn-auto-notion" onclick="autoDetectNotionDB()">🔍 自动检测数据库</button>
+      <div class="test-result" id="res-auto-notion"></div>
+    </div>
+  </div>
+
+  <!-- Google Drive -->
+  <div class="section">
+    <h2>📁 Google Drive</h2>
+    <div class="fg" id="fg-gk"><label>API Key</label><div class="hint">以 AIza 开头</div><input type="password" id="gdrive_key" placeholder="AIza..." onblur="vPrefix(this,'fg-gk','AIza')"><div class="err-msg">格式错误</div></div>
+    <div class="fg"><label>共享文件夹</label><div class="hint">粘贴 Google Drive 文件夹的完整链接，插件自动提取 ID。<br>如：<code class="badge">https://drive.google.com/drive/folders/1b7JJwD...</code></div>
+      <div id="gdrive-folder-list">
+        <div style="display:flex;gap:6px;margin-bottom:6px"><input class="gf-url" placeholder="https://drive.google.com/drive/folders/..." style="flex:1"><button class="test-btn" onclick="delGFolder(this)" style="margin-top:0;border-color:#ff5630;color:#ff5630" title="删除">✕</button></div>
+      </div>
+      <button class="test-btn" onclick="addGFolder()" style="margin-top:4px">➕ 添加文件夹</button></div>
+    <div class="fg" style="display:none"><textarea id="gdrive_folders"></textarea></div>
+    <div class="fg"><label>🔄 Google 代理</label><div class="hint">国内需通过 Clash Verge 访问 Google。填你电脑的局域网 IP。<br>测试（本机调试）：填本机 IP；插件部署后：填运行 Clash 那台电脑的 LAN IP。</div>
+      <div class="row">
+        <div class="fg"><label>代理 IP</label><input id="proxy_ip" placeholder="192.168.x.x"><div class="hint" style="font-size:10px" id="proxy-hint">获取中...</div></div>
+        <div class="fg"><label>端口</label><input id="proxy_port" value="7897" placeholder="7897"><div class="hint" style="font-size:10px">Clash Verge 默认 7897</div></div>
+      </div></div>
+    <button class="test-btn" id="btn-test-gdrive" onclick="testGDrive()">🔍 测试 Google Drive</button>
+    <div class="test-result" id="res-test-gdrive"></div>
+  </div>
+
+  <!-- AI -->
+  <div class="section">
+    <h2>🧠 AI 模型</h2>
+    <p class="desc" style="font-size:11px">默认使用 DeepSeek。填写 API Key 后自动拉取可用模型列表。</p>
+    <div class="fg"><label>API 地址</label><div class="hint">DeepSeek 兼容 OpenAI 协议</div><input id="ai_url" value="https://api.deepseek.com/v1/chat/completions" placeholder="https://api.deepseek.com/v1/chat/completions"></div>
+    <div class="fg" id="fg-ak"><label>API Key</label><div class="hint">在 <a href="https://platform.deepseek.com" target="_blank">platform.deepseek.com</a> → API Keys 创建。以 sk- 开头。</div><input type="password" id="ai_key" placeholder="sk-..." onblur="fetchModels()" onchange="fetchModels()"><div class="err-msg">以 sk- 开头</div></div>
+    <div class="fg"><label>模型 <span id="model-count" style="font-weight:400;font-size:11px;color:#6b778c"></span></label><div class="hint" id="model-hint">填写 API Key 后自动拉取</div><div style="display:flex;gap:6px"><select id="ai_model" style="flex:1"><option value="">先填 API Key</option></select><button onclick="fetchModels()" title="手动刷新模型列表" style="padding:4px 10px;font-size:11px;border:1px solid #dfe1e6;border-radius:5px;background:#fff;cursor:pointer">🔄</button></div></div>
+    <div class="row"><div class="fg"><label>Max Tokens</label><input type="number" id="ai_max_tokens" value="2000" min="100"></div><div class="fg"><label>Temperature</label><input type="number" id="ai_temp" value="0.7" min="0" max="2" step="0.1"></div></div>
+    <button class="test-btn" id="btn-test-ai" onclick="testAI()">🔍 测试 AI 连接</button>
+    <div class="test-result" id="res-test-ai"></div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-s" onclick="loadDefaults()">加载默认值</button>
+    <button class="btn-p" onclick="saveConfig()">💾 保存配置</button>
+  </div>
+  <p style="font-size:10px;color:#6b778c;margin-top:10px">配置存储在浏览器 localStorage 中，不会发送到任何服务器。</p>
+
+  </div><!-- /tab-config -->
+
+  <!-- ═══ 角色配置 ═══ -->
+  <div id="tab-roles" style="display:none">
+    <p style="font-size:12px;color:#6b778c;margin-bottom:14px">创建不同 AI 角色，每个角色有自己的提示词和知识库。聊天时可切换。</p>
+    <div id="roles-list"><p style="color:#6b778c;font-size:12px;padding:20px 0">暂无自定义角色。点击下方按钮创建。</p></div>
+    <button class="test-btn" onclick="addRole()" style="margin-top:6px">➕ 新建角色</button>
+  </div>
+
+  <div id="tab-quick" style="display:none">
+    <p style="font-size:12px;color:#6b778c;margin-bottom:14px">自定义 Analytics Tabs。点击按钮时 AI 按预设指令执行，提示词不显示在对话中。</p>
+    <div id="quick-config-list"><p style="color:#6b778c;font-size:12px;padding:20px 0">暂无快捷按钮，点击下方添加。</p></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="test-btn" onclick="addQuickItem()">➕ 新建快捷按钮</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══ 右侧聊天 ═══ -->
+<div class="main">
+  <div class="chat-header">🤖 WorkBuddy AI
+    <div style="display:flex;align-items:center;gap:6px;position:relative">
+      <button class="theme-toggle" id="font-size-toggle" onclick="toggleFontMenu()" title="字体大小">A<span style="font-size:9px">A</span></button>
+      <div class="font-popup" id="font-popup" style="display:none">
+        <button onclick="setFontSize(14)">标准</button>
+        <button onclick="setFontSize(16)" class="active">适中</button>
+        <button onclick="setFontSize(18)">较大</button>
+        <button onclick="setFontSize(21)">超大</button>
+      </div>
+      <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="切换深色模式">🌙</button>
+      <button id="wb-clear-history" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;font-size:12px;cursor:pointer;padding:4px 12px;border-radius:4px" title="清空所有对话记录">🗑 清空对话</button>
+    </div>
+  </div>
+  <div class="chat-issue" id="chat-issue">📋 模拟 Issue：<b><input id="issue-key-input" value="CT-11074" size="9" style="border:0.5px solid #c4d4e8;border-radius:4px;padding:2px 6px;font-size:12px;font-weight:600;color:#172b4d;background:#fff;text-align:center"></b> <button id="apply-issue" onclick="applyIssueKey()" style="border:0.5px solid #c4d4e8;border-radius:4px;padding:2px 10px;font-size:11px;background:#fff;color:#42526e;cursor:pointer">应用</button><label style="margin-left:10px;font-size:11px;color:var(--c-issue-text);cursor:pointer;user-select:none"><input type="checkbox" id="task-mode-toggle" checked onchange="toggleTaskMode()" style="vertical-align:middle;margin-right:3px">🔗 任务模式</label></div>
+  <div class="chat-body" id="chat-body">
+    <div class="hint-box">👋 在下方输入问题，AI 将自动收集 Jira/SVN/Notion/Google Drive 上下文进行分析</div>
+  </div>
+  <div class="chat-input-card">
+    <div class="chat-input-toolbar" id="chat-input-toolbar">
+      <div class="role-dropdown" id="role-dropdown" style="margin-left:auto">
+        <button class="role-btn role-btn-sm" id="role-btn" onclick="toggleRoleMenu()" title="切换角色">默认角色 ▾</button>
+        <div class="role-menu" id="role-menu" style="display:none"></div>
+        <input type="hidden" id="chat-role" value="-1">
+      </div>
+    </div>
+    <div class="chat-input-row">
+      <textarea id="chat-input" placeholder="问代码、需求、进度、风险..." rows="1" onkeydown="handleInputKey(event)" oninput="autoGrow(this)" onblur="shrinkIfEmpty(this)"></textarea>
+      <div class="chat-input-right">
+        <button class="send-icon-btn" onclick="sendChat()" title="发送 (Enter)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══ 当前模拟 Issue ═══
+var _currentIssue = 'CT-11074';
+function applyIssueKey() {
+  var val = document.getElementById('issue-key-input').value.trim().toUpperCase();
+  if (!val) return;
+  _currentIssue = val;
+  showMsgToast('✅ 已切换到 ' + val);
+}
+
+var _isTaskMode = true;
+function toggleTaskMode() {
+  _isTaskMode = document.getElementById('task-mode-toggle').checked;
+  var input = document.getElementById('issue-key-input');
+  var apply = document.getElementById('apply-issue');
+  var card = document.querySelector('.chat-input-card');
+  if (_isTaskMode) {
+    input.style.display = ''; apply.style.display = '';
+    card.style.background = ''; card.style.borderTopColor = '';
+  } else {
+    input.style.display = 'none'; apply.style.display = 'none';
+    card.style.background = '#F1F5F9'; card.style.borderTopColor = '#CBD5E1';
+  }
+}
+
+// ═══ 配置持久化 ═══
+function saveConfig() {
+  var cfg = {};
+  ['svn_url','svn_user','svn_pass','fs_url','notion_key','notion_db','gdrive_key',
+   'ai_model','ai_key','ai_max_tokens','ai_temp','proxy_ip','proxy_port'].forEach(function(k){
+    cfg[k] = document.getElementById(k).value;
+  });
+  cfg.gdrive_folders = getGFolderIDs();
+  localStorage.setItem('wb_test_config', JSON.stringify(cfg));
+  showMsgToast('✅ 配置已保存');
+}
+
+function loadConfig() {
+  var raw = localStorage.getItem('wb_test_config');
+  if (!raw) return;
+  var cfg = JSON.parse(raw);
+  Object.keys(cfg).forEach(function(k){
+    if (k === 'gdrive_folders') { setGFolderURLs(cfg[k]); return; }
+    var el = document.getElementById(k);
+    if (el) el.value = cfg[k] || '';
+  });
+}
+
+function loadDefaults() {
+  document.getElementById('jira_url').value = 'http://your-jira-server:8080';
+  document.getElementById('jira_pat').value = '';
+  document.getElementById('svn_url').value = '';
+  document.getElementById('svn_user').value = '';
+  document.getElementById('svn_pass').value = '';
+  document.getElementById('fs_url').value = '';
+  document.getElementById('notion_key').value = '';
+  document.getElementById('notion_db').value = '';
+  document.getElementById('gdrive_key').value = '';
+  document.getElementById('gdrive_folders').value = '';
+  document.getElementById('ai_key').value = '';
+  document.getElementById('ai_url').value = 'https://api.deepseek.com/v1/chat/completions';
+  document.getElementById('ai_model').value = 'deepseek-chat';
+  document.getElementById('ai_max_tokens').value = '2000';
+  document.getElementById('ai_temp').value = '0.7';
+  showMsg('ok','✅ 已加载默认配置');
+}
+
+// ═══ Jira 项目选择 ═══
+var JIRA_PROJ_KEY = 'wb_jira_projects';
+
+function getJiraProjects() {
+  try { return JSON.parse(localStorage.getItem(JIRA_PROJ_KEY)) || {}; } catch(e) { return {}; }
+}
+
+function fetchJiraProjects() {
+  var url = document.getElementById('jira_url')?.value || 'http://ctjira1.lmdgame.com:8080';
+  var pat = document.getElementById('jira_pat')?.value;
+  if (!pat) { showMsgToast('请先填写 Jira PAT'); return; }
+  var list = document.getElementById('jira-projects-list');
+  list.innerHTML = '<span style="color:#6b778c;font-size:12px">⏳ 拉取中...</span>';
+  fetch('/proxy/jira/projects', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ url: url, pat: pat })
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    if (!d.ok) { list.innerHTML = '<span style="color:#ff5630">'+ (d.error||'拉取失败') +'</span>'; return; }
+    var projects = d.projects;
+    if (!Array.isArray(projects)) { list.innerHTML = '<span style="color:#ff5630">拉取失败</span>'; return; }
+    var selected = getJiraProjects();
+    var html = '';
+    projects.forEach(function(p){
+      var checked = selected[p.key] ? 'checked' : '';
+      html += '<label style="display:inline-block;margin:3px 12px 3px 0;font-size:12px;cursor:pointer">'
+        + '<input type="checkbox" value="'+p.key+'" '+checked+' onchange="toggleJiraProject(this)"> '
+        + p.key + ' ('+ (p.name||'').substring(0,20) +')</label>';
+    });
+    list.innerHTML = html;
+    showMsgToast('✅ 已拉取 '+projects.length+' 个项目');
+  })
+  .catch(function(){ list.innerHTML = '<span style="color:#ff5630">网络错误</span>'; });
+}
+
+function toggleJiraProject(cb) {
+  var selected = getJiraProjects();
+  if (cb.checked) { selected[cb.value] = true; }
+  else { delete selected[cb.value]; }
+  localStorage.setItem(JIRA_PROJ_KEY, JSON.stringify(selected));
+  updateJiraProjectsCfg();
+}
+
+function updateJiraProjectsCfg() {
+  var selected = getJiraProjects();
+  var list = Object.keys(selected).filter(function(k){ return selected[k]; });
+  document.getElementById('jira_projects_cfg').value = list.join(',');
+}
+
+function loadJiraProjects() {
+  var url = document.getElementById('jira_url')?.value;
+  var pat = document.getElementById('jira_pat')?.value;
+  if (url && pat) { setTimeout(fetchJiraProjects, 1000); }
+}
+
+function showMsg(type, text) {
+  document.getElementById('msg-area').innerHTML = '<div class="msg '+type+'">'+text+'</div>';
+}
+
+function showMsgToast(text) {
+  // 清理所有旧 toast
+  document.querySelectorAll('.save-toast').forEach(function(e){ e.remove(); });
+  var parent = document.getElementById('tab-config');
+  if (document.getElementById('tab-roles').style.display !== 'none') parent = document.getElementById('tab-roles');
+  if (document.getElementById('tab-quick').style.display !== 'none') parent = document.getElementById('tab-quick');
+  if (!parent) return;
+  var toast = document.createElement('div');
+  toast.className = 'save-toast';
+  toast.style.cssText = 'display:block;width:100%;color:#006644;font-size:14px;font-weight:700;text-align:right;padding:4px 0;animation:fadeIn .3s';
+  toast.textContent = text;
+  toast.style.cssText = 'display:block;width:100%;color:#006644;font-size:14px;font-weight:700;text-align:right;padding:0 0 4px 0;margin-top:4px;animation:fadeIn .3s';
+  var anchor = parent.querySelector('.actions');
+  if (anchor) { anchor.after(toast); }
+  else { parent.appendChild(toast); }
+  setTimeout(function(){ toast.remove(); }, 2500);
+}
+
+function switchTopTab(name, el) {
+  document.querySelectorAll('.top-tab').forEach(function(t){ t.classList.remove('active'); });
+  el.classList.add('active');
+  document.getElementById('tab-config').style.display = name==='config' ? 'block' : 'none';
+  document.getElementById('tab-roles').style.display = name==='roles' ? 'block' : 'none';
+  document.getElementById('tab-quick').style.display = name==='quick' ? 'block' : 'none';
+}
+
+// ═══ 校验 ═══
+function setFg(id, ok) {
+  var el = document.getElementById(id);
+  if (ok) el.classList.remove('error'); else el.classList.add('error');
+}
+
+function vURL(input, fg) { setFg(fg, input.value.trim().length===0 || /^(https?|svn):\/\/.+/.test(input.value.trim())); }
+function vPrefix(input, fg) {
+  var prefixes = Array.prototype.slice.call(arguments, 2);
+  setFg(fg, input.value.trim().length===0 || prefixes.some(function(p){return input.value.trim().startsWith(p)}));
+}
+function vUUID(input, fg) { setFg(fg, input.value.trim().length===0 || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.value.trim())); }
+
+function vNotionDB(input, fg) {
+  var v = input.value.trim();
+  // 支持完整 URL→自动提取，或纯 ID（带/不带连字符，可含 wiki- 前缀）
+  if (!v) { setFg(fg, true); return; }
+  var m = v.match(/([0-9a-f]{32})/i) || v.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+  setFg(fg, !!m);
+}
+
+function fetchModels() {
+  var key = document.getElementById('ai_key').value.trim();
+  if (!key.startsWith('sk-')) return;
+  var sel = document.getElementById('ai_model');
+  sel.innerHTML = '<option value="">⏳ 获取中...</option>';
+  sel.disabled = true;
+  document.getElementById('model-hint').textContent = '正在从 DeepSeek 拉取模型列表...';
+
+  fetch('/proxy/ai/models', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({url:'https://api.deepseek.com/v1/chat/completions', key:key})
+  })
+  .then(function(r){return r.json()})
+  .then(function(d){
+    sel.innerHTML = '';
+    sel.disabled = false;
+    if (!d.ok || !d.models || d.models.length===0) {
+      sel.innerHTML = '<option value="deepseek-chat">deepseek-chat（默认）</option>';
+      document.getElementById('model-hint').textContent = d.error||'无法获取，使用默认';
+      return;
+    }
+    document.getElementById('model-count').textContent = '('+d.models.length+'个)';
+    document.getElementById('model-hint').textContent = '已拉取 '+d.models.length+' 个可用模型';
+    d.models.forEach(function(m){
+      var opt = document.createElement('option'); opt.value = m; opt.textContent = m;
+      if (m === 'deepseek-chat') opt.selected = true;
+      sel.appendChild(opt);
+    });
+  })
+  .catch(function(){
+    sel.innerHTML = '<option value="deepseek-chat">deepseek-chat（默认）</option>';
+    sel.disabled = false;
+    document.getElementById('model-hint').textContent = '网络错误，使用默认';
+  });
+}
+
+// ═══ 角色管理 ═══
+var ROLES_KEY = 'wb_roles';
+function getRoles() {
+  try { return JSON.parse(localStorage.getItem(ROLES_KEY)) || []; } catch(e) { return []; }
+}
+function saveAllRoles() {
+  // 仅处理展开状态的卡片（编辑中），折叠卡片保持已有数据
+  var roles = getRoles();
+  document.querySelectorAll('.role-card.expanded').forEach(function(card){
+    var r = {
+      name: card.querySelector('.r-name')?.value || '',
+      desc: card.querySelector('.r-desc')?.value || '',
+      prompt: card.querySelector('.r-prompt')?.value || '',
+      kb: {
+        jira: card.querySelector('.r-kb-jira')?.checked || false,
+        svn: card.querySelector('.r-kb-svn')?.checked || false,
+        notion: card.querySelector('.r-kb-notion')?.checked || false,
+        gdrive: card.querySelector('.r-kb-gdrive')?.checked || false
+      }
+  };
+    if (!r.name) return;
+    // 判断是新角色还是编辑已有角色
+    var idx = parseInt(card.id.replace('role-',''));
+    if (idx >= 1000000000000) {
+      // 临时 ID（Date.now()），新角色，追加
+      roles.push(r);
+    } else if (idx < roles.length) {
+      // 已有角色索引，更新
+      roles[idx] = r;
+    }
+  });
+  localStorage.setItem(ROLES_KEY, JSON.stringify(roles));
+  renderRoles();
+  renderRoleSelector();
+  showMsgToast('✅ 角色已保存 ('+roles.length+'个)');
+}
+
+function addRole() {
+  var list = document.getElementById('roles-list');
+  var idx = Date.now();
+  var div = document.createElement('div');
+  div.className = 'role-card expanded';
+  div.id = 'role-'+idx;
+  div.innerHTML = getRoleForm({name:'', desc:'', prompt:'你是 Jira AI 助手。', kb:{jira:true,svn:false,notion:false,gdrive:false}});
+  list.appendChild(div);
+  list.querySelector('p')?.remove();
+}
+
+function getRoleForm(r) {
+  return '<div style="display:flex;justify-content:space-between;margin-bottom:8px">'+
+    '<input class="r-name" value="'+escHtml(r.name||'')+'" placeholder="角色名称" style="font-weight:600;border:1px solid #dfe1e6;border-radius:4px;padding:4px 8px;font-size:13px;flex:1">'+
+    '<button class="del-card" onclick="this.closest(\'.role-card\').remove();saveAllRoles()" style="background:none;border:none;color:#ff5630;cursor:pointer;font-size:16px;margin-left:6px">✕</button></div>'+
+    '<input class="r-desc" value="'+escHtml(r.desc||'')+'" placeholder="角色描述" style="width:100%;margin-bottom:6px;border:1px solid #dfe1e6;border-radius:4px;padding:5px;font-size:12px">'+
+    '<label style="font-size:11px;font-weight:600">系统提示词</label>'+
+    '<textarea class="r-prompt" style="width:100%;min-height:80px;margin-bottom:6px;border:1px solid #dfe1e6;border-radius:4px;padding:6px;font-size:11px;font-family:inherit">'+escHtml(r.prompt||'')+'</textarea>'+
+    '<label style="font-size:11px;font-weight:600">知识库</label>'+
+    '<div class="kb-toggles">'+
+    '<label><input type="checkbox" class="r-kb-jira" '+(r.kb?.jira?'checked':'')+'> Jira</label>'+
+    '<label><input type="checkbox" class="r-kb-svn" '+(r.kb?.svn?'checked':'')+'> SVN</label>'+
+    '<label><input type="checkbox" class="r-kb-notion" '+(r.kb?.notion?'checked':'')+'> Notion</label>'+
+    '<label><input type="checkbox" class="r-kb-gdrive" '+(r.kb?.gdrive?'checked':'')+'> GDrive</label>'+
+    '<span style="flex:1"></span>'+
+    '<button onclick="saveAllRoles()" class="btn-p" style="margin:0;padding:6px 16px;font-size:12px">💾 保存</button></div>';
+}
+
+function getRoleCard(r) {
+  var kb = r.kb || {};
+  var kbs = [];
+  if (kb.jira) kbs.push('Jira'); if (kb.svn) kbs.push('SVN');
+  if (kb.notion) kbs.push('Notion'); if (kb.gdrive) kbs.push('GDrive');
+  return     '<div style="display:flex;align-items:center;justify-content:space-between">'+
+    '<div><strong>🎭 '+escHtml(r.name||'未命名')+'</strong>'+
+    (r.desc ? ' <span style="color:#6b778c;font-size:11px">— '+escHtml(r.desc)+'</span>' : '')+
+    '<br><span class="role-summary" style="font-size:10px;color:#8993a4;line-height:1.5;white-space:pre-wrap;word-break:break-word"></span></div>'+
+    '<div style="display:flex;gap:2px;flex-shrink:0">'+
+    '<button onclick="editRoleCard(this)" style="background:none;border:none;font-size:16px;cursor:pointer;padding:4px 6px" title="编辑">✏️</button>'+
+    '<button onclick="deleteRoleCard(this)" style="background:none;border:none;font-size:16px;cursor:pointer;padding:4px 6px;color:#ff5630" title="删除">🗑</button></div></div>';
+}
+
+function editRoleCard(btn) {
+  var card = btn.closest('.role-card');
+  var roles = getRoles();
+  var idx = Array.from(card.parentElement.children).indexOf(card);
+  var r = roles[idx] || {name:'', desc:'', prompt:'', kb:{}};
+  card.classList.add('expanded');
+  card.innerHTML = getRoleForm(r);
+  card.querySelector('.r-name')?.focus();
+}
+
+function deleteRoleCard(btn) {
+  var card = btn.closest('.role-card');
+  var idx = Array.from(card.parentElement.children).indexOf(card);
+  var roles = getRoles();
+  var name = (roles[idx]||{}).name || '未命名';
+  if (!confirm('删除角色 "'+name+'"？')) return;
+  roles.splice(idx, 1);
+  localStorage.setItem(ROLES_KEY, JSON.stringify(roles));
+  renderRoles();
+  renderRoleSelector();
+  showMsgToast('✅ 角色已删除 (3秒后消失)');
+}
+
+function renderRoles() {
+  var list = document.getElementById('roles-list');
+  var roles = getRoles();
+  if (roles.length === 0) {
+    list.innerHTML = '<p style="color:#6b778c;font-size:12px;padding:20px 0">暂无自定义角色。点击下方按钮创建。</p>';
+    return;
+  }
+  list.innerHTML = '';
+  roles.forEach(function(r, i){
+    var div = document.createElement('div');
+    div.className = 'role-card';
+    div.id = 'role-'+i;
+    div.innerHTML = getRoleCard(r);
+    list.appendChild(div);
+    // 用 textContent 填充摘要文本，避免转义问题
+    var kb = r.kb || {};
+    var kbs = [];
+    if (kb.jira) kbs.push('Jira'); if (kb.svn) kbs.push('SVN');
+    if (kb.notion) kbs.push('Notion'); if (kb.gdrive) kbs.push('GDrive');
+    var summary = div.querySelector('.role-summary');
+    if (summary) summary.textContent = '知识库: '+(kbs.length?kbs.join(', '):'无')+' | 提示词: '+((r.prompt||'').substring(0,200))+(r.prompt&&r.prompt.length>200?'…':'');
+  });
+}
+
+function renderRoleSelector() {
+  var menu = document.getElementById('role-menu');
+  var btn = document.getElementById('role-btn');
+  if (!menu) return;
+  var roles = getRoles();
+  var html = '<button class="role-item" onclick="selectRole(-1, this)">🤖 默认助手</button>';
+  if (roles.length > 0) {
+    html += '<div class="role-divider"></div>';
+    roles.forEach(function(r, i){
+      html += '<button class="role-item" onclick="selectRole('+i+', this)">🎭 '+escHtml(r.name||'未命名')+'</button>';
+    });
+  }
+  menu.innerHTML = html;
+}
+
+function toggleRoleMenu() {
+  var menu = document.getElementById('role-menu');
+  var isOpen = menu.style.display !== 'none';
+  menu.style.display = isOpen ? 'none' : 'block';
+}
+
+function selectRole(idx, el) {
+  document.getElementById('chat-role').value = idx;
+  var btn = document.getElementById('role-btn');
+  btn.textContent = (idx === -1 ? '默认角色 ▾' : escHtml(el.textContent.replace('🎭 ','').replace(' ✓','')) + ' ▾');
+  var menu = document.getElementById('role-menu');
+  menu.style.display = 'none';
+  switchRole(idx);
+}
+
+function switchRole(idx) {
+  var role = getActiveRole();
+  if (role) showMsgToast('✅ 已切换到: ' + (idx === -1 ? '默认助手' : role.name));
+}
+
+// 点击外部关闭菜单
+document.addEventListener('click', function(e) {
+  var dd = document.getElementById('role-dropdown');
+  if (dd && !dd.contains(e.target)) {
+    document.getElementById('role-menu').style.display = 'none';
+  }
+});
+
+function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escAttr(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fallbackCopy(text, btn) {
+  var ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); btn.textContent='✓'; setTimeout(function(){btn.textContent='📋'},1500); }
+  catch(e) {}
+  document.body.removeChild(ta);
+}
+
+function getActiveRole() {
+  var idx = document.getElementById('chat-role')?.value;
+  if (idx === '-1' || !idx) return {name:'默认助手', prompt:'你是 Jira AI 助手。回答要求：1.使用 ## 二级标题作为大段落分隔，### 三级标题作为子项，#### 用于细节；2.用表格对比差异；3.用列表枚举要点；4.用代码块展示技术细节。', kb:{jira:true,svn:true,notion:true,gdrive:true}, skill:''};
+  var roles = getRoles();
+  return roles[parseInt(idx)] || null;
+}
+
+renderRoles();
+renderRoleSelector();
+
+// ═══ GDrive 文件夹管理 ═══
+function addGFolder() {
+  var div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:6px;margin-bottom:6px';
+  div.innerHTML = '<input class="gf-url" placeholder="https://drive.google.com/drive/folders/..." style="flex:1"><button class="test-btn" onclick="delGFolder(this)" style="margin-top:0;border-color:#ff5630;color:#ff5630">✕</button>';
+  document.getElementById('gdrive-folder-list').appendChild(div);
+}
+function delGFolder(btn) {
+  var list = document.getElementById('gdrive-folder-list');
+  if (list.children.length <= 1) return;
+  btn.parentElement.remove();
+}
+function getGFolderIDs() {
+  var ids = [];
+  document.querySelectorAll('.gf-url').forEach(function(el){
+    var v = el.value.trim();
+    if (!v) return;
+    var m = v.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+    if (m) ids.push(m[1]); else ids.push(v);
+  });
+  return ids.join('\n');
+}
+function setGFolderURLs(raw) {
+  var urls = (raw||'').split('\n').filter(Boolean);
+  var list = document.getElementById('gdrive-folder-list');
+  list.innerHTML = '';
+  if (urls.length === 0) urls = [''];
+  urls.forEach(function(u){
+    var div = document.createElement('div');
+    div.style.cssText = 'display:flex;gap:6px;margin-bottom:6px';
+    div.innerHTML = '<input class="gf-url" value="'+u.replace(/"/g,'&quot;')+'" placeholder="https://drive.google.com/drive/folders/..." style="flex:1"><button class="test-btn" onclick="delGFolder(this)" style="margin-top:0;border-color:#ff5630;color:#ff5630">✕</button>';
+    list.appendChild(div);
+  });
+}
+
+// ═══ API 测试 ═══
+function btnState(btn, loading) {
+  btn.disabled = loading;
+  btn.textContent = loading ? '⏳ 测试中...' : btn.getAttribute('data-label') || btn.textContent;
+}
+
+function showResult(btnId, ok, msg) {
+  var el = document.getElementById(btnId.replace('btn-','res-'));
+  if (!el) return;
+  el.className = 'test-result ' + (ok ? 'ok' : 'fail');
+  el.textContent = (ok ? '✅ ' : '❌ ') + msg;
+}
+
+function clearResult(btnId) {
+  var el = document.getElementById(btnId.replace('btn-','res-'));
+  if (el) { el.className = 'test-result'; el.textContent = ''; }
+}
+
+async function testJira() {
+  var btn = document.getElementById('btn-test-jira');
+  btn.setAttribute('data-label', btn.textContent);
+  btn.textContent = '⏳ 测试中...';
+  btn.disabled = true;
+  var url = document.getElementById('jira_url').value.trim();
+  var pat = document.getElementById('jira_pat').value.trim();
+  if (!url || !pat) {
+    showMsg('err', '请填写 Jira 服务器地址和 PAT', 'res-test-jira');
+    btn.textContent = btn.getAttribute('data-label');
+    btn.disabled = false;
+    return;
+  }
+  try {
+    var r = await fetch('/proxy/jira/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url, pat: pat })
+    });
+    var d = await r.json();
+    if (d.ok) {
+      showMsg('ok', '✅ 连接成功 — ' + d.name + ' (' + d.email + ')', 'res-test-jira');
+    } else {
+      showMsg('err', '❌ ' + (d.error || '认证失败'), 'res-test-jira');
+    }
+  } catch (e) {
+    showMsg('err', '❌ 网络错误，无法连接', 'res-test-jira');
+  }
+  btn.textContent = btn.getAttribute('data-label');
+  btn.disabled = false;
+}
+
+async function testSvn() {
+  var btn = document.getElementById('btn-test-svn');
+  btn.setAttribute('data-label', btn.textContent);
+  clearResult('btn-test-svn'); btnState(btn, true);
+  try {
+    var r = await fetch('/v1/chat/completions', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'t',messages:[{role:'system',content:'Key:'+_currentIssue},{role:'user',content:'test'}]})
+    });
+    showResult('btn-test-svn', r.ok, '连接成功');
+  } catch(e) { showResult('btn-test-svn', false, e.message); }
+  btnState(btn, false);
+}
+
+async function testNotion() {
+  var btn = document.getElementById('btn-test-notion');
+  btn.setAttribute('data-label', btn.textContent);
+  clearResult('btn-test-notion'); btnState(btn, true);
+  try {
+    var k = document.getElementById('notion_key').value;
+    var r = await fetch('/proxy/notion/search', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key:k})
+    });
+    showResult('btn-test-notion', r.ok, r.ok ? '连接成功' : 'HTTP '+r.status);
+  } catch(e) { showResult('btn-test-notion', false, e.message); }
+  btnState(btn, false);
+}
+
+async function autoDetectNotionDB() {
+  var btn = document.getElementById('btn-auto-notion');
+  btn.setAttribute('data-label', btn.textContent);
+  clearResult('btn-auto-notion'); btnState(btn, true);
+  try {
+    var k = document.getElementById('notion_key').value;
+    if (!k) { showResult('btn-auto-notion', false, '先填 Key'); btnState(btn, false); return; }
+    var r = await fetch('/proxy/notion/search', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key:k})
+    });
+    var data = await r.json();
+    var dbs = data.databases||[];
+    if (dbs.length===0) {
+      showResult('btn-auto-notion', false, '未找到数据库');
+    } else {
+      document.getElementById('notion_db').value = dbs[0].id;
+      showResult('btn-auto-notion', true, dbs[0].title||dbs[0].id.substring(0,20)+'…（'+dbs.length+'个库）');
+    }
+  } catch(e) { showResult('btn-auto-notion', false, e.message); }
+  btnState(btn, false);
+}
+
+async function testGDrive() {
+  var btn = document.getElementById('btn-test-gdrive');
+  btn.setAttribute('data-label', btn.textContent);
+  clearResult('btn-test-gdrive'); btnState(btn, true);
+  try {
+    var k = document.getElementById('gdrive_key').value;
+    var p_ip = document.getElementById('proxy_ip').value;
+    var p_port = document.getElementById('proxy_port').value;
+    var p = (p_ip && p_port) ? ('http://'+p_ip+':'+p_port) : '';
+    var ids = getGFolderIDs().split('\n');
+    var f = ids[0] || '1b7JJwDTGRV6EmVUieBOjnFcTXFtbCHiI';
+    var r = await fetch('/proxy/gdrive/list', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({key:k, folder_id:f, proxy:p})
+    });
+    showResult('btn-test-gdrive', r.ok, r.ok ? '连接成功' : 'HTTP '+r.status);
+  } catch(e) { showResult('btn-test-gdrive', false, e.message); }
+  btnState(btn, false);
+}
+
+async function testAI() {
+  var btn = document.getElementById('btn-test-ai');
+  btn.setAttribute('data-label', btn.textContent);
+  clearResult('btn-test-ai'); btnState(btn, true);
+  try {
+    var key = document.getElementById('ai_key').value;
+    var model = document.getElementById('ai_model').value || 'deepseek-chat';
+    var r = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method:'POST', headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},
+      body:JSON.stringify({model:model,messages:[{role:'user',content:'Hello'}],max_tokens:10})
+    });
+    showResult('btn-test-ai', r.ok, r.ok ? '连接成功' : 'HTTP '+r.status);
+  } catch(e) { showResult('btn-test-ai', false, e.message); }
+  btnState(btn, false);
+}
+
+// ═══ 聊天 ═══
+var _abort = null;
+var _lastQuestion = '';
+var _conversationHistory = [];  // 追问上下文: [{q, a}] 最近 2 轮
+
+function quickAsk(text) {
+  if (_abort) return;
+  document.getElementById('chat-input').value = text;
+  autoGrow(document.getElementById('chat-input'));
+  sendChat();
+}
+
+function autoGrow(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+}
+
+function shrinkIfEmpty(el) {
+  if (!el.value.trim()) {
+    el.style.height = '';
+    el.style.minHeight = '';
+  }
+}
+
+function handleInputKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChat();
+  }
+}
+
+function sendChatWithSystem(text, extraSystem) {
+  if (_abort) return;
+  _lastQuestion = text;
+  addChat('user', text);
+  addTyping();
+
+  var role = getActiveRole();
+  var kb = role.kb || {jira:true,svn:true,notion:true,gdrive:true};
+  var sysMsg = role.prompt + '\n---\n';
+  if (role.skill) sysMsg += '附加能力: ' + role.skill + '\n';
+  // 注入快捷发言的系统提示词
+  if (extraSystem) sysMsg += '执行指令: ' + extraSystem + '\n';
+  var kbs = [];
+  if (kb.jira) kbs.push('Jira'); if (kb.svn) kbs.push('SVN');
+  if (kb.notion) kbs.push('Notion'); if (kb.gdrive) kbs.push('GDrive');
+  sysMsg += '可用知识库: ' + kbs.join(',') + '\n';
+  if (_isTaskMode && _currentIssue) {
+    sysMsg += 'Issue:\nKey: '+_currentIssue+'\n---\n';
+  }
+  sysMsg += '简洁回答，用Markdown格式。';
+
+  _abort = new AbortController();
+  var cfg = {
+    notion_key: document.getElementById('notion_key').value.trim(),
+    notion_db: document.getElementById('notion_db').value.trim(),
+    gdrive_key: document.getElementById('gdrive_key').value.trim(),
+    gdrive_folders: document.getElementById('gdrive_folders').value.trim(),
+    jira_projects: document.getElementById('jira_projects_cfg').value.trim(),
+  };
+  fetch('http://localhost:9099/v1/chat/completions', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    signal: _abort.signal,
+    body:JSON.stringify({model:'t', messages:[
+      {role:'system', content: sysMsg},
+      {role:'user', content:text}
+    ], config: cfg})
+  })
+  .then(r=>r.json())
+  .then(d=>{
+    removeTyping();
+    _abort = null;
+    var reply = d.choices?.[0]?.message?.content || 'No response';
+    _conversationHistory.push({q: _lastQuestion, a: reply});
+    if (_conversationHistory.length > 2) _conversationHistory.shift();
+    addChat('ai', md(reply), reply);
+  })
+  .catch(function(e){
+    removeTyping();
+    _abort = null;
+    if (e.name === 'AbortError') { addChat('ai','⏹ 已终止'); }
+    else { addChat('ai','⚠️ Bridge 未连接。'); }
+  });
+}
+
+function sendChat() {
+  if (_abort) return; // 已有请求进行中
+  var input = document.getElementById('chat-input');
+  var text = input.value.trim();
+  if (!text) return;
+  _lastQuestion = text;
+  addChat('user', text);
+  input.value = '';
+  input.style.height = '';
+  input.style.minHeight = '';
+  addTyping();
+
+  var role = getActiveRole();
+  var kb = role.kb || {jira:true,svn:true,notion:true,gdrive:true};
+  var sysMsg = role.prompt + '\n---\n';
+  if (role.skill) sysMsg += '附加能力: ' + role.skill + '\n';
+  var kbs = [];
+  if (kb.jira) kbs.push('Jira'); if (kb.svn) kbs.push('SVN');
+  if (kb.notion) kbs.push('Notion'); if (kb.gdrive) kbs.push('GDrive');
+  sysMsg += '可用知识库: ' + kbs.join(',') + '\n';
+  if (_isTaskMode && _currentIssue) {
+    sysMsg += 'Issue:\nKey: '+_currentIssue+'\n---\n';
+  }
+  sysMsg += '简洁回答，用Markdown格式。';
+  // 追问上下文：拼接最近 2 轮对话
+  if (_conversationHistory.length > 0) {
+    sysMsg += '\n\n--- 对话历史 ---\n';
+    _conversationHistory.forEach(function(h, i){
+      sysMsg += '用户问'+(i+1)+': '+h.q+'\nAI答'+(i+1)+': '+(h.a||'').substring(0,400)+'\n';
+    });
+    sysMsg += '当前问题是上述对话的追问，请结合上下文回答。';
+  }
+
+  _abort = new AbortController();
+  var cfg = {
+    notion_key: document.getElementById('notion_key').value.trim(),
+    notion_db: document.getElementById('notion_db').value.trim(),
+    gdrive_key: document.getElementById('gdrive_key').value.trim(),
+    gdrive_folders: document.getElementById('gdrive_folders').value.trim(),
+    jira_projects: document.getElementById('jira_projects_cfg').value.trim(),
+  };
+  fetch('http://localhost:9099/v1/chat/completions', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    signal: _abort.signal,
+    body:JSON.stringify({model:'t', messages:[
+      {role:'system', content: sysMsg},
+      {role:'user', content:text}
+    ], config: cfg})
+  })
+  .then(r=>r.json())
+  .then(d=>{
+    removeTyping();
+    _abort = null;
+    var reply = d.choices?.[0]?.message?.content || 'No response';
+    _conversationHistory.push({q: _lastQuestion, a: reply});
+    if (_conversationHistory.length > 2) _conversationHistory.shift();
+    addChat('ai', md(reply), reply);
+  })
+  .catch(function(e){
+    removeTyping();
+    _abort = null;
+    if (e.name === 'AbortError') { addChat('ai','⏹ 已终止'); }
+    else { addChat('ai','⚠️ Bridge 未连接。'); }
+  });
+}
+
+function stopChat() {
+  if (_abort) { _abort.abort(); _abort = null; }
+}
+
+function addChat(role, content, raw) {
+  var d = document.createElement('div'); d.className='msg-b '+role;
+  if (role==='user') {
+    d.textContent=content;
+    // 复制按钮
+    var ucp = document.createElement('button');
+    ucp.className = 'btn-copy-user';
+    ucp.textContent = '📋';
+    ucp.title = '复制';
+    ucp.onclick = function(e){
+      e.stopPropagation();
+      var ta = document.createElement('textarea');
+      ta.value = content; ta.style.position='fixed'; ta.style.left='-9999px';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      this.textContent = '✓';
+      var self = this;
+      setTimeout(function(){ self.textContent = '📋'; }, 1500);
+  };
+    d.appendChild(ucp);
+  }
+  else {
+    // 系统消息（终止/错误）不加复制按钮
+    if (!content.startsWith('⏹') && !content.startsWith('⚠️')) {
+      var cp = document.createElement('button');
+      cp.className = 'btn-copy-large';
+      cp.textContent = '📋 复制';
+      cp.setAttribute('data-md', raw || content || '');
+      cp.onclick = function() {
+        var md = this.getAttribute('data-md') || '';
+        var ta = document.createElement('textarea');
+        ta.value = md; ta.style.position='fixed'; ta.style.left='-9999px';
+        document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, 99999);
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        this.textContent = '✓ 已复制'; this.classList.add('copied');
+        setTimeout(function(){ cp.textContent = '📋 复制'; cp.classList.remove('copied'); }, 2000);
+  };
+      d.appendChild(cp);
+      // 贴为评论按钮
+      var cc = document.createElement('button');
+      cc.className = 'btn-comment';
+      cc.textContent = '💬 贴为评论';
+      cc.setAttribute('data-q', _lastQuestion || '');
+      cc.setAttribute('data-a', raw || content || '');
+      cc.onclick = function() {
+        var q = this.getAttribute('data-q') || '';
+        var a = this.getAttribute('data-a') || '';
+        if (!a) return;
+        this.textContent = '⏳ 发布中...'; this.disabled = true;
+        fetch('/proxy/jira/comment', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({issue_key:_currentIssue, question:q, answer:a})
+        })
+        .then(function(r){return r.json();})
+        .then(function(d){
+          if (d.ok) { cc.textContent='✅ 已发布'; cc.classList.add('copied'); }
+          else { cc.textContent='❌ 失败'; cc.classList.add('fail'); }
+        })
+        .catch(function(){ cc.textContent='❌ 网络错误'; cc.classList.add('fail'); })
+        .finally(function(){ setTimeout(function(){ cc.textContent = '💬 贴为评论'; cc.classList.remove('copied','fail'); cc.disabled=false; }, 3000); });
+  };
+      d.appendChild(cc);
+    }
+    var l=document.createElement('div'); l.className='lbl'; l.textContent='🤖 WorkBuddy'; d.appendChild(l);
+    var cnt = document.createElement('div'); cnt.innerHTML = content; d.appendChild(cnt);
+    injectCodeCopyButtons(d);
+  }
+  document.getElementById('chat-body').appendChild(d);
+  document.getElementById('chat-body').scrollTop = 99999;
+  if (window._loadingHistory) return;
+  saveHistory(role, content, raw);
+}
+
+// ═══ 对话历史 ═══
+var HISTORY_KEY = 'wb_chat_history';
+function saveHistory(role, content, raw) {
+  // 系统消息不存
+  if (content.startsWith('⏹') || content.startsWith('⚠️')) return;
+  var hist = getHistory();
+  hist.push({role:role, content:content, raw:raw||'', time:Date.now()});
+  if (hist.length > 100) hist = hist.slice(-50);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
+}
+function getHistory() { try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch(e) { return []; } }
+function loadHistory() {
+  window._loadingHistory = true;
+  var hist = getHistory();
+  var body = document.getElementById('chat-body');
+  if (hist.length > 0) body.innerHTML = '';
+  hist.forEach(function(h){
+    if (h.role === 'user') { var d=document.createElement('div'); d.className='msg-b user'; d.textContent=h.content; body.appendChild(d); }
+    else {
+      var d=document.createElement('div'); d.className='msg-b ai';
+      if (!h.content.startsWith('⏹') && !h.content.startsWith('⚠️') && (h.raw||'')) {
+        var cp=document.createElement('button'); cp.className='btn-copy-large'; cp.textContent='📋 复制';
+        cp.setAttribute('data-md', h.raw||'');
+        cp.onclick = function(){ var md=this.getAttribute('data-md')||''; var ta=document.createElement('textarea'); ta.value=md; ta.style.position='fixed';ta.style.left='-9999px'; document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta); this.textContent='✓ 已复制'; this.classList.add('copied'); setTimeout(function(){ cp.textContent='📋 复制'; cp.classList.remove('copied'); },2000); };
+        d.appendChild(cp);
+      }
+      var l=document.createElement('div'); l.className='lbl'; l.textContent='🤖 WorkBuddy'; d.appendChild(l);
+      var cnt=document.createElement('div'); cnt.innerHTML=h.content; d.appendChild(cnt);
+      injectCodeCopyButtons(d);
+      body.appendChild(d);
+    }
+  });
+  if (hist.length > 0) body.scrollTop = 99999;
+  window._loadingHistory = false;
+}
+function injectCodeCopyButtons(container) {
+  container.querySelectorAll('pre code').forEach(function(code){
+    // 语法高亮
+    if (typeof hljs !== 'undefined') {
+      hljs.highlightElement(code);
+    }
+    var pre = code.parentElement;
+    if (pre.querySelector('.btn-copy-code')) return;
+    var btn = document.createElement('button');
+    btn.className = 'btn-copy-code';
+    btn.textContent = '📋 复制';
+    btn.onclick = function(){
+      var code = this.parentElement.querySelector('code');
+      var text = code ? code.textContent : '';
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      this.textContent = '✓ 已复制';
+      var self = this;
+      setTimeout(function(){ self.textContent = '📋 复制'; }, 2000);
+  };
+    pre.appendChild(btn);
+  });
+}
+
+function clearHistory() { if (!confirm('清空所有对话？')) return; _conversationHistory = []; localStorage.removeItem(HISTORY_KEY); document.getElementById('chat-body').innerHTML = ''; }
+
+// ═══ 快捷发言配置 ═══
+var QUICK_KEY = 'wb_quick_config';
+var DEFAULT_QUICK = [];
+function getQuickConfig() {
+  try { return JSON.parse(localStorage.getItem(QUICK_KEY)) || DEFAULT_QUICK; } catch(e) { return DEFAULT_QUICK; }
+}
+function renderQuickConfig() {
+  var cfg = getQuickConfig();
+  if (!cfg.length) {
+    document.getElementById('quick-config-list').innerHTML = '<p style="color:#6b778c;font-size:12px;padding:20px 0">暂无快捷按钮，点击下方添加。</p>';
+    return;
+  }
+  var html = '';
+  cfg.forEach(function(item, i){
+    var expanded = item._expanded !== false; // 默认展开
+    if (expanded) {
+      // 编辑态
+      html += '<div class="role-card expanded" style="cursor:default" id="quick-card-'+i+'">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+        + '<h3 style="font-size:13px;margin:0">'+escHtml(item.name)+'</h3>'
+        + '<button onclick="deleteQuickItem('+i+')" style="background:none;border:none;color:#ff5630;cursor:pointer;font-size:16px" title="删除">✕</button>'
+        + '</div>'
+        + '<div class="fg"><label>显示名称</label>'
+        + '<input class="q-name" value="'+escAttr(item.name)+'" data-quick-idx="'+i+'" data-quick-field="name" onchange="updateQuickField(this)"></div>'
+        + '<div class="fg"><label>系统提示词 <span style="font-weight:400;color:#6b778c">（AI 执行指令，不显示）</span></label>'
+        + '<textarea class="q-sys" style="min-height:50px;resize:vertical" data-quick-idx="'+i+'" data-quick-field="system_prompt" onchange="updateQuickField(this)">'+escHtml(item.system_prompt)+'</textarea></div>'
+        + '<div class="fg"><label>用户消息 <span style="font-weight:400;color:#6b778c">（发到对话的消息）</span></label>'
+        + '<input class="q-msg" value="'+escAttr(item.user_message)+'" data-quick-idx="'+i+'" data-quick-field="user_message" onchange="updateQuickField(this)"></div>'
+        + '<div style="text-align:right;margin-top:6px"><button class="btn-p" style="padding:6px 16px;font-size:12px" onclick="saveSingleQuick('+i+')">💾 保存并收起</button></div>'
+        + '</div>';
+    } else {
+      // 折叠态
+      html += '<div class="role-card" id="quick-card-'+i+'">'
+        + '<div style="display:flex;align-items:center;justify-content:space-between">'
+        + '<div><strong>'+escHtml(item.name||'未命名')+'</strong>'
+        + '<br><span class="qc-summary" style="font-size:10px;color:#8993a4;line-height:1.5;white-space:pre-wrap;word-break:break-word"></span></div>'
+        + '<div style="display:flex;gap:2px;flex-shrink:0">'
+        + '<button onclick="event.stopPropagation();expandQuickCard('+i+')" style="background:none;border:none;font-size:16px;cursor:pointer;padding:4px 6px" title="编辑">✏️</button>'
+        + '<button onclick="event.stopPropagation();deleteQuickItem('+i+')" style="background:none;border:none;font-size:16px;cursor:pointer;padding:4px 6px;color:#ff5630" title="删除">🗑</button>'
+        + '</div></div></div>';
+      // 后续用 textContent 填充
+      setTimeout(function(){
+        var s = document.querySelector('#quick-card-'+i+' .qc-summary');
+        if (s) s.textContent = '提示词: '+((item.system_prompt||'').substring(0,200))+(item.system_prompt&&item.system_prompt.length>200?'…':'')+' | 消息: '+(item.user_message||'');
+      }, 0);
+    }
+  });
+  document.getElementById('quick-config-list').innerHTML = html;
+}
+
+function expandQuickCard(idx) {
+  var cfg = getQuickConfig();
+  cfg[idx]._expanded = true;
+  localStorage.setItem(QUICK_KEY, JSON.stringify(cfg));
+  renderQuickConfig();
+}
+
+function addQuickItem() {
+  var cfg = getQuickConfig();
+  cfg.push({name:'新按钮', system_prompt:'用中文简洁回答', user_message:'新问题'});
+  localStorage.setItem(QUICK_KEY, JSON.stringify(cfg));
+  renderQuickConfig();
+}
+
+function deleteQuickItem(idx) {
+  var cfg = getQuickConfig();
+  cfg.splice(idx, 1);
+  localStorage.setItem(QUICK_KEY, JSON.stringify(cfg));
+  renderQuickConfig();
+}
+function updateQuickField(el) {
+  var idx = parseInt(el.getAttribute('data-quick-idx'));
+  var field = el.getAttribute('data-quick-field');
+  var cfg = getQuickConfig();
+  cfg[idx][field] = el.value;
+  localStorage.setItem(QUICK_KEY, JSON.stringify(cfg));
+}
+
+function saveSingleQuick(idx) {
+  var cfg = getQuickConfig();
+  cfg[idx]._expanded = false;
+  localStorage.setItem(QUICK_KEY, JSON.stringify(cfg));
+  applyQuickChips(cfg);
+  renderQuickConfig();
+  showMsgToast('✅ 已保存并应用');
+}
+
+function saveQuickConfig() {
+  var cfg = getQuickConfig();
+  applyQuickChips(cfg);
+  showMsgToast('✅ 所有按钮已保存并应用');
+}
+function applyQuickChips(cfg) {
+  var toolbar = document.getElementById('chat-input-toolbar');
+  var dropdown = toolbar.querySelector('.role-dropdown');
+  // Remove existing chips
+  toolbar.querySelectorAll('.qchip').forEach(function(c){ c.remove(); });
+  cfg.forEach(function(item){
+    var btn = document.createElement('button');
+    btn.className = 'toolbar-chip qchip';
+    btn.textContent = item.name;
+    btn.onclick = function(){
+      // 提示词不发送到对话，直接注入 system message
+      var sysMsg = item.system_prompt || '';
+      if (_isTaskMode && _currentIssue) {
+        sysMsg = 'Issue:\nKey: '+_currentIssue+'\n---\n' + sysMsg;
+      }
+      sendChatWithSystem(item.user_message, sysMsg);
+  };
+    toolbar.insertBefore(btn, dropdown);  // 插入在角色按钮前面
+  });
+}
+(function initQuick(){
+  renderQuickConfig();
+  applyQuickChips(getQuickConfig());
+})();
+
+(function initJiraProjects(){
+  updateJiraProjectsCfg();  // 从 localStorage 恢复勾选 → 同步到隐藏字段
+  loadJiraProjects();       // 尝试拉取项目列表（需要 PAT 已填）
+})();
+
+document.getElementById('wb-clear-history').onclick = clearHistory;
+loadHistory();
+
+function addTyping() {
+  var d=document.createElement('div'); d.className='typing'; d.id='typing';
+  d.innerHTML = 'AI 思考中 <span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span> <button class="stop-btn" onclick="stopChat()">⏹ 终止</button>';
+  document.getElementById('chat-body').appendChild(d);
+}
+function removeTyping() { var e=document.getElementById('typing'); if(e) e.remove(); }
+
+function md(t) {
+  // 0. 转义 HTML 实体（必须在最前面）
+  var h = t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  // 1. 代码块（带语言标签）
+  h = h.replace(/```(\w*)\n([\s\S]*?)```/g, function(m, lang, code){
+    var langClass = lang ? ' class="'+lang+'"' : '';
+    var label = lang ? '<span style="position:absolute;top:0;right:0;font-size:10px;color:var(--c-ai-label);padding:4px 10px;text-transform:uppercase;letter-spacing:.5px">'+lang+'</span>' : '';
+    return '<pre>'+label+'<code'+langClass+'>'+code.trim()+'</code></pre>';
+  });
+
+  // 2.5 表格（在代码块之后、行内代码之前处理）
+  h = h.replace(/(^\|.+\|\n\|[-:\|\s]+\|\n((?:\|.+\|\n?)+))/gm, function(m){
+    var rows = m.trim().split('\n');
+    var headRow = rows[0];
+    var bodyRows = rows.slice(2);
+    var html = '<table>';
+    // thead
+    html += '<thead><tr>';
+    headRow.split('|').filter(function(c){return c.trim();}).forEach(function(c){
+      html += '<th>'+c.trim()+'</th>';
+    });
+    html += '</tr></thead>';
+    // tbody
+    html += '<tbody>';
+    bodyRows.forEach(function(row){
+      html += '<tr>';
+      row.split('|').filter(function(c){return c.trim();}).forEach(function(c){
+        html += '<td>'+c.trim()+'</td>';
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    return html;
+  });
+
+  // 3. 行内代码
+  h = h.replace(/`([^`]+)`/g,'<code>$1</code>');
+
+  // 3. 粗体+斜体+粗斜体（粗体优先，避免 ** 被 * 误吃）
+  h = h.replace(/\*\*\*(.*?)\*\*\*/g,'<strong><em>$1</em></strong>');
+  h = h.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');
+  h = h.replace(/\*(.*?)\*/g,'<em>$1</em>');
+
+  // 4. 删除线
+  h = h.replace(/~~(.*?)~~/g,'<del>$1</del>');
+
+  // 5. 链接 [text](url)
+  h = h.replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank">$1</a>');
+
+  // 6. 标题（从长到短，避免 ##### 被 ### 误吃）
+  h = h.replace(/^###### (.+)$/gm,'<h6>$1</h6>');
+  h = h.replace(/^##### (.+)$/gm,'<h5>$1</h5>');
+  h = h.replace(/^#### (.+)$/gm,'<h4>$1</h4>');
+  h = h.replace(/^### (.+)$/gm,'<h3>$1</h3>');
+  h = h.replace(/^## (.+)$/gm,'<h2>$1</h2>');
+  h = h.replace(/^# (.+)$/gm,'<h2>$1</h2>');
+
+  // 7. 任务列表（在普通列表前处理）
+  h = h.replace(/^- \[x\] (.+)$/gm,'<li><input type="checkbox" checked disabled> $1</li>');
+  h = h.replace(/^- \[ \] (.+)$/gm,'<li><input type="checkbox" disabled> $1</li>');
+
+  // 8. 有序列表
+  h = h.replace(/^\d+\. (.+)$/gm,'<li>$1</li>');
+
+  // 9. 无序列表（- / + / * 都支持）
+  h = h.replace(/^[-+*] (.+)$/gm,'<li>$1</li>');
+
+  // 将连续的 <li> 包裹在 <ul> 中
+  h = h.replace(/(<li>.*<\/li>\n?)+/g,'<ul>$&</ul>');
+
+  // 10. 表格（在 hr 之前处理，避免分隔行 --- 被误判为 hr）
+  h = h.replace(/^\|(.+)\|$/gm,function(m){
+    var c=m.slice(1,-1).split('|');
+    if(/^[-:\s]+$/.test(c.join(''))) return ''; // 表格分隔行跳过
+    return '<tr>'+c.map(function(x){return'<td>'+x.trim()+'</td>'}).join('')+'</tr>';
+  });
+  h = h.replace(/((<tr>.*<\/tr>\n?)+)/g,'<table>$1</table>');
+
+  // 11. 引用
+  h = h.replace(/^&gt; (.+)$/gm,'<blockquote>$1</blockquote>');
+
+  // 12. 水平线（--- / *** / ___ 均支持，在表格之后处理）
+  h = h.replace(/^(-{3,}|_{3,}|\*{3,})$/gm,'<hr>');
+
+  // 13. 段落
+  h = h.replace(/\n\n/g,'</p><p>');
+  h = '<p>'+h+'</p>'; h = h.replace(/<p>\s*<\/p>/g,'');
+  return h;
+}
+
+loadConfig();
+// 页面加载后如果有 API Key，自动拉取模型列表
+setTimeout(function(){ fetchModels(); }, 500);
+
+// ═══ 深色模式 ═══
+function toggleTheme() {
+  var html = document.documentElement;
+  var isDark = html.getAttribute('data-theme') === 'dark';
+  if (isDark) {
+    html.removeAttribute('data-theme');
+    document.getElementById('theme-toggle').textContent = '🌙';
+  } else {
+    html.setAttribute('data-theme', 'dark');
+    document.getElementById('theme-toggle').textContent = '☀️';
+  }
+  localStorage.setItem('wb_theme', isDark ? 'light' : 'dark');
+}
+(function initTheme() {
+  if (localStorage.getItem('wb_theme') === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    document.getElementById('theme-toggle').textContent = '☀️';
+  }
+})();
+
+// ═══ 字体大小 ═══
+function toggleFontMenu() {
+  var p = document.getElementById('font-popup');
+  p.style.display = p.style.display === 'none' ? 'flex' : 'none';
+}
+function setFontSize(size, fromInit) {
+  document.querySelector('.chat-body').style.fontSize = size + 'px';
+  document.getElementById('font-popup').style.display = 'none';
+  document.querySelectorAll('.font-popup button').forEach(function(b){ b.classList.remove('active'); });
+  var btn = document.querySelector('.font-popup button[onclick*="'+size+'"]');
+  if (btn) btn.classList.add('active');
+  localStorage.setItem('wb_font_size', size);
+}
+(function initFontSize() {
+  var s = parseInt(localStorage.getItem('wb_font_size')) || 16;
+  setFontSize(s, true);
+})();
+
+// 点击外部关闭弹出窗
+document.addEventListener('click', function(e) {
+  var dd = document.getElementById('role-dropdown');
+  if (dd && !dd.contains(e.target)) {
+    document.getElementById('role-menu').style.display = 'none';
+  }
+  var fp = document.getElementById('font-popup');
+  var fb = document.getElementById('font-size-toggle');
+  if (fp && fb && !fb.contains(e.target) && !fp.contains(e.target)) {
+    fp.style.display = 'none';
+  }
+});
+// 自动获取本机 LAN IP
+fetch('/proxy/local_ip').then(r=>r.json()).then(d=>{
+  document.getElementById('proxy_ip').value = d.ip;
+  document.getElementById('proxy-hint').textContent = '已检测: '+d.ip;
+}).catch(()=>{
+  document.getElementById('proxy_ip').value = '192.168.72.95';
+  document.getElementById('proxy-hint').textContent = '请填写运行Clash电脑的IP';
+});
+</script>
+</body>
+</html>

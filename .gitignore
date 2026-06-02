@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Env & Secrets
+.env
+*.pem
+*.key
+
+# Large data
+*.hprof
+*.log
+
+# Research (optional, keep in git)
+# research/
+
+# Desktop specific
+desktop/node_modules/
+desktop/dist/
+
+# AI Bridge specific
+ai-bridge/node_modules/
+ai-bridge/__pycache__/
+
+# CRITICAL: 配置文件含 API Key，禁止提交
+global_config.json
+**/global_config.json
+
+# Plugin specific
+plugin/**/target/
+plugin/**/node_modules/
+
+# WorkBuddy data (keep out of git)
+workspace/.workbuddy/memory/
+research/LobeHub/
+research/baize/

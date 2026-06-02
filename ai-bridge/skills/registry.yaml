@@ -1,0 +1,152 @@
+# ══════════════════════════════════════════════════════════
+#  插件/工具注册表（移植自白泽 Baize skills/registry.yaml）
+#  统一管理所有工具能力，松耦合架构
+# ══════════════════════════════════════════════════════════
+
+tools:
+  - id: jira_query
+    name: "Jira 查询工具"
+    owner: "L1_search"
+    layer: "L1"
+    enabled: true
+    default_mode: read_only
+    capabilities:
+      - jql_search
+      - issue_detail
+      - weekly_summary
+      - my_issues
+      - project_list
+    config:
+      base_url: "${JIRA_BASE_URL}"
+      auth: "PAT"
+
+  - id: jira_write
+    name: "Jira 写入工具"
+    owner: "operation_manager"
+    layer: "L2"
+    enabled: true
+    default_mode: confirm_required
+    guard: "JiraOperationManager"
+    capabilities:
+      - create_issue
+      - update_issue
+      - add_comment
+      - import_drafts
+      - bulk_create
+
+  - id: svn_code
+    name: "SVN 代码检索工具"
+    owner: "L1_search"
+    layer: "L1"
+    enabled: true
+    default_mode: read_only
+    capabilities:
+      - commit_history
+      - file_diff
+      - blame
+      - file_content
+    config:
+      svn_url: "${SVN_URL}"
+      cache_ttl: 300
+
+  - id: notion_docs
+    name: "Notion 文档检索工具"
+    owner: "L1_search"
+    layer: "L1"
+    enabled: true
+    default_mode: read_only
+    capabilities:
+      - search_documents
+      - fetch_page
+      - list_databases
+      - summarize
+    config:
+      api_version: "2022-06-28"
+
+  - id: gdrive_files
+    name: "Google Drive 文件工具"
+    owner: "L1_search"
+    layer: "L1"
+    enabled: true
+    default_mode: read_only
+    capabilities:
+      - list_files
+      - search_files
+      - fetch_content
+      - file_metadata
+
+  - id: wecom_notify
+    name: "企业微信通知工具"
+    owner: "integration"
+    layer: "integration"
+    enabled: true
+    default_mode: confirm_required
+    guard: "AuditGateway"
+    capabilities:
+      - send_message
+      - send_markdown
+      - send_news
+      - receive_callback
+    config:
+      corp_id: "${WECOM_CORP_ID}"
+      bot_key: "${WECOM_BOT_KEY}"
+
+  - id: ai_reasoning
+    name: "AI 推理工具"
+    owner: "deepseek_client"
+    layer: "core"
+    enabled: true
+    default_mode: read_only
+    capabilities:
+      - chat_completion
+      - stream_chat
+      - jql_generation
+      - relevance_judge
+      - summarize
+    config:
+      model: "deepseek-chat"
+      max_tokens: 2000
+
+  - id: semantic_cache
+    name: "语义缓存"
+    owner: "cache_layer"
+    layer: "core"
+    enabled: true
+    default_mode: read_only
+    capabilities:
+      - lookup
+      - store
+      - invalidate
+    config:
+      cache_size: 100
+      similarity_threshold: 0.2
+      ttl: 3600
+
+# ══════════════════════════════════════════════════════════
+#  审计规则（每个写操作工具的守卫配置）
+# ══════════════════════════════════════════════════════════
+
+audit_rules:
+  jira_write:
+    require_confirmation: true
+    max_batch_size: 20
+    forbidden_projects: []
+    forbidden_issue_types: []
+    rate_limit:
+      per_minute: 10
+      per_hour: 100
+
+  wecom_notify:
+    require_confirmation: true
+    max_recipients_per_message: 50
+    forbidden_keywords:
+      - "密码"
+      - "密钥"
+      - "secret"
+      - "token"
+    rate_limit:
+      per_minute: 5
+
+  svn_code:
+    # SVN 只读，默认不需要审计
+    require_confirmation: false

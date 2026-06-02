@@ -1,0 +1,16 @@
+{
+  "JIRA_BASE_URL": "http://ctjira1.lmdgame.com:8080",
+  "JIRA_PAT": "YOUR_JIRA_PAT_HERE",
+  "FISHEYE_URL": "http://192.168.8.34:8060",
+  "NOTION_KEY": "YOUR_NOTION_KEY_HERE",
+  "NOTION_DATABASE_ID": "36662e00-69d9-8092-909c-e5ff451f6456",
+  "GDRIVE_KEY": "YOUR_GDRIVE_KEY_HERE",
+  "GDRIVE_FOLDERS": "1b7JJwDTGRV6EmVUieBOjnFcTXFtbCHiI,1DvBObfmRBd5707Lq_GBADOvfFEazJgrh",
+  "GDRIVE_PROXY_IP": "192.168.72.95",
+  "GDRIVE_PROXY_PORT": "7897",
+  "SVN_URL": "https://192.168.8.162/svn/captain_tsubasa_proj/branches/v3",
+  "SVN_USERNAME": "lidaichao",
+  "SVN_PASSWORD": "YOUR_SVN_PASSWORD_HERE",
+  "DEEPSEEK_URL": "https://api.deepseek.com/v1/chat/completions",
+  "DEEPSEEK_KEY": "YOUR_DEEPSEEK_KEY_HERE"
+}

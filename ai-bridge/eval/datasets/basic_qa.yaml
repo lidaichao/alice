@@ -1,0 +1,50 @@
+# Alice Agent 评估数据集 - 基础问答能力
+name: basic_qa
+version: "1.0"
+description: "评估 Agent 基础问答、Jira 查询、代码审查能力"
+rubric:
+  max_score: 100
+  dimensions:
+    - name: relevance
+      weight: 30
+      description: "回答是否与问题相关"
+    - name: accuracy
+      weight: 30
+      description: "回答是否准确"
+    - name: completeness
+      weight: 20
+      description: "回答是否完整覆盖问题"
+    - name: clarity
+      weight: 20
+      description: "回答是否清晰结构化"
+
+test_cases:
+  - id: q1
+    input: "帮我查一下当前项目的 Bug 数量"
+    expected_keywords: ["Bug", "Jira", "查询"]
+    category: jira
+    min_score: 60
+
+  - id: q2
+    input: "Python 中如何实现单例模式"
+    expected_keywords: ["__new__", "instance", "class"]
+    category: programming
+    min_score: 60
+
+  - id: q3
+    input: "审查这段代码的安全性：def login(user, pwd): return user=='admin' and pwd=='123456'"
+    expected_keywords: ["硬编码", "密码", "安全", "加密", "hash"]
+    category: code_review
+    min_score: 50
+
+  - id: q4
+    input: "解释 MVC 架构模式"
+    expected_keywords: ["Model", "View", "Controller", "分离"]
+    category: general
+    min_score: 50
+
+  - id: q5
+    input: "如何创建一个 Sprint 中的 Task"
+    expected_keywords: ["Jira", "Task", "Sprint", "创建"]
+    category: jira
+    min_score: 60
