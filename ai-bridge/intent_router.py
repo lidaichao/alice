@@ -36,10 +36,11 @@ INTENT_PATTERNS = [
     ),
 
     # P0.5: 代码 Diff 分析 — 用户问"分析 diff"、"看看 diff"、"分析 r40538"
-    # 分配 get_single_commit_diff + get_issue_commits (先查列表再选版本)
+    # 分配 get_single_commit_diff + get_issue_commits + 知识库工具 (业务背景)
     (
         r"diff|分析.*代码|代码.*分析|代码.*审查|看看.*r\d+|分析.*r\d+|审查.*提交|帮我看看.*版本|分析.*变更|diff.*分析",
-        ["get_issue_commits", "get_single_commit_diff", "query_jira_metadata"],
+        ["get_issue_commits", "get_single_commit_diff", "query_jira_metadata",
+         "search_docs_catalog", "read_specific_doc"],
         "CODE_COMMIT_DIFF"
     ),
 

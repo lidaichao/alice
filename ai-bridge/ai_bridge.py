@@ -1522,22 +1522,54 @@ def chat_completions():
             issue_keys_found.update(found)
         
         # ══════════════════════════════════════════════
-        #  Diff 预检: 如果用户明确指定了版本号 → 直接拉 SVN Diff
-        #  绕过整个 ReAct 循环 (deepseek-v4-flash 不擅长工具调用)
+        #  Diff Prompt Inception: 拉取代码 → 注入混合 Prompt → 进入 ReAct
+        #  让 Alice 主动查 Notion/GDrive 获取业务背景后再分析代码
         # ══════════════════════════════════════════════
         _diff_rev = re.search(r'(?:r|版本\s*)\s*(\d{4,6})', user_text or "")
         _diff_intent = bool(re.search(r'diff|分析.*代码|代码.*分析|代码.*审查|变更|改了.*什么', user_text or ""))
         if _diff_rev and _diff_intent:
-            logger.info(f"[Diff-PreCheck] Direct SVN diff for r{_diff_rev.group(1)}")
+            logger.info(f"[Diff-Inception] Pulling SVN diff for r{_diff_rev.group(1)}, will inject into prompt")
             try:
                 from knowledge_retriever import get_single_commit_diff
                 diff_data = get_single_commit_diff(_diff_rev.group(1))
                 if diff_data and len(str(diff_data)) > 20:
-                    yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice Diff 分析】\\n\\n' + str(diff_data)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-                    yield b"data: [DONE]\n\n"
-                    return
+                    raw_diff = str(diff_data)[:4000]  # 截断留空间给文档检索
+                    
+                    # 提取 Issue Key 和关键术语用于提示词
+                    _ik_list = list(issue_keys_found)[:1]
+                    _ik_str = _ik_list[0] if _ik_list else ""
+                    _key_terms = "阵型养成"  # 默认，后续可从 summary 提取
+                    if _ik_str:
+                        try:
+                            resp = jira.jira_get(f"{jira.api_url}/issue/{_ik_str}?fields=summary", timeout=5)
+                            if resp.status_code == 200:
+                                _key_terms = resp.json().get("fields", {}).get("summary", _key_terms)[:50]
+                        except Exception:
+                            pass
+                    
+                    injected_prompt = (
+                        f"[系统预置数据] 以下是通过底层通道为你提取的真实 SVN 代码变更（Diff）：\n"
+                        f"{raw_diff}\n"
+                        f"====================\n"
+                        f"[核心任务] 用户要求分析上述代码。但你缺少业务背景，不能直接分析！\n"
+                        f"你必须执行以下两步：\n"
+                        f"第1步：立刻调用 search_docs_catalog 工具，用关键词「{_key_terms}」搜索知识库中的策划文档。\n"
+                        f"第2步：从 search_docs_catalog 的返回结果中选一个 doc_id，调用 read_specific_doc 读取文档全文。\n"
+                        f"只有获取了文档内容后，才能结合文档背景对上述代码进行 Code Review"
+                        f"（指出核心逻辑、模块职责和潜在风险）。\n"
+                        f"⚠️ 绝对禁止跳过文档查询直接分析代码！禁止不调用 search_docs_catalog 就调用 read_specific_doc！"
+                    )
+                    
+                    # 覆盖最后一条 user message
+                    for _mi in range(len(cleaned_msgs) - 1, -1, -1):
+                        if cleaned_msgs[_mi].get("role") == "user":
+                            cleaned_msgs[_mi]["content"] = injected_prompt
+                            break
+                    
+                    user_text = injected_prompt  # 更新 user_text 引用
+                    logger.info(f"[Diff-Inception] Prompt injected ({len(injected_prompt)} chars), entering ReAct loop")
             except Exception as _dpe:
-                logger.error(f"[Diff-PreCheck] Failed: {_dpe}")
+                logger.error(f"[Diff-Inception] Failed: {_dpe}")
 
         # ── 构建初始消息列表 ────────────────────────
         system_context = CORE_SYSTEM_PROMPT_V2
@@ -1793,12 +1825,16 @@ def chat_completions():
 
                 # ══ Rabbit 核选项: 工具执行后直接输出数据，跳过后续 ReAct 步骤 ══
                 # deepseek-v4-flash 在后续轮次中持续输出 tool_calls 文本而非事实回答
-                # ⚠️ 如果调用了 get_single_commit_diff → 不拦截！让 diff 流入 LLM 分析
+                # ⚠️ 如果调用了 get_single_commit_diff 或处于 Inception 模式 → 不拦截！
                 _has_diff_in_step = any(
                     r.get("name") == "get_single_commit_diff"
                     for r in results
                 )
-                if not _has_diff_in_step:
+                _is_inception_step = any(
+                    "[系统预置数据]" in str(m.get("content", ""))
+                    for m in tool_messages if m.get("role") == "user"
+                )
+                if not _has_diff_in_step and not _is_inception_step:
                     _nuke_results = []
                     for _nm in reversed(tool_messages):
                         if _nm.get("role") == "tool":
@@ -1904,8 +1940,17 @@ def chat_completions():
             for m in tool_messages
         )
         
-        # ▸ 如果调用了 get_single_commit_diff → 绝不拦截! Diff 必须流入 LLM 分析
-        if _has_diff_tool:
+        # ▸ Prompt Inception 检测: 如果用户消息中包含预置 diff 数据 → 全放行
+        _is_inception = any(
+            "[系统预置数据]" in str(m.get("content", ""))
+            for m in tool_messages if m.get("role") == "user"
+        )
+        import sys as _sys4
+        _sys4.stderr.write(f"[NUCLEAR-DEBUG] inception={_is_inception} has_diff_tool={_has_diff_tool} tool_count={sum(1 for m in tool_messages if m.get('role')=='tool')}\n")
+        _sys4.stderr.flush()
+        if _is_inception:
+            logger.info(f"[NUCLEAR-V2] Prompt Inception detected, full bypass — let LLM process Notion/GDrive + diff")
+        elif _has_diff_tool:
             logger.info(f"[NUCLEAR-V2] get_single_commit_diff detected, bypassing nuclear — let LLM analyze diff")
         else:
             _has_commit_tool = any(
@@ -1937,7 +1982,7 @@ def chat_completions():
         for _tm in tool_messages:
             if _tm.get("role") == "tool":
                 _all_tool_results.append(str(_tm.get("content", "")))
-        if _all_tool_results and not _has_diff_tool:
+        if _all_tool_results and not _has_diff_tool and not _is_inception:
             _nuke_combined = "\n\n---\n\n".join(_all_tool_results)[:6000]
             logger.info(f"[NUCLEAR-V2] Direct-output {len(_nuke_combined)} chars from existing tool data")
             import json as _json_nuke2
@@ -2036,15 +2081,25 @@ def chat_completions():
             yield f"data: {json.dumps({'choices':[{'delta':{'content':f'[Error: {e}]'}}]})}\n\n".encode('utf-8')
 
         # ══ Final Stream 安全网: 如果 LLM 全部输出被过滤 → 回退输出原始数据 ══
-        if not _final_content_yielded and _has_diff_tool:
-            logger.error(f"[FINAL-SAFETY] LLM output fully filtered! Fallback to raw diff data")
-            _raw_diff = []
-            for _tm in tool_messages:
-                if _tm.get("role") == "tool" and _tm.get("name") == "get_single_commit_diff":
-                    _raw_diff.append(str(_tm.get("content", ""))[:4000])
-            if _raw_diff:
-                _safe_text = "【Alice】LLM 分析未成功生成，以下是原始代码 Diff 数据：\n\n" + "\n\n---\n\n".join(_raw_diff)
-                yield f"data: {json.dumps({'choices':[{'delta':{'content':_safe_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+        if not _final_content_yielded and (_has_diff_tool or _is_inception):
+            logger.error(f"[FINAL-SAFETY] LLM output fully filtered! Fallback to tool/probe data")
+            if _is_inception:
+                # Inception 模式: 直接用 probe 文本 (Step N 已有完整分析)
+                _probe_text = ""
+                for _tm in reversed(tool_messages):
+                    if _tm.get("role") == "assistant" and _tm.get("content"):
+                        _probe_text = str(_tm["content"])
+                        break
+                if _probe_text:
+                    yield f"data: {json.dumps({'choices':[{'delta':{'content':_probe_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+            else:
+                _raw_diff = []
+                for _tm in tool_messages:
+                    if _tm.get("role") == "tool" and _tm.get("name") == "get_single_commit_diff":
+                        _raw_diff.append(str(_tm.get("content", ""))[:4000])
+                if _raw_diff:
+                    _safe_text = "【Alice】LLM 分析未成功生成，以下是原始代码 Diff 数据：\n\n" + "\n\n---\n\n".join(_raw_diff)
+                    yield f"data: {json.dumps({'choices':[{'delta':{'content':_safe_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
 
         yield b"data: [DONE]\n\n"
 
