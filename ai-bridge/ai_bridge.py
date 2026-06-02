@@ -1553,6 +1553,8 @@ def chat_completions():
             
             # ── Hop 3: Python 查知识库 ──
             doc_content = ""
+            _doc_title = ""
+            _doc_source_label = "知识库"
             try:
                 _search_result = _exec_search_docs_catalog({"query": _search_kw, "source": "all"})
                 _sr_obj = json.loads(_search_result)
@@ -1562,21 +1564,30 @@ def chat_completions():
                         _first = catalog[0]
                         _doc_id = _first.get("doc_id", "")
                         _doc_source = _first.get("source", "notion")
+                        _doc_title = _first.get("title", "未知文档")
+                        _doc_source_label = _doc_source.upper()
                         if _doc_id:
-                            logger.info(f"[VIP] Reading doc: {_doc_id} from {_doc_source}")
+                            logger.info(f"[VIP] Reading doc: 《{_doc_title}》 from {_doc_source_label}")
                             _read_result = _exec_read_specific_doc({"doc_id": _doc_id, "source": _doc_source})
                             _rr_obj = json.loads(_read_result)
                             doc_content = str(_rr_obj.get("llm_text", _rr_obj.get("result", "")))[:2000]
             except Exception as _e2:
                 logger.error(f"[VIP] Knowledge fetch failed: {_e2}")
             
-            # ── Hop 4: 组装"开卷考试" Prompt ──
+            # ── Hop 4: 组装"开卷考试" Prompt (含文档溯源元数据) ──
+            _anti_hallucination = (
+                f"【强制指令】：如果用户后续追问业务逻辑来源于哪里，或者有哪些相关文档，"
+                f"你必须如实回答来源于{_doc_source_label}真实文档《{_doc_title}》。"
+                f"绝对禁止编造任何不存在的文档名称！"
+            ) if _doc_title else ""
+            
             if doc_content:
                 final_prompt = (
                     f"请作为一个资深主程，对以下 SVN 代码变更进行 Code Review。\n\n"
-                    f"【业务背景参考】（来自自动检索的知识库）：\n{doc_content}\n\n"
+                    f"【业务背景参考】（来自系统自动检索的 {_doc_source_label} 真实文档：《{_doc_title}》）：\n{doc_content}\n\n"
                     f"【代码 Diff】：\n{raw_diff}\n\n"
-                    f"请结合背景，指出代码核心修改意图和潜在风险。不要罗列代码，直接输出分析。"
+                    f"请结合背景，指出代码核心修改意图和潜在风险。不要罗列代码，直接输出分析。\n\n"
+                    f"{_anti_hallucination}"
                 )
             else:
                 final_prompt = (
@@ -1586,39 +1597,80 @@ def chat_completions():
                     f"请指出代码核心修改意图和潜在风险。不要罗列代码，直接输出分析。"
                 )
             
-            # ── Hop 5: 直通 Final Stream (无 tools, 跳过整个 ReAct) ──
-            _vip_messages = [{"role": "user", "content": final_prompt}]
-            logger.info(f"[VIP] Direct stream ({len(final_prompt)} chars), no tools, no ReAct")
+            # ── VIP 流式输出辅助函数 ──
+            def _vip_stream(prompt: str, fallback_text: str = ""):
+                """VIP 直通车: 纯 prompt → LLM stream (无 tools, 不经过 ReAct)"""
+                _msgs = [{"role": "user", "content": prompt}]
+                logger.info(f"[VIP] Direct stream ({len(prompt)} chars), no tools, no ReAct")
+                try:
+                    vip_resp = http.post(DEEPSEEK_URL, headers=headers, json={
+                        "model": user_cfg["deepseek_model"],
+                        "messages": _msgs,
+                        "stream": True,
+                        "temperature": 0.1
+                    }, stream=True, timeout=90)
+                    _yielded = False
+                    for raw_line in vip_resp.iter_lines():
+                        if raw_line:
+                            decoded = raw_line.decode('utf-8', errors='replace')
+                            if any(tag in decoded for tag in ('<|tool_calls|>', '<|DSML|>', '<|invoke|>', '<|parameter|>')):
+                                continue
+                            _yielded = True
+                            yield raw_line + b"\n"
+                    if not _yielded and fallback_text:
+                        yield f"data: {json.dumps({'choices':[{'delta':{'content': fallback_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                except Exception as _ve:
+                    logger.error(f"[VIP] Stream failed: {_ve}")
+                    if fallback_text:
+                        yield f"data: {json.dumps({'choices':[{'delta':{'content': fallback_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
             
+            # ── Hop 5: 执行 VIP 流式 ──
+            yield from _vip_stream(final_prompt, '【VIP 直通车】LLM 未能生成分析，以下是原始 Diff：\\n\\n' + raw_diff[:4000])
+            yield b"data: [DONE]\n\n"
+            return  # 完全跳过后续所有逻辑
+
+        # ══════════════════════════════════════════════════════════
+        #  Catalog VIP: 文档目录直通车
+        #  用户问"有哪些文档"/"查Notion" → Python 直检索 + 纯文本输出
+        # ══════════════════════════════════════════════════════════
+        _doc_intent = bool(re.search(r'notion|文档|wiki|知识库|设计案|策划案', user_text or "", re.I))
+        if _doc_intent:
+            logger.info(f"[VIP] Catalog Pre-flight RAG")
+            _ik_str = list(issue_keys_found)[:1]
+            _ik_str = _ik_str[0] if _ik_str else ""
             try:
-                vip_resp = http.post(DEEPSEEK_URL, headers=headers, json={
-                    "model": user_cfg["deepseek_model"],
-                    "messages": _vip_messages,
-                    "stream": True,
-                    "temperature": 0.1
-                }, stream=True, timeout=90)
-                
-                _vip_yielded = False
-                for raw_line in vip_resp.iter_lines():
-                    if raw_line:
-                        decoded = raw_line.decode('utf-8', errors='replace')
-                        if any(tag in decoded for tag in ('<|tool_calls|>', '<|DSML|>', '<|invoke|>', '<|parameter|>')):
-                            continue
-                        _vip_yielded = True
-                        yield raw_line + b"\n"
-                
-                if not _vip_yielded:
-                    # 兜底: 输出 raw diff
-                    yield f"data: {json.dumps({'choices':[{'delta':{'content': '【VIP 直通车】LLM 未能生成分析，以下是原始 Diff：\\n\\n' + raw_diff[:4000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-                
-                yield b"data: [DONE]\n\n"
-                return  # 完全跳过后续所有逻辑
-                
-            except Exception as _ve:
-                logger.error(f"[VIP] Stream failed: {_ve}")
-                yield f"data: {json.dumps({'choices':[{'delta':{'content': '【VIP 直通车】分析服务暂时不可用，以下是原始 Diff：\\n\\n' + raw_diff[:4000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-                yield b"data: [DONE]\n\n"
-                return
+                from knowledge_retriever import extract_dynamic_keywords
+                _search_kw = extract_dynamic_keywords(user_text or "", _ik_str)
+            except Exception:
+                _search_kw = _ik_str or (user_text or "")[:30]
+            logger.info(f"[VIP-Catalog] Search keyword: '{_search_kw}'")
+            
+            # Python 后台检索
+            try:
+                _search_result = _exec_search_docs_catalog({"query": _search_kw, "source": "all"})
+                _sr_obj = json.loads(_search_result)
+                catalog = _sr_obj.get("result", []) if isinstance(_sr_obj, dict) else []
+            except Exception:
+                catalog = []
+            
+            if catalog and isinstance(catalog, list) and len(catalog) > 0:
+                cat_text = "\n".join([f"- [{d.get('source','').upper()}] 《{d.get('title','未知')}》" for d in catalog[:5]])
+                _cat_prompt = (
+                    f"用户正在询问相关的文档。系统已在后台自动检索了关键词 '{_search_kw}'，"
+                    f"找到以下真实存在的文档：\n\n{cat_text}\n\n"
+                    f"【强制指令】：请直接将这个真实的文档列表整理后告诉用户。"
+                    f"绝对禁止编造列表中没有的文档！如果不在此列表中，就说不知道！"
+                )
+            else:
+                _cat_prompt = (
+                    f"用户正在询问相关的文档。系统已在后台自动检索了关键词 '{_search_kw}'，"
+                    f"但没有找到任何结果。\n\n"
+                    f"【强制指令】：请如实告诉用户未找到，绝对禁止捏造、编造任何假文档！"
+                )
+            
+            yield from _vip_stream(_cat_prompt, '【VIP Catalog】LLM 未能生成回答，以下是原始检索结果。')
+            yield b"data: [DONE]\n\n"
+            return
 
         # ── 构建初始消息列表 ────────────────────────
         system_context = CORE_SYSTEM_PROMPT_V2
