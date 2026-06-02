@@ -1521,55 +1521,104 @@ def chat_completions():
             found = re.findall(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])', user_text)
             issue_keys_found.update(found)
         
-        # ══════════════════════════════════════════════
-        #  Diff Prompt Inception: 拉取代码 → 注入混合 Prompt → 进入 ReAct
-        #  让 Alice 主动查 Notion/GDrive 获取业务背景后再分析代码
-        # ══════════════════════════════════════════════
+        # ══════════════════════════════════════════════════════════
+        #  VIP 直通车: Pre-flight RAG — Python 层完成所有检索
+        #  剥夺 LLM 工具权, 直接给"开卷考试" Prompt → Final Stream
+        # ══════════════════════════════════════════════════════════
         _diff_rev = re.search(r'(?:r|版本\s*)\s*(\d{4,6})', user_text or "")
         _diff_intent = bool(re.search(r'diff|分析.*代码|代码.*分析|代码.*审查|变更|改了.*什么', user_text or ""))
         if _diff_rev and _diff_intent:
-            logger.info(f"[Diff-Inception] Pulling SVN diff for r{_diff_rev.group(1)}, will inject into prompt")
+            _rev_id = _diff_rev.group(1)
+            logger.info(f"[VIP] Pre-flight RAG for r{_rev_id}")
+            
+            # ── Hop 1: Python 查 Diff ──
+            raw_diff = ""
             try:
                 from knowledge_retriever import get_single_commit_diff
-                diff_data = get_single_commit_diff(_diff_rev.group(1))
-                if diff_data and len(str(diff_data)) > 20:
-                    raw_diff = str(diff_data)[:4000]  # 截断留空间给文档检索
-                    
-                    # 提取 Issue Key 和关键术语用于提示词
-                    _ik_list = list(issue_keys_found)[:1]
-                    _ik_str = _ik_list[0] if _ik_list else ""
-                    _key_terms = "阵型养成"  # 默认，后续可从 summary 提取
-                    if _ik_str:
-                        try:
-                            resp = jira.jira_get(f"{jira.api_url}/issue/{_ik_str}?fields=summary", timeout=5)
-                            if resp.status_code == 200:
-                                _key_terms = resp.json().get("fields", {}).get("summary", _key_terms)[:50]
-                        except Exception:
-                            pass
-                    
-                    injected_prompt = (
-                        f"[系统预置数据] 以下是通过底层通道为你提取的真实 SVN 代码变更（Diff）：\n"
-                        f"{raw_diff}\n"
-                        f"====================\n"
-                        f"[核心任务] 用户要求分析上述代码。但你缺少业务背景，不能直接分析！\n"
-                        f"你必须执行以下步骤（最多搜索2次）：\n"
-                        f"第1步：调用 search_docs_catalog，用关键词「{_key_terms}」搜索知识库中的策划文档。\n"
-                        f"第2步：从搜索结果中选一个相关文档的 doc_id，调用 read_specific_doc 读取文档全文。\n"
-                        f"⚠️ 如果你已经搜索了2次，必须立即选一个结果用 read_specific_doc 读取！\n"
-                        f"⚠️ 禁止连续搜索3次以上！禁止不读文档直接分析代码！\n"
-                        f"获取文档后，结合文档背景对上述代码进行 Code Review（指出核心逻辑、模块职责和潜在风险）。"
-                    )
-                    
-                    # 覆盖最后一条 user message
-                    for _mi in range(len(cleaned_msgs) - 1, -1, -1):
-                        if cleaned_msgs[_mi].get("role") == "user":
-                            cleaned_msgs[_mi]["content"] = injected_prompt
-                            break
-                    
-                    user_text = injected_prompt  # 更新 user_text 引用
-                    logger.info(f"[Diff-Inception] Prompt injected ({len(injected_prompt)} chars), entering ReAct loop")
-            except Exception as _dpe:
-                logger.error(f"[Diff-Inception] Failed: {_dpe}")
+                _d = get_single_commit_diff(_rev_id)
+                raw_diff = str(_d)[:3000] if _d and len(str(_d)) > 20 else ""
+            except Exception as _e1:
+                logger.error(f"[VIP] Diff fetch failed: {_e1}")
+                raw_diff = f"[Diff r{_rev_id} 获取失败]"
+            
+            # ── Hop 2: Python 查关键字 ──
+            _ik_str = list(issue_keys_found)[:1]
+            _ik_str = _ik_str[0] if _ik_str else ""
+            try:
+                from knowledge_retriever import extract_dynamic_keywords
+                _search_kw = extract_dynamic_keywords(user_text or "", _ik_str)
+            except Exception:
+                _search_kw = _ik_str or user_text[:30]
+            logger.info(f"[VIP] Search keyword: '{_search_kw}'")
+            
+            # ── Hop 3: Python 查知识库 ──
+            doc_content = ""
+            try:
+                _search_result = _exec_search_docs_catalog({"query": _search_kw, "source": "all"})
+                _sr_obj = json.loads(_search_result)
+                if _sr_obj.get("status") == "ok":
+                    catalog = _sr_obj.get("result", [])
+                    if isinstance(catalog, list) and catalog:
+                        _first = catalog[0]
+                        _doc_id = _first.get("doc_id", "")
+                        _doc_source = _first.get("source", "notion")
+                        if _doc_id:
+                            logger.info(f"[VIP] Reading doc: {_doc_id} from {_doc_source}")
+                            _read_result = _exec_read_specific_doc({"doc_id": _doc_id, "source": _doc_source})
+                            _rr_obj = json.loads(_read_result)
+                            doc_content = str(_rr_obj.get("llm_text", _rr_obj.get("result", "")))[:2000]
+            except Exception as _e2:
+                logger.error(f"[VIP] Knowledge fetch failed: {_e2}")
+            
+            # ── Hop 4: 组装"开卷考试" Prompt ──
+            if doc_content:
+                final_prompt = (
+                    f"请作为一个资深主程，对以下 SVN 代码变更进行 Code Review。\n\n"
+                    f"【业务背景参考】（来自自动检索的知识库）：\n{doc_content}\n\n"
+                    f"【代码 Diff】：\n{raw_diff}\n\n"
+                    f"请结合背景，指出代码核心修改意图和潜在风险。不要罗列代码，直接输出分析。"
+                )
+            else:
+                final_prompt = (
+                    f"请作为一个资深主程，对以下 SVN 代码变更进行 Code Review。\n\n"
+                    f"（未能自动检索到相关业务文档，请基于代码本身进行分析）\n\n"
+                    f"【代码 Diff】：\n{raw_diff}\n\n"
+                    f"请指出代码核心修改意图和潜在风险。不要罗列代码，直接输出分析。"
+                )
+            
+            # ── Hop 5: 直通 Final Stream (无 tools, 跳过整个 ReAct) ──
+            _vip_messages = [{"role": "user", "content": final_prompt}]
+            logger.info(f"[VIP] Direct stream ({len(final_prompt)} chars), no tools, no ReAct")
+            
+            try:
+                vip_resp = http.post(DEEPSEEK_URL, headers=headers, json={
+                    "model": user_cfg["deepseek_model"],
+                    "messages": _vip_messages,
+                    "stream": True,
+                    "temperature": 0.1
+                }, stream=True, timeout=90)
+                
+                _vip_yielded = False
+                for raw_line in vip_resp.iter_lines():
+                    if raw_line:
+                        decoded = raw_line.decode('utf-8', errors='replace')
+                        if any(tag in decoded for tag in ('<|tool_calls|>', '<|DSML|>', '<|invoke|>', '<|parameter|>')):
+                            continue
+                        _vip_yielded = True
+                        yield raw_line + b"\n"
+                
+                if not _vip_yielded:
+                    # 兜底: 输出 raw diff
+                    yield f"data: {json.dumps({'choices':[{'delta':{'content': '【VIP 直通车】LLM 未能生成分析，以下是原始 Diff：\\n\\n' + raw_diff[:4000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                
+                yield b"data: [DONE]\n\n"
+                return  # 完全跳过后续所有逻辑
+                
+            except Exception as _ve:
+                logger.error(f"[VIP] Stream failed: {_ve}")
+                yield f"data: {json.dumps({'choices':[{'delta':{'content': '【VIP 直通车】分析服务暂时不可用，以下是原始 Diff：\\n\\n' + raw_diff[:4000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                yield b"data: [DONE]\n\n"
+                return
 
         # ── 构建初始消息列表 ────────────────────────
         system_context = CORE_SYSTEM_PROMPT_V2
@@ -1647,50 +1696,41 @@ def chat_completions():
                             "<|DSML|>" in _content_str or
                             "<|invoke|>" in _content_str)
                 if finish_reason == "stop" and _has_leak:
-                    logger.warning(f"[ReAct] Tool_calls text leak detected in probe")
+                    logger.warning(f"[ReAct] Tool_calls text leak detected in probe, using direct tool execution")
                     
-                    # ▸ Inception 检查
-                    _is_inception_dsml = any(
-                        "[系统预置数据]" in str(m.get("content", ""))
-                        for m in tool_messages if m.get("role") == "user"
-                    )
-                    if _is_inception_dsml:
-                        # Inception: 跳过 direct execution → 走 retry (无tools, 纯文本模式)
-                        logger.info(f"[ReAct] DSML in Inception — using retry path (no tools)")
-                    else:
-                        # ▸ 直接解析用户意图，绕过 LLM 工具决策
-                        _ut = user_text or ""
-                        _rev_match = re.search(r'(?:r|版本\s*)\s*(\d{4,6})', _ut)
-                        _issue_match = re.search(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])', _ut)
-                        _ask_diff = bool(re.search(r'diff|分析.*代码|代码.*分析|代码.*审查|变更|改了.*什么|改了什么', _ut))
-                        _ask_list = bool(re.search(r'提交|commit|提交记录|提交内容|有哪些.*提交|提交.*列表|提交了啥', _ut))
-                        
-                        if _rev_match and _ask_diff:
-                            # Diff 请求 → 直接调 get_single_commit_diff
-                            _rev_id = _rev_match.group(1)
-                            logger.info(f"[ReAct] DSML direct: calling get_single_commit_diff for r{_rev_id}")
-                            try:
-                                from knowledge_retriever import get_single_commit_diff
-                                _raw_diff = get_single_commit_diff(_rev_id)
-                                if _raw_diff and len(str(_raw_diff)) > 20:
-                                    yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice Diff】\\n\\n' + str(_raw_diff)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-                                    yield b"data: [DONE]\n\n"
-                                    return
-                            except Exception as _de:
-                                logger.error(f"[ReAct] DSML diff direct failed: {_de}")
-                        elif _issue_match and _ask_list:
-                            # 列表请求 → 直接调 get_issue_commits
-                            _ik = _issue_match.group(1)
-                            logger.info(f"[ReAct] DSML direct: calling get_issue_commits for {_ik}")
-                            try:
-                                from knowledge_retriever import fetch_precise_commits_via_fisheye
-                                _raw_commits = fetch_precise_commits_via_fisheye(_ik)
-                                if _raw_commits and len(str(_raw_commits)) > 20:
-                                    yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice 查询结果】\\n\\n' + str(_raw_commits)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-                                    yield b"data: [DONE]\n\n"
-                                    return
-                            except Exception as _ce:
-                                logger.error(f"[ReAct] DSML commit direct failed: {_ce}")
+                    # ▸ 直接解析用户意图，绕过 LLM 工具决策
+                    _ut = user_text or ""
+                    _rev_match = re.search(r'(?:r|版本\s*)\s*(\d{4,6})', _ut)
+                    _issue_match = re.search(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])', _ut)
+                    _ask_diff = bool(re.search(r'diff|分析.*代码|代码.*分析|代码.*审查|变更|改了.*什么|改了什么', _ut))
+                    _ask_list = bool(re.search(r'提交|commit|提交记录|提交内容|有哪些.*提交|提交.*列表|提交了啥', _ut))
+                    
+                    if _rev_match and _ask_diff:
+                        # Diff 请求 → 直接调 get_single_commit_diff
+                        _rev_id = _rev_match.group(1)
+                        logger.info(f"[ReAct] DSML direct: calling get_single_commit_diff for r{_rev_id}")
+                        try:
+                            from knowledge_retriever import get_single_commit_diff
+                            _raw_diff = get_single_commit_diff(_rev_id)
+                            if _raw_diff and len(str(_raw_diff)) > 20:
+                                yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice Diff】\\n\\n' + str(_raw_diff)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                                yield b"data: [DONE]\n\n"
+                                return
+                        except Exception as _de:
+                            logger.error(f"[ReAct] DSML diff direct failed: {_de}")
+                    elif _issue_match and _ask_list:
+                        # 列表请求 → 直接调 get_issue_commits
+                        _ik = _issue_match.group(1)
+                        logger.info(f"[ReAct] DSML direct: calling get_issue_commits for {_ik}")
+                        try:
+                            from knowledge_retriever import fetch_precise_commits_via_fisheye
+                            _raw_commits = fetch_precise_commits_via_fisheye(_ik)
+                            if _raw_commits and len(str(_raw_commits)) > 20:
+                                yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice 查询结果】\\n\\n' + str(_raw_commits)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                                yield b"data: [DONE]\n\n"
+                                return
+                        except Exception as _ce:
+                            logger.error(f"[ReAct] DSML commit direct failed: {_ce}")
                     
                     # 如果以上都不匹配 → 回退到原有 retry 逻辑
                     for _m in tool_messages:
@@ -1836,11 +1876,7 @@ def chat_completions():
                     r.get("name") == "get_single_commit_diff"
                     for r in results
                 )
-                _is_inception_step = any(
-                    "[系统预置数据]" in str(m.get("content", ""))
-                    for m in tool_messages if m.get("role") == "user"
-                )
-                if not _has_diff_in_step and not _is_inception_step:
+                if not _has_diff_in_step:
                     _nuke_results = []
                     for _nm in reversed(tool_messages):
                         if _nm.get("role") == "tool":
@@ -1947,16 +1983,11 @@ def chat_completions():
         )
         
         # ▸ Prompt Inception 检测: 如果用户消息中包含预置 diff 数据 → 全放行
-        _is_inception = any(
-            "[系统预置数据]" in str(m.get("content", ""))
-            for m in tool_messages if m.get("role") == "user"
-        )
         import sys as _sys4
-        _sys4.stderr.write(f"[NUCLEAR-DEBUG] inception={_is_inception} has_diff_tool={_has_diff_tool} tool_count={sum(1 for m in tool_messages if m.get('role')=='tool')}\n")
+        _sys4.stderr.write(f"[NUCLEAR-DEBUG] has_diff_tool={_has_diff_tool} tool_count={sum(1 for m in tool_messages if m.get('role')=='tool')}\n")
         _sys4.stderr.flush()
-        if _is_inception:
-            logger.info(f"[NUCLEAR-V2] Prompt Inception detected, full bypass — let LLM process Notion/GDrive + diff")
-        elif _has_diff_tool:
+        
+        if _has_diff_tool:
             logger.info(f"[NUCLEAR-V2] get_single_commit_diff detected, bypassing nuclear — let LLM analyze diff")
         else:
             _has_commit_tool = any(
@@ -1988,7 +2019,7 @@ def chat_completions():
         for _tm in tool_messages:
             if _tm.get("role") == "tool":
                 _all_tool_results.append(str(_tm.get("content", "")))
-        if _all_tool_results and not _has_diff_tool and not _is_inception:
+        if _all_tool_results and not _has_diff_tool:
             _nuke_combined = "\n\n---\n\n".join(_all_tool_results)[:6000]
             logger.info(f"[NUCLEAR-V2] Direct-output {len(_nuke_combined)} chars from existing tool data")
             import json as _json_nuke2
@@ -2087,32 +2118,15 @@ def chat_completions():
             yield f"data: {json.dumps({'choices':[{'delta':{'content':f'[Error: {e}]'}}]})}\n\n".encode('utf-8')
 
         # ══ Final Stream 安全网: 如果 LLM 全部输出被过滤 → 回退输出原始数据 ══
-        if not _final_content_yielded and (_has_diff_tool or _is_inception):
-            logger.error(f"[FINAL-SAFETY] LLM output fully filtered! Fallback to tool/probe data")
-            if _is_inception:
-                # Inception 模式: 搜索最近 3 条 assistant 消息, 找有效分析文本
-                _probe_text = ""
-                _found_count = 0
-                for _tm in reversed(tool_messages):
-                    if _tm.get("role") == "assistant" and _tm.get("content"):
-                        _c = str(_tm["content"]).strip()
-                        # 跳过太短的或纯 tool_calls 的
-                        if len(_c) > 50 and not any(t in _c for t in ['<|tool_calls|>', '<|DSML|>', '<|invoke|>']):
-                            _probe_text = _c
-                            break
-                        _found_count += 1
-                        if _found_count > 3:
-                            break
-                if _probe_text:
-                    yield f"data: {json.dumps({'choices':[{'delta':{'content':_probe_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-            else:
-                _raw_diff = []
-                for _tm in tool_messages:
-                    if _tm.get("role") == "tool" and _tm.get("name") == "get_single_commit_diff":
-                        _raw_diff.append(str(_tm.get("content", ""))[:4000])
-                if _raw_diff:
-                    _safe_text = "【Alice】LLM 分析未成功生成，以下是原始代码 Diff 数据：\n\n" + "\n\n---\n\n".join(_raw_diff)
-                    yield f"data: {json.dumps({'choices':[{'delta':{'content':_safe_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+        if not _final_content_yielded and _has_diff_tool:
+            logger.error(f"[FINAL-SAFETY] LLM output fully filtered! Fallback to raw diff data")
+            _raw_diff = []
+            for _tm in tool_messages:
+                if _tm.get("role") == "tool" and _tm.get("name") == "get_single_commit_diff":
+                    _raw_diff.append(str(_tm.get("content", ""))[:4000])
+            if _raw_diff:
+                _safe_text = "【Alice】LLM 分析未成功生成，以下是原始代码 Diff 数据：\n\n" + "\n\n---\n\n".join(_raw_diff)
+                yield f"data: {json.dumps({'choices':[{'delta':{'content':_safe_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
 
         yield b"data: [DONE]\n\n"
 

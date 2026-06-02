@@ -252,6 +252,56 @@ def fetch_precise_commits_via_fisheye(issue_key: str) -> str:
         except:
             return f"[PreciseCommits] {issue_key} 检索失败: {str(e)[:200]}"
 
+def extract_dynamic_keywords(user_text: str = "", issue_key: str = "") -> str:
+    """DynamicContextResolver: 从 Jira 摘要或用户文本中动态提取搜索关键词。
+    
+    优先级:
+    1. issue_key → Jira API 获取 summary → 提取核心词 (去除【系统】等前缀)
+    2. Jira 失败/超时 → 从 user_text 提取 2-3 个关键词
+    3. 兜底 → 直接使用 issue_key 本身
+    
+    ⚠️ 绝对禁止硬编码默认业务词汇!
+    """
+    # ── 尝试 Jira API ──
+    if issue_key:
+        try:
+            from ai_bridge import jira as _jira_mod
+            api_url = getattr(_jira_mod, 'api_url', '')
+            if api_url:
+                resp = _jira_mod.jira_get(f"{api_url}/issue/{issue_key}?fields=summary", timeout=5)
+                if resp.status_code == 200:
+                    summary = resp.json().get("fields", {}).get("summary", "")
+                    if summary:
+                        # 清洗: 去除【系统】【功能】等前缀和括号内容
+                        import re as _re
+                        cleaned = _re.sub(r'【[^】]*】', '', summary)
+                        cleaned = _re.sub(r'[（(][^）)]*[）)]', '', cleaned)
+                        cleaned = cleaned.strip()
+                        if cleaned and len(cleaned) > 1:
+                            logger.info(f"[DynamicContext] From Jira: '{summary}' → '{cleaned}'")
+                            return cleaned[:50]
+        except Exception as e:
+            logger.warning(f"[DynamicContext] Jira API failed: {e}")
+    
+    # ── 从 user_text 提取 ──
+    if user_text:
+        import re as _re2
+        # 移除常见问句前缀、版本号、标点
+        cleaned = _re2.sub(r'(?:帮我|请|分析一下|查看|看看|的.*diff|r\d+|代码|需要)', '', user_text)
+        cleaned = _re2.sub(r'[^\u4e00-\u9fff\w\s]', ' ', cleaned)
+        words = [w.strip() for w in cleaned.split() if len(w.strip()) >= 2]
+        # 取前 2-3 个有意义的中文词
+        meaningful = [w for w in words if _re2.search(r'[\u4e00-\u9fff]', w)][:3]
+        if meaningful:
+            kw = ' '.join(meaningful)[:50]
+            logger.info(f"[DynamicContext] From user_text: '{kw}'")
+            return kw
+    
+    # ── 兜底 ──
+    result = issue_key or user_text[:50] or ""
+    logger.info(f"[DynamicContext] Fallback: '{result}'")
+    return result
+
 def get_single_commit_diff(revision_id: str) -> str:
     """按需召回: 拉取指定版本号(r40538)的单次提交代码 Diff。
     
