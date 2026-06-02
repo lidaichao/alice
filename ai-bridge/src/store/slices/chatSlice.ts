@@ -253,6 +253,26 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
       if (error.name === 'AbortError') {
         const abortedSession = get().sessions.find(s => s.id === activeSessionId);
         if (abortedSession) await db.sessions.put(abortedSession);
+      } else {
+        // SSE 流异常中断: 注入错误气泡到当前会话最后一条消息
+        logger.error('[SSE] Stream error:', error.message || error);
+        const errorSession = get().sessions.find(s => s.id === activeSessionId);
+        if (errorSession) {
+          const updated = {
+            ...errorSession,
+            messages: [
+              ...errorSession.messages,
+              {
+                role: 'assistant',
+                content: '⚠️ 后端服务连接中断或响应异常，请检查网络或重启服务。',
+                error: true,
+                timestamp: Date.now()
+              }
+            ]
+          };
+          set({ sessions: get().sessions.map(s => s.id === activeSessionId ? updated : s) });
+          await db.sessions.put(updated);
+        }
       }
     } finally {
       set({ isGenerating: false, abortController: null });

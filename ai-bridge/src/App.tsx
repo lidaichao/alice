@@ -229,8 +229,12 @@ export const App: React.FC = () => {
                       </div>
                       )})()}
 
-                    {/* 思考中动画：仅最后一条 + 生成中 + 内容为空 */}
-                    {isEmpty && msg.role === 'assistant' && isLast && isGenerating ? (
+                    {/* 错误气泡：SSE 流异常中断 */}
+                    {(msg as any).error ? (
+                      <div className="error-msg" style={{ color: 'red', fontWeight: 500 }}>
+                        ⚠️ 后端服务连接中断或响应异常，请检查网络或重启服务。
+                      </div>
+                    ) : isEmpty && msg.role === 'assistant' && isLast && isGenerating ? (
                       <span className="flex items-center gap-1 text-muted-foreground">
                         <span className="animate-bounce">●</span>
                         <span className="animate-bounce delay-75">●</span>

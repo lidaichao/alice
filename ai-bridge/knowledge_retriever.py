@@ -355,11 +355,53 @@ def get_single_commit_diff(revision_id: str) -> str:
         if not diff_text.strip():
             return f"[get_single_commit_diff] r{rev} 无 Diff 内容（可能是空提交或二进制文件）"
         
-        # 安全护栏: 截断至 ~3000 tokens (约 8000 字符)
+        # 语义化 Diff 裁剪: 去冗余 → 提纯核心变更
+        import re as _dre
         MAX_CHARS = 8000
+        SKIP_PATTERNS = r'\.(meta|asset|png|jpg|jpeg|fbx|mat|prefab|unity|bytes|wav|mp3|ogg|lock|json)$'
+        
+        # 1. 按文件切割 → 丢弃无关文件
+        blocks = diff_text.split("Index: ")
+        kept_blocks = []
+        for block in blocks:
+            if not block.strip():
+                continue
+            idx_block = "Index: " + block if kept_blocks else block
+            # 提取文件名
+            file_match = _dre.search(r'^Index:\s*(.+?)\s*\n', idx_block, _dre.MULTILINE)
+            if file_match:
+                fname = file_match.group(1).strip()
+                if _dre.search(SKIP_PATTERNS, fname, _dre.IGNORECASE):
+                    continue  # 丢弃元数据/静态资源
+            kept_blocks.append(idx_block)
+        
+        diff_text = "".join(kept_blocks)
+        
+        # 2. 如果仍超长 → 仅保留 +/- 和 @@ 行
+        if len(diff_text) > MAX_CHARS:
+            lines = diff_text.split('\n')
+            essential = []
+            file_header_lines = 0
+            for line in lines:
+                stripped = line.lstrip()
+                if stripped.startswith('Index:') or stripped.startswith('===') or stripped.startswith('---'):
+                    essential.append(line)
+                    file_header_lines = 0
+                elif stripped.startswith('@@'):
+                    essential.append(line)
+                    file_header_lines = 0
+                elif stripped.startswith('+') or stripped.startswith('-'):
+                    essential.append(line)
+                    file_header_lines = 0
+                elif file_header_lines < 3:  # 保留文件头3行上下文
+                    essential.append(line)
+                    file_header_lines += 1
+            diff_text = '\n'.join(essential)
+        
+        # 3. 最终硬截断
         if len(diff_text) > MAX_CHARS:
             diff_text = diff_text[:MAX_CHARS]
-            diff_text += f"\n\n[Diff过长已截断] 原始 Diff 共 {len(result.stdout)} 字符, 仅展示前 {MAX_CHARS} 字符。如需完整 Diff 请缩小范围。"
+            diff_text += f"\n\n[Diff过长已截断] 原始 Diff 共 {len(result.stdout)} 字符, 已做语义提纯, 仅展示前 {MAX_CHARS} 字符。"
         
         return f"## SVN Diff: r{rev}\n\n```diff\n{diff_text}\n```"
         

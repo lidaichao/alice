@@ -3,6 +3,7 @@ AI Bridge v6 — Alice V2.0 — asyncio 真并发 + 流式优先 + 语义缓存
 启动: python ai_bridge.py
 """
 import os, sys, re, json, time, logging, asyncio, hashlib, threading, collections, concurrent.futures
+from logging.handlers import RotatingFileHandler
 from functools import wraps
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
@@ -42,7 +43,14 @@ from knowledge_retriever import (
     l1_notion_fetch_async, l1_gdrive_fetch_async,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+# ── 持久化日志配置 ──────────────────────────────────────
+os.makedirs("logs", exist_ok=True)
+_log_format = "%(asctime)s [%(levelname)s] [%(filename)s:%(lineno)d] %(message)s"
+_fh = RotatingFileHandler("logs/alice_bridge.log", maxBytes=10*1024*1024, backupCount=5, encoding="utf-8")
+_fh.setFormatter(logging.Formatter(_log_format))
+_sh = logging.StreamHandler(sys.stderr)
+_sh.setFormatter(logging.Formatter(_log_format))
+logging.basicConfig(level=logging.INFO, handlers=[_fh, _sh])
 logger = logging.getLogger("ai-bridge")
 
 app = Flask(__name__)
@@ -1587,14 +1595,18 @@ def chat_completions():
                     f"【业务背景参考】（来自系统自动检索的 {_doc_source_label} 真实文档：《{_doc_title}》）：\n{doc_content}\n\n"
                     f"【代码 Diff】：\n{raw_diff}\n\n"
                     f"请结合背景，指出代码核心修改意图和潜在风险。不要罗列代码，直接输出分析。\n\n"
-                    f"{_anti_hallucination}"
+                    f"{_anti_hallucination}\n\n"
+                    f"【用户的真实特定诉求】：{user_text}\n"
+                    f"（请在审查或输出时特别关注用户的上述诉求）"
                 )
             else:
                 final_prompt = (
                     f"请作为一个资深主程，对以下 SVN 代码变更进行 Code Review。\n\n"
                     f"（未能自动检索到相关业务文档，请基于代码本身进行分析）\n\n"
                     f"【代码 Diff】：\n{raw_diff}\n\n"
-                    f"请指出代码核心修改意图和潜在风险。不要罗列代码，直接输出分析。"
+                    f"请指出代码核心修改意图和潜在风险。不要罗列代码，直接输出分析。\n\n"
+                    f"【用户的真实特定诉求】：{user_text}\n"
+                    f"（请在审查或输出时特别关注用户的上述诉求）"
                 )
             
             # ── VIP 流式输出辅助函数 ──
@@ -1621,8 +1633,7 @@ def chat_completions():
                         yield f"data: {json.dumps({'choices':[{'delta':{'content': fallback_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
                 except Exception as _ve:
                     logger.error(f"[VIP] Stream failed: {_ve}")
-                    if fallback_text:
-                        yield f"data: {json.dumps({'choices':[{'delta':{'content': fallback_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                    yield f"data: {json.dumps({'choices':[{'delta':{'content':'⚠️ 系统底层数据服务暂不可用（SVN或知识库异常），请联系管理员或稍后重试。'}}]})}\n\n".encode('utf-8')
             
             # ── Hop 5: 执行 VIP 流式 ──
             yield from _vip_stream(final_prompt, '【VIP 直通车】LLM 未能生成分析，以下是原始 Diff：\\n\\n' + raw_diff[:4000])
@@ -1659,13 +1670,17 @@ def chat_completions():
                     f"用户正在询问相关的文档。系统已在后台自动检索了关键词 '{_search_kw}'，"
                     f"找到以下真实存在的文档：\n\n{cat_text}\n\n"
                     f"【强制指令】：请直接将这个真实的文档列表整理后告诉用户。"
-                    f"绝对禁止编造列表中没有的文档！如果不在此列表中，就说不知道！"
+                    f"绝对禁止编造列表中没有的文档！如果不在此列表中，就说不知道！\n\n"
+                    f"【用户的真实特定诉求】：{user_text}\n"
+                    f"（请在输出时特别关注用户的上述诉求）"
                 )
             else:
                 _cat_prompt = (
                     f"用户正在询问相关的文档。系统已在后台自动检索了关键词 '{_search_kw}'，"
                     f"但没有找到任何结果。\n\n"
-                    f"【强制指令】：请如实告诉用户未找到，绝对禁止捏造、编造任何假文档！"
+                    f"【强制指令】：请如实告诉用户未找到，绝对禁止捏造、编造任何假文档！\n\n"
+                    f"【用户的真实特定诉求】：{user_text}\n"
+                    f"（请在输出时特别关注用户的上述诉求）"
                 )
             
             yield from _vip_stream(_cat_prompt, '【VIP Catalog】LLM 未能生成回答，以下是原始检索结果。')
@@ -1748,43 +1763,9 @@ def chat_completions():
                             "<|DSML|>" in _content_str or
                             "<|invoke|>" in _content_str)
                 if finish_reason == "stop" and _has_leak:
-                    logger.warning(f"[ReAct] Tool_calls text leak detected in probe, using direct tool execution")
+                    logger.warning(f"[ReAct] Tool_calls text leak detected in probe, retrying without tools")
                     
-                    # ▸ 直接解析用户意图，绕过 LLM 工具决策
-                    _ut = user_text or ""
-                    _rev_match = re.search(r'(?:r|版本\s*)\s*(\d{4,6})', _ut)
-                    _issue_match = re.search(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])', _ut)
-                    _ask_diff = bool(re.search(r'diff|分析.*代码|代码.*分析|代码.*审查|变更|改了.*什么|改了什么', _ut))
-                    _ask_list = bool(re.search(r'提交|commit|提交记录|提交内容|有哪些.*提交|提交.*列表|提交了啥', _ut))
-                    
-                    if _rev_match and _ask_diff:
-                        # Diff 请求 → 直接调 get_single_commit_diff
-                        _rev_id = _rev_match.group(1)
-                        logger.info(f"[ReAct] DSML direct: calling get_single_commit_diff for r{_rev_id}")
-                        try:
-                            from knowledge_retriever import get_single_commit_diff
-                            _raw_diff = get_single_commit_diff(_rev_id)
-                            if _raw_diff and len(str(_raw_diff)) > 20:
-                                yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice Diff】\\n\\n' + str(_raw_diff)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-                                yield b"data: [DONE]\n\n"
-                                return
-                        except Exception as _de:
-                            logger.error(f"[ReAct] DSML diff direct failed: {_de}")
-                    elif _issue_match and _ask_list:
-                        # 列表请求 → 直接调 get_issue_commits
-                        _ik = _issue_match.group(1)
-                        logger.info(f"[ReAct] DSML direct: calling get_issue_commits for {_ik}")
-                        try:
-                            from knowledge_retriever import fetch_precise_commits_via_fisheye
-                            _raw_commits = fetch_precise_commits_via_fisheye(_ik)
-                            if _raw_commits and len(str(_raw_commits)) > 20:
-                                yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice 查询结果】\\n\\n' + str(_raw_commits)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-                                yield b"data: [DONE]\n\n"
-                                return
-                        except Exception as _ce:
-                            logger.error(f"[ReAct] DSML commit direct failed: {_ce}")
-                    
-                    # 如果以上都不匹配 → 回退到原有 retry 逻辑
+                    # 清理 tool_calls 历史 + 发起纯文本 retry
                     for _m in tool_messages:
                         if _m.get("role") == "assistant" and "tool_calls" in _m:
                             del _m["tool_calls"]
@@ -1803,47 +1784,22 @@ def chat_completions():
                     msg = choice2.get("message", {})
                     finish_reason = choice2.get("finish_reason", "")
                     
-                    # ══ DSML Retry 成功 → 直接输出重试文本，跳过 Final Stream ══
+                    # 清洗 retry 响应中的 DSML 标签
                     _retry_content = str(msg.get("content", "")).strip()
-                    if finish_reason == "stop":
+                    if finish_reason == "stop" and _retry_content:
                         import re as _re_clean
                         _retry_content = _re_clean.sub(r'<\|tool_calls\|>.*?</\|tool_calls\|>', '', _retry_content, flags=_re_clean.DOTALL)
                         _retry_content = _re_clean.sub(r'<\|invoke\|.*?</\|invoke\|>', '', _retry_content, flags=_re_clean.DOTALL)
                         _retry_content = _re_clean.sub(r'<\|parameter\|.*?</\|parameter\|>', '', _retry_content, flags=_re_clean.DOTALL)
                         _retry_content = _re_clean.sub(r'<\|DSML\|>.*?</\|DSML\|>', '', _retry_content, flags=_re_clean.DOTALL)
                         _retry_content = _re_clean.sub(r'</?\|DSML\|>', '', _retry_content).strip()
-                        
-                        if _retry_content and not any(tag in _retry_content for tag in ['<|tool_calls|>', '<|DSML|>', '<|invoke|>', '<|parameter|>']):
+                        if _retry_content:
                             logger.info(f"[ReAct] DSML retry success, direct-output {len(_retry_content)} chars")
                             yield f"data: {json.dumps({'choices':[{'delta':{'content':_retry_content}}]})}\n\n".encode('utf-8')
                             yield b"data: [DONE]\n\n"
-                            return  # 跳过 Final Stream
-                        else:
-                            logger.error(f"[ReAct] DSML retry still has tool_calls after cleaning: {_retry_content[:200]}")
-                            # Fallback: 检查是否是 diff 请求 → 直接调 get_single_commit_diff
-                            _rev_match = re.search(r'r(\d{4,6})', user_text or "")
-                            if _rev_match:
-                                _rev_id = _rev_match.group(1)
-                                logger.info(f"[ReAct] DSML diff fallback: executing get_single_commit_diff for r{_rev_id}")
-                                try:
-                                    from knowledge_retriever import get_single_commit_diff
-                                    _diff_data = get_single_commit_diff(_rev_id)
-                                    if _diff_data and len(str(_diff_data)) > 20:
-                                        yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice Diff 分析】\\n\\n' + str(_diff_data)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-                                        yield b"data: [DONE]\n\n"
-                                        return
-                                except Exception as _dfe:
-                                    logger.error(f"[ReAct] DSML diff fallback failed: {_dfe}")
-                            # 通用 Fallback: 从 tool messages 中提取最近的 tool result
-                            _fallback_lines = ["[Alice] 以下是从数据源获取的原始数据：", ""]
-                            for _fm in reversed(tool_messages):
-                                if _fm.get("role") == "tool":
-                                    _fallback_lines.append(str(_fm.get("content", ""))[:2000])
-                                    break
-                            _fallback_text = "\n".join(_fallback_lines)
-                            yield f"data: {json.dumps({'choices':[{'delta':{'content':_fallback_text}}]})}\n\n".encode('utf-8')
-                            yield b"data: [DONE]\n\n"
                             return
+                    
+                    logger.error(f"[ReAct] DSML retry still has tool_calls after cleaning")
             except Exception as e:
                 logger.error(f"[ReAct] LLM probe failed at step {step}: {e}")
                 break
