@@ -1565,9 +1565,14 @@ def chat_completions():
                 msg = choice.get("message", {})
                 finish_reason = choice.get("finish_reason", "")
                 
-                # ▸ 检测 <|tool_calls|> 文本泄漏: 如果 finish=stop 但 content 是 tool_calls 文本
+                # ▸ 检测 tool_calls / DSML 文本泄漏: 如果 finish=stop 但 content 是 tool_calls 文本
+                # 兼容 deepseek-v4-flash 的 <|DSML|>tool_calls> 变体
                 # 注入禁止指令后不加 tools 重试一次
-                if finish_reason == "stop" and "<|tool_calls|>" in str(msg.get("content", "")):
+                _content_str = str(msg.get("content", ""))
+                _has_leak = ("<|tool_calls|>" in _content_str or 
+                            "<|DSML|>" in _content_str or
+                            "<|invoke|>" in _content_str)
+                if finish_reason == "stop" and _has_leak:
                     logger.warning(f"[ReAct] Tool_calls text leak detected in probe, retrying without tools")
                     tool_messages.append({
                         "role": "system",
@@ -1663,12 +1668,18 @@ def chat_completions():
 
             # ── 分支 B: LLM 决定输出最终回答 ──
             elif finish_reason == "stop":
-                # 过滤 msg 中的 <|tool_calls|> 文本泄漏
+                # 过滤 msg 中的 tool_calls / DSML 文本泄漏
                 if msg.get("content"):
                     import re as _re
-                    cleaned = _re.sub(r'<\|tool_calls\|>.*?</\|tool_calls\|>', '', str(msg["content"]), flags=_re.DOTALL)
+                    cleaned = str(msg["content"])
+                    # 标准 OpenAI tool_calls 文本泄漏
+                    cleaned = _re.sub(r'<\|tool_calls\|>.*?</\|tool_calls\|>', '', cleaned, flags=_re.DOTALL)
                     cleaned = _re.sub(r'<\|invoke\|.*?</\|invoke\|>', '', cleaned, flags=_re.DOTALL)
                     cleaned = _re.sub(r'<\|parameter\|.*?</\|parameter\|>', '', cleaned, flags=_re.DOTALL)
+                    # deepseek-v4-flash DSML 变体: <|DSML|>tool_calls> ... </|DSML|>tool_calls>
+                    cleaned = _re.sub(r'<\|DSML\|>.*?</\|DSML\|>', '', cleaned, flags=_re.DOTALL)
+                    # 残留的孤标签
+                    cleaned = _re.sub(r'</?\|DSML\|>', '', cleaned)
                     if cleaned.strip():
                         msg["content"] = cleaned.strip()
                     else:
@@ -1680,11 +1691,14 @@ def chat_completions():
             # ── 分支 C: 其他情况 (length/content_filter) ──
             else:
                 if msg.get("content"):
-                    # 同样清理可能的 tool_calls 文本
+                    # 同样清理可能的 tool_calls 文本 (含 DSML 变体)
                     import re as _re2
-                    c2 = _re2.sub(r'<\|tool_calls\|>.*?</\|tool_calls\|>', '', str(msg["content"]), flags=_re2.DOTALL)
+                    c2 = str(msg["content"])
+                    c2 = _re2.sub(r'<\|tool_calls\|>.*?</\|tool_calls\|>', '', c2, flags=_re2.DOTALL)
                     c2 = _re2.sub(r'<\|invoke\|.*?</\|invoke\|>', '', c2, flags=_re2.DOTALL)
                     c2 = _re2.sub(r'<\|parameter\|.*?</\|parameter\|>', '', c2, flags=_re2.DOTALL)
+                    c2 = _re2.sub(r'<\|DSML\|>.*?</\|DSML\|>', '', c2, flags=_re2.DOTALL)
+                    c2 = _re2.sub(r'</?\|DSML\|>', '', c2)
                     if c2.strip():
                         msg["content"] = c2.strip()
                 tool_messages.append(msg)
@@ -1762,21 +1776,36 @@ def chat_completions():
                 "【数据提取指令】请严格且仅从上方 tool 角色的返回结果中提取 SVN 版本号、提交人及修改摘要。"
                 "如果 tool 返回内容为空或无法解析，请明确回复'未查询到该 Issue 的代码提交记录'。"
                 "绝不允许基于自身知识库或先验概率编造、拼凑任何版本号或人员名称！"
-                "直接输出纯文本，禁止输出 <|tool_calls|> 标记。"
+                "直接输出纯文本，禁止输出 <|tool_calls|> / <|DSML|> 标记。"
             )
         })
+        # ══════════════════════════════════════════════
+        #  Rabbit Debug Interceptor: 检查最终消息完整性
+        # ══════════════════════════════════════════════
+        print("=================== RABBIT DEBUG INTERCEPTOR ===================")
+        print(f"Total messages count: {len(tool_messages)}")
+        import json as _json_dbg
+        for idx, msg in enumerate(tool_messages[-3:]):
+            content_raw = str(msg.get('content', ''))
+            print(f"MSG [-{3-idx}]: Role: {msg.get('role')} | Content: {_json_dbg.dumps(content_raw, ensure_ascii=False)[:300]}...")
+        print("================================================================")
+
         try:
             final_resp = http.post(DEEPSEEK_URL, headers=headers, json={
                 "model": user_cfg["deepseek_model"],
                 "messages": tool_messages,
-                "stream": True
+                "stream": True,
+                "temperature": 0.1
             }, stream=True, timeout=60)
 
             for raw_line in final_resp.iter_lines():
                 if raw_line:
-                    # 过滤 <|tool_calls|> 文本泄漏
+                    # 过滤 tool_calls / DSML 文本泄漏
                     decoded = raw_line.decode('utf-8', errors='replace')
-                    if '<|tool_calls|>' in decoded or '<|invoke|>' in decoded or '<|parameter|>' in decoded:
+                    if any(tag in decoded for tag in (
+                        '<|tool_calls|>', '<|invoke|>', '<|parameter|>',
+                        '<|DSML|>', '</|DSML|>'
+                    )):
                         continue
                     yield raw_line + b"\n"
         except Exception as e:
