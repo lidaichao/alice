@@ -252,6 +252,74 @@ def fetch_precise_commits_via_fisheye(issue_key: str) -> str:
         except:
             return f"[PreciseCommits] {issue_key} 检索失败: {str(e)[:200]}"
 
+def get_single_commit_diff(revision_id: str) -> str:
+    """按需召回: 拉取指定版本号(r40538)的单次提交代码 Diff。
+    
+    算法:
+    1. 从环境变量获取 SVN 仓库凭据
+    2. 调用 svn diff -c {revision_id} 获取纯文本 Diff
+    3. 截断至 3000 tokens (~8000 字符)
+    4. 仅返回 Diff 文本, 不作分析
+    
+    Args:
+        revision_id: SVN 版本号, 如 "40538" 或 "r40538"
+    """
+    import subprocess, os
+    
+    # 清洗版本号: 去除 "r" 前缀
+    rev = str(revision_id).lstrip("rR")
+    
+    svn_url = os.getenv("SVN_URL", "")
+    svn_user = os.getenv("SVN_USERNAME", "")
+    svn_pass = os.getenv("SVN_PASSWORD", "")
+    
+    if not svn_url:
+        try:
+            from ai_bridge import jira as _jira_mod
+            gcfg = getattr(_jira_mod, '_global_cfg', {})
+            svn_url = gcfg.get("SVN_URL", "")
+            svn_user = gcfg.get("SVN_USERNAME", "")
+            svn_pass = gcfg.get("SVN_PASSWORD", "")
+        except Exception:
+            pass
+    
+    if not svn_url:
+        return "[get_single_commit_diff] SVN 仓库地址未配置"
+    
+    try:
+        result = subprocess.run(
+            ["svn", "--non-interactive",
+             "--trust-server-cert-failures=unknown-ca,cn-mismatch,expired,not-yet-valid,other",
+             "--username", svn_user, "--password", svn_pass,
+             "diff", "-c", rev, svn_url],
+            capture_output=True, text=False, timeout=45,
+            env={**os.environ, "NO_PROXY": "*"}
+        )
+        
+        if result.returncode != 0:
+            err = result.stderr.decode('utf-8', errors='ignore')[:300]
+            return f"[get_single_commit_diff] SVN diff 失败 (r{rev}): {err}"
+        
+        diff_text = result.stdout.decode('utf-8', errors='ignore')
+        
+        if not diff_text.strip():
+            return f"[get_single_commit_diff] r{rev} 无 Diff 内容（可能是空提交或二进制文件）"
+        
+        # 安全护栏: 截断至 ~3000 tokens (约 8000 字符)
+        MAX_CHARS = 8000
+        if len(diff_text) > MAX_CHARS:
+            diff_text = diff_text[:MAX_CHARS]
+            diff_text += f"\n\n[Diff过长已截断] 原始 Diff 共 {len(result.stdout)} 字符, 仅展示前 {MAX_CHARS} 字符。如需完整 Diff 请缩小范围。"
+        
+        return f"## SVN Diff: r{rev}\n\n```diff\n{diff_text}\n```"
+        
+    except FileNotFoundError:
+        return "[get_single_commit_diff] 当前环境未安装 SVN 命令行客户端"
+    except subprocess.TimeoutExpired:
+        return f"[get_single_commit_diff] SVN diff r{rev} 超时 (45s)"
+    except Exception as e:
+        return f"[get_single_commit_diff] r{rev} 异常: {str(e)[:300]}"
+
 # ── Notion 工具 ────────────────────────────────────────────
 def extract_notion_title_ultimate(item: dict) -> str:
     """Notion 标题终极提取器：递归搜索 + ID兜底"""

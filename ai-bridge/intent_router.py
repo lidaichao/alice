@@ -27,13 +27,20 @@ logger = logging.getLogger('intent_router')
 
 INTENT_PATTERNS = [
 
-    # P0: 代码提交/Diff 查询 — 最容易出错的场景
-    # LLM 会因为任务状态"规划中/待PO分转"而预判没提交
-    # 路由层直接给 get_issue_commits，跳过 LLM 的状态推理
+    # P0: 代码提交列表查询 — 用户问"有哪些提交"、"提交了什么"
+    # 分配 get_issue_commits (列表) + query_jira_metadata (元数据)
     (
-        r"提交|commit|改了什么代码|代码变更|diff|变更了哪些|改了哪些文件|提交记录|提交内容",
+        r"提交|commit|改了什么代码|代码变更|变更了哪些|改了哪些文件|提交记录|提交内容|提交列表|有哪些.*提交|提交.*有哪些",
         ["query_jira_metadata", "get_issue_commits"],
-        "CODE_COMMIT"
+        "CODE_COMMIT_LIST"
+    ),
+
+    # P0.5: 代码 Diff 分析 — 用户问"分析 diff"、"看看 diff"、"分析 r40538"
+    # 分配 get_single_commit_diff + get_issue_commits (先查列表再选版本)
+    (
+        r"diff|分析.*代码|代码.*分析|代码.*审查|看看.*r\d+|分析.*r\d+|审查.*提交|帮我看看.*版本|分析.*变更|diff.*分析",
+        ["get_issue_commits", "get_single_commit_diff", "query_jira_metadata"],
+        "CODE_COMMIT_DIFF"
     ),
 
     # P1: 文档内容查询 — 只需要知识库检索

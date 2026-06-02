@@ -27,9 +27,10 @@ tools:
   - name: get_issue_commits
     display: "代码提交检索"
     description: >
-      获取指定 Jira 任务关联的 SVN 代码提交记录和 Diff 变更内容。
-      通过 FishEye 双跳算法精确检索：Jira Issue Key → SVN 提交 → Diff 文本。
-      返回实际的代码变更内容，可用于代码审查和变更分析。
+      获取指定 Jira 任务关联的 SVN 代码提交记录（列表）。
+      返回提交版本号、作者、时间、文件数、增删行数。
+      ⚠️ 此工具只返回提交列表，不包含具体代码 Diff。
+      如需分析某次提交的代码变更，请使用 get_single_commit_diff。
     category: jira
     icon: "📝"
     risk: readonly
@@ -38,6 +39,22 @@ tools:
         issue_key:
           type: string
           description: "Jira 任务编号，例如 CT-11112"
+          required: true
+
+  - name: get_single_commit_diff
+    display: "单次提交Diff"
+    description: >
+      获取指定 SVN 版本号（如 r40538）的单次代码 Diff 内容。
+      当用户要求分析某次特定的代码提交（diff）、查看代码变更、审查某次提交时使用。
+      返回该次提交的完整代码差异文本（已截断至安全长度）。
+    category: jira
+    icon: "📊"
+    risk: readonly
+    function:
+      parameters:
+        revision_id:
+          type: string
+          description: "SVN 版本号，例如 40538 或 r40538"
           required: true
 
   - name: search_docs_catalog

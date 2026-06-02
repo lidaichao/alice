@@ -974,7 +974,8 @@ try:
     
     _FALLBACK_TOOLS = [
         {"type": "function", "function": {"name": "query_jira_metadata", "description": "获取 Jira 任务元数据", "parameters": {"type": "object", "properties": {"issue_key": {"type": "string", "description": "Jira 任务编号"}}, "required": ["issue_key"]}}},
-        {"type": "function", "function": {"name": "get_issue_commits", "description": "获取 SVN 代码提交", "parameters": {"type": "object", "properties": {"issue_key": {"type": "string", "description": "Jira 任务编号"}}, "required": ["issue_key"]}}},
+        {"type": "function", "function": {"name": "get_issue_commits", "description": "获取 SVN 代码提交列表", "parameters": {"type": "object", "properties": {"issue_key": {"type": "string", "description": "Jira 任务编号"}}, "required": ["issue_key"]}}},
+        {"type": "function", "function": {"name": "get_single_commit_diff", "description": "获取指定版本号的代码 Diff", "parameters": {"type": "object", "properties": {"revision_id": {"type": "string", "description": "SVN 版本号，如 40538"}}, "required": ["revision_id"]}}},
         {"type": "function", "function": {"name": "search_docs_catalog", "description": "知识库目录检索", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "搜索关键词"}, "source": {"type": "string", "enum": ["notion", "gdrive", "all"]}}, "required": ["query"]}}},
         {"type": "function", "function": {"name": "read_specific_doc", "description": "按 ID 读取文档全文", "parameters": {"type": "object", "properties": {"doc_id": {"type": "string", "description": "文档 ID"}, "source": {"type": "string", "enum": ["notion", "gdrive"]}}, "required": ["doc_id", "source"]}}},
     ]
@@ -1039,6 +1040,21 @@ def _exec_get_issue_commits(args: dict) -> str:
         return json.dumps({"status": "ok", "result": f"Issue {issue_key} 暂无关联的 SVN 代码变更"})
     except Exception as e:
         return json.dumps({"status": "error", "result": f"SVN 检索异常: {str(e)[:200]}"})
+
+def _exec_get_single_commit_diff(args: dict) -> str:
+    """工具5: 按需召回单次 SVN 提交的代码 Diff（供 LLM 分析用）"""
+    revision_id = str(args.get("revision_id", "")).strip()
+    if not revision_id:
+        return json.dumps({"status": "error", "result": "缺少 revision_id 参数"})
+    try:
+        from knowledge_retriever import get_single_commit_diff
+        diff_text = get_single_commit_diff(revision_id)
+        if diff_text and len(str(diff_text)) > 20:
+            text = str(diff_text)[:8000]
+            return json.dumps({"status": "ok", "llm_text": text}, ensure_ascii=False)
+        return json.dumps({"status": "ok", "result": f"版本 {revision_id} 暂无 Diff 内容"})
+    except Exception as e:
+        return json.dumps({"status": "error", "result": f"Diff 检索异常: {str(e)[:200]}"})
 
 
 def _exec_search_docs_catalog(args: dict) -> str:
@@ -1305,6 +1321,7 @@ def _exec_search_jira_issues(args: dict, user_pat: str = "", frontend_cfg: dict 
 _ATOMIC_TOOLS = {
     "query_jira_metadata":  ("query_jira_metadata",  _exec_query_jira_metadata),
     "get_issue_commits":    ("get_issue_commits",    _exec_get_issue_commits),
+    "get_single_commit_diff": ("get_single_commit_diff", _exec_get_single_commit_diff),
     "search_docs_catalog":  ("search_docs_catalog",  _exec_search_docs_catalog),
     "read_specific_doc":    ("read_specific_doc",    _exec_read_specific_doc),
     "search_jira_issues":   ("search_jira_issues",   _exec_search_jira_issues),
@@ -1389,7 +1406,13 @@ CORE_SYSTEM_PROMPT_V2 = """你是 Alice V2.0，Jira 项目和知识库管理 AI 
 当用户需要查询数据时，你【必须直接调用工具 (tool_calls)】。
 绝对禁止先输出"让我搜索..."、"第一步..."、"好的，我来查询"等文字再调用工具！
 有数据需求 → 立即 tool_calls → 拿到结果 → 再回答。一步都不准多！
-⚠️ 当用户问"提交了什么"、"改了什么代码"、"有什么变更"、"commit"时，必须调用 get_issue_commits 去查，不要根据任务状态（如"待PO分转"）预判是否有提交！很多"待处理"状态的任务实际已有SVN提交。
+⚠️ 当用户问"提交了什么"、"改了什么代码"、"有什么变更"、"commit"、"提交列表"时，必须调用 get_issue_commits 去查，不要根据任务状态（如"待PO分转"）预判是否有提交！很多"待处理"状态的任务实际已有SVN提交。
+
+【代码 Diff 分析 — 按需召回 (On-Demand RAG)】
+- get_issue_commits 只返回提交列表（版本号/作者/时间/文件数），不包含代码 Diff！
+- 当用户要求"分析代码"、"审查 diff"、"这次提交改了什么"、"帮我看看 r40538"时，先确保已获取提交列表，再用 get_single_commit_diff 拉取指定版本的完整代码差异。
+- 你可以通过 get_single_commit_diff 获取具体版本的代码 diff（传入参数如 "40538" 或 "r40538"）。
+- 如果用户没有指定版本号就要求分析 diff，请先询问用户："你想分析哪一个版本的 Diff？以下是提交列表供选择。"
 
 【跨工具关联检索 — LlamaIndex 精髓：读详情 → 抽特征 → 搜关联】
 当用户要求"查找与某文档相关的 Jira 任务"或类似跨数据源的关联问题时，你必须执行以下链路：
@@ -1497,6 +1520,24 @@ def chat_completions():
         if user_text:
             found = re.findall(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])', user_text)
             issue_keys_found.update(found)
+        
+        # ══════════════════════════════════════════════
+        #  Diff 预检: 如果用户明确指定了版本号 → 直接拉 SVN Diff
+        #  绕过整个 ReAct 循环 (deepseek-v4-flash 不擅长工具调用)
+        # ══════════════════════════════════════════════
+        _diff_rev = re.search(r'(?:r|版本\s*)\s*(\d{4,6})', user_text or "")
+        _diff_intent = bool(re.search(r'diff|分析.*代码|代码.*分析|代码.*审查|变更|改了.*什么', user_text or ""))
+        if _diff_rev and _diff_intent:
+            logger.info(f"[Diff-PreCheck] Direct SVN diff for r{_diff_rev.group(1)}")
+            try:
+                from knowledge_retriever import get_single_commit_diff
+                diff_data = get_single_commit_diff(_diff_rev.group(1))
+                if diff_data and len(str(diff_data)) > 20:
+                    yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice Diff 分析】\\n\\n' + str(diff_data)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                    yield b"data: [DONE]\n\n"
+                    return
+            except Exception as _dpe:
+                logger.error(f"[Diff-PreCheck] Failed: {_dpe}")
 
         # ── 构建初始消息列表 ────────────────────────
         system_context = CORE_SYSTEM_PROMPT_V2
@@ -1574,10 +1615,46 @@ def chat_completions():
                             "<|DSML|>" in _content_str or
                             "<|invoke|>" in _content_str)
                 if finish_reason == "stop" and _has_leak:
-                    logger.warning(f"[ReAct] Tool_calls text leak detected in probe, retrying without tools")
+                    import sys as _sys2
+                    _sys2.stderr.write(f"[REACT-DEBUG] DSML DETECTED! user_text={user_text[:80]} rev_match={bool(re.search(r'r\d{4,6}', user_text or ''))}\n")
+                    _sys2.stderr.flush()
+                    logger.warning(f"[ReAct] Tool_calls text leak detected in probe, using direct tool execution")
                     
-                    # ▸ 关键修复: 在 retry 前清理 tool_messages 中的 tool_calls 历史
-                    # 防止 LLM 看到历史中的 function calling 格式后继续模仿输出
+                    # ▸ 直接解析用户意图，绕过 LLM 工具决策
+                    _ut = user_text or ""
+                    _rev_match = re.search(r'(?:r|版本\s*)\s*(\d{4,6})', _ut)
+                    _issue_match = re.search(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])', _ut)
+                    _ask_diff = bool(re.search(r'diff|分析.*代码|代码.*分析|代码.*审查|变更|改了.*什么|改了什么', _ut))
+                    _ask_list = bool(re.search(r'提交|commit|提交记录|提交内容|有哪些.*提交|提交.*列表|提交了啥', _ut))
+                    
+                    if _rev_match and _ask_diff:
+                        # Diff 请求 → 直接调 get_single_commit_diff
+                        _rev_id = _rev_match.group(1)
+                        logger.info(f"[ReAct] DSML direct: calling get_single_commit_diff for r{_rev_id}")
+                        try:
+                            from knowledge_retriever import get_single_commit_diff
+                            _raw_diff = get_single_commit_diff(_rev_id)
+                            if _raw_diff and len(str(_raw_diff)) > 20:
+                                yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice Diff】\\n\\n' + str(_raw_diff)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                                yield b"data: [DONE]\n\n"
+                                return
+                        except Exception as _de:
+                            logger.error(f"[ReAct] DSML diff direct failed: {_de}")
+                    elif _issue_match and _ask_list:
+                        # 列表请求 → 直接调 get_issue_commits
+                        _ik = _issue_match.group(1)
+                        logger.info(f"[ReAct] DSML direct: calling get_issue_commits for {_ik}")
+                        try:
+                            from knowledge_retriever import fetch_precise_commits_via_fisheye
+                            _raw_commits = fetch_precise_commits_via_fisheye(_ik)
+                            if _raw_commits and len(str(_raw_commits)) > 20:
+                                yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice 查询结果】\\n\\n' + str(_raw_commits)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                                yield b"data: [DONE]\n\n"
+                                return
+                        except Exception as _ce:
+                            logger.error(f"[ReAct] DSML commit direct failed: {_ce}")
+                    
+                    # 如果以上都不匹配 → 回退到原有 retry 逻辑
                     for _m in tool_messages:
                         if _m.get("role") == "assistant" and "tool_calls" in _m:
                             del _m["tool_calls"]
@@ -1613,8 +1690,22 @@ def chat_completions():
                             return  # 跳过 Final Stream
                         else:
                             logger.error(f"[ReAct] DSML retry still has tool_calls after cleaning: {_retry_content[:200]}")
-                            # Fallback: 从 tool messages 中提取最近的 tool result 直接输出原始数据
-                            _fallback_lines = ["[Alice] 以下是从 SVN/FishEye 获取的原始提交数据：", ""]
+                            # Fallback: 检查是否是 diff 请求 → 直接调 get_single_commit_diff
+                            _rev_match = re.search(r'r(\d{4,6})', user_text or "")
+                            if _rev_match:
+                                _rev_id = _rev_match.group(1)
+                                logger.info(f"[ReAct] DSML diff fallback: executing get_single_commit_diff for r{_rev_id}")
+                                try:
+                                    from knowledge_retriever import get_single_commit_diff
+                                    _diff_data = get_single_commit_diff(_rev_id)
+                                    if _diff_data and len(str(_diff_data)) > 20:
+                                        yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice Diff 分析】\\n\\n' + str(_diff_data)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                                        yield b"data: [DONE]\n\n"
+                                        return
+                                except Exception as _dfe:
+                                    logger.error(f"[ReAct] DSML diff fallback failed: {_dfe}")
+                            # 通用 Fallback: 从 tool messages 中提取最近的 tool result
+                            _fallback_lines = ["[Alice] 以下是从数据源获取的原始数据：", ""]
                             for _fm in reversed(tool_messages):
                                 if _fm.get("role") == "tool":
                                     _fallback_lines.append(str(_fm.get("content", ""))[:2000])
@@ -1702,18 +1793,26 @@ def chat_completions():
 
                 # ══ Rabbit 核选项: 工具执行后直接输出数据，跳过后续 ReAct 步骤 ══
                 # deepseek-v4-flash 在后续轮次中持续输出 tool_calls 文本而非事实回答
-                _nuke_results = []
-                for _nm in reversed(tool_messages):
-                    if _nm.get("role") == "tool":
-                        _nuke_results.insert(0, str(_nm.get("content", "")))
-                    elif _nm.get("role") == "assistant":
-                        break
-                if _nuke_results:
-                    _nuke_text = "\n\n---\n\n".join(_nuke_results)[:6000]
-                    logger.info(f"[ReAct] [NUCLEAR] Direct-output {len(_nuke_text)} chars from tool data (step {step})")
-                    yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice 查询结果】\\n\\n' + _nuke_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-                    yield b"data: [DONE]\n\n"
-                    return
+                # ⚠️ 如果调用了 get_single_commit_diff → 不拦截！让 diff 流入 LLM 分析
+                _has_diff_in_step = any(
+                    r.get("name") == "get_single_commit_diff"
+                    for r in results
+                )
+                if not _has_diff_in_step:
+                    _nuke_results = []
+                    for _nm in reversed(tool_messages):
+                        if _nm.get("role") == "tool":
+                            _nuke_results.insert(0, str(_nm.get("content", "")))
+                        elif _nm.get("role") == "assistant":
+                            break
+                    if _nuke_results:
+                        _nuke_text = "\n\n---\n\n".join(_nuke_results)[:6000]
+                        logger.info(f"[ReAct] [NUCLEAR] Direct-output {len(_nuke_text)} chars from tool data (step {step})")
+                        yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice 查询结果】\\n\\n' + _nuke_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                        yield b"data: [DONE]\n\n"
+                        return
+                else:
+                    logger.info(f"[ReAct] [NUCLEAR-SKIP] get_single_commit_diff detected, bypassing nuclear — let LLM analyze diff")
 
                 continue  # 继续循环让 LLM 处理工具结果
             # ── 分支 B: LLM 决定输出最终回答 ──
@@ -1800,36 +1899,45 @@ def chat_completions():
         #  不管 ReAct 如何退出（tool_calls/stop/DSML/预注入元数据）,
         #  只要用户问了提交相关的问题且有 Issue Key，强制调工具输出
         # ══════════════════════════════════════════════
-        _has_commit_tool = any(
-            m.get("role") == "tool" and m.get("name") == "get_issue_commits"
+        _has_diff_tool = any(
+            m.get("role") == "tool" and m.get("name") == "get_single_commit_diff"
             for m in tool_messages
         )
-        _user_asks_commit = bool(re.search(
-            r'提交|commit|改了什么代码|代码变更|diff|变更了哪些|改了哪些文件|提交记录|提交内容|改了.*什么',
-            user_text or ""
-        ))
-        _has_issue_key = bool(issue_keys_found)
         
-        if _user_asks_commit and _has_issue_key and not _has_commit_tool:
-            logger.error(f"[NUCLEAR-V2] Commit query detected but no tool was called! Force-executing get_issue_commits for {issue_keys_found}")
-            try:
-                from knowledge_retriever import fetch_precise_commits_via_fisheye
-                for ik in sorted(issue_keys_found, key=len, reverse=True)[:1]:
-                    commit_data = fetch_precise_commits_via_fisheye(ik)
-                    if commit_data and len(str(commit_data)) > 20:
-                        import json as _json_nuke
-                        yield f"data: {_json_nuke.dumps({'choices':[{'delta':{'content': '【Alice 查询结果】\\n\\n' + str(commit_data)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-                        yield b"data: [DONE]\n\n"
-                        return
-            except Exception as _nuke_err:
-                logger.error(f"[NUCLEAR-V2] Force-execute failed: {_nuke_err}")
+        # ▸ 如果调用了 get_single_commit_diff → 绝不拦截! Diff 必须流入 LLM 分析
+        if _has_diff_tool:
+            logger.info(f"[NUCLEAR-V2] get_single_commit_diff detected, bypassing nuclear — let LLM analyze diff")
+        else:
+            _has_commit_tool = any(
+                m.get("role") == "tool" and m.get("name") == "get_issue_commits"
+                for m in tool_messages
+            )
+            _user_asks_commit = bool(re.search(
+                r'提交|commit|改了什么代码|代码变更|diff|变更了哪些|改了哪些文件|提交记录|提交内容|改了.*什么',
+                user_text or ""
+            ))
+            _has_issue_key = bool(issue_keys_found)
+            
+            if _user_asks_commit and _has_issue_key and not _has_commit_tool:
+                logger.error(f"[NUCLEAR-V2] Commit query detected but no tool was called! Force-executing get_issue_commits for {issue_keys_found}")
+                try:
+                    from knowledge_retriever import fetch_precise_commits_via_fisheye
+                    for ik in sorted(issue_keys_found, key=len, reverse=True)[:1]:
+                        commit_data = fetch_precise_commits_via_fisheye(ik)
+                        if commit_data and len(str(commit_data)) > 20:
+                            import json as _json_nuke
+                            yield f"data: {_json_nuke.dumps({'choices':[{'delta':{'content': '【Alice 查询结果】\\n\\n' + str(commit_data)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                            yield b"data: [DONE]\n\n"
+                            return
+                except Exception as _nuke_err:
+                    logger.error(f"[NUCLEAR-V2] Force-execute failed: {_nuke_err}")
 
         # 如果已有 tool 结果（通过 ReAct 正常调用），也直接输出
         _all_tool_results = []
         for _tm in tool_messages:
             if _tm.get("role") == "tool":
                 _all_tool_results.append(str(_tm.get("content", "")))
-        if _all_tool_results:
+        if _all_tool_results and not _has_diff_tool:
             _nuke_combined = "\n\n---\n\n".join(_all_tool_results)[:6000]
             logger.info(f"[NUCLEAR-V2] Direct-output {len(_nuke_combined)} chars from existing tool data")
             import json as _json_nuke2
@@ -1896,6 +2004,7 @@ def chat_completions():
         logger.info(f"[ReAct] Cleaned tool_calls from assistant msgs, streaming {len(tool_messages)} msgs")
 
         try:
+            _final_content_yielded = False
             final_resp = http.post(DEEPSEEK_URL, headers=headers, json={
                 "model": user_cfg["deepseek_model"],
                 "messages": tool_messages,
@@ -1921,9 +2030,21 @@ def chat_completions():
                             break
                         continue
                     consecutive_filtered = 0
+                    _final_content_yielded = True
                     yield raw_line + b"\n"
         except Exception as e:
             yield f"data: {json.dumps({'choices':[{'delta':{'content':f'[Error: {e}]'}}]})}\n\n".encode('utf-8')
+
+        # ══ Final Stream 安全网: 如果 LLM 全部输出被过滤 → 回退输出原始数据 ══
+        if not _final_content_yielded and _has_diff_tool:
+            logger.error(f"[FINAL-SAFETY] LLM output fully filtered! Fallback to raw diff data")
+            _raw_diff = []
+            for _tm in tool_messages:
+                if _tm.get("role") == "tool" and _tm.get("name") == "get_single_commit_diff":
+                    _raw_diff.append(str(_tm.get("content", ""))[:4000])
+            if _raw_diff:
+                _safe_text = "【Alice】LLM 分析未成功生成，以下是原始代码 Diff 数据：\n\n" + "\n\n---\n\n".join(_raw_diff)
+                yield f"data: {json.dumps({'choices':[{'delta':{'content':_safe_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
 
         yield b"data: [DONE]\n\n"
 
