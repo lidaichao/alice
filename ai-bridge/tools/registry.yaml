@@ -85,7 +85,7 @@ tools:
     description: >
       【核心约束：仅限知识库文档】通过精确的 doc_id 读取 Notion 或 GDrive 等知识库文档的全文。
       【绝对禁止】：严禁将此工具用于读取代码文件！严禁传入 SVN/Git 的文件路径！
-      doc_id 必须且只能来源于 search_docs_catalog 工具返回的结果！
+      doc_id 必须且只能来源于 search_docs_catalog 工具返回的结果！严禁凭空构造 doc_id！
       此工具会返回文档的完整正文（前 8000 字符）。
       【跨工具关联】：读取文档后，如果你需要查找与文档内容相关的 Jira 任务，
       请从文档内容中提取最具区分度的业务术语（而非用户原话），再用 search_jira_issues 搜索。

@@ -1425,8 +1425,8 @@ CORE_SYSTEM_PROMPT_V2 = """你是 Alice V2.0，Jira 项目和知识库管理 AI 
 4. 展示匹配结果
 
 【行为守则】
-1. 见好就收：数据够了直接回答，不反问。
-2. 工具边界：read_specific_doc 只用于知识库文档，禁用于代码文件。
+1. 见好就收：如果你通过工具获取的数据已经足够回答用户当前的问题，请直接给出专业、自信的最终答案，【不要】反问用户"还需要我做什么吗"或"是否需要进一步查询"。
+2. 工具边界：read_specific_doc 只能用来阅读知识库（如 Notion/GDrive）的文档 ID。当你获取到代码差异（Diff）或文件路径（如 server/xxx.go）时，绝对禁止使用该工具去尝试读取代码文件！doc_id 必须且只能来源于 search_docs_catalog！
 3. 禁止口头模拟工具：没调用工具就不准假装有数据。
 4. 上下文缺失必须反问：代词无指代时直接问，禁止猜。
 5. 禁止知识库幻觉：100% 来源工具结果，没搜到就说没搜到。
@@ -1552,12 +1552,12 @@ def chat_completions():
                         f"{raw_diff}\n"
                         f"====================\n"
                         f"[核心任务] 用户要求分析上述代码。但你缺少业务背景，不能直接分析！\n"
-                        f"你必须执行以下两步：\n"
-                        f"第1步：立刻调用 search_docs_catalog 工具，用关键词「{_key_terms}」搜索知识库中的策划文档。\n"
-                        f"第2步：从 search_docs_catalog 的返回结果中选一个 doc_id，调用 read_specific_doc 读取文档全文。\n"
-                        f"只有获取了文档内容后，才能结合文档背景对上述代码进行 Code Review"
-                        f"（指出核心逻辑、模块职责和潜在风险）。\n"
-                        f"⚠️ 绝对禁止跳过文档查询直接分析代码！禁止不调用 search_docs_catalog 就调用 read_specific_doc！"
+                        f"你必须执行以下步骤（最多搜索2次）：\n"
+                        f"第1步：调用 search_docs_catalog，用关键词「{_key_terms}」搜索知识库中的策划文档。\n"
+                        f"第2步：从搜索结果中选一个相关文档的 doc_id，调用 read_specific_doc 读取文档全文。\n"
+                        f"⚠️ 如果你已经搜索了2次，必须立即选一个结果用 read_specific_doc 读取！\n"
+                        f"⚠️ 禁止连续搜索3次以上！禁止不读文档直接分析代码！\n"
+                        f"获取文档后，结合文档背景对上述代码进行 Code Review（指出核心逻辑、模块职责和潜在风险）。"
                     )
                     
                     # 覆盖最后一条 user message
@@ -1647,44 +1647,50 @@ def chat_completions():
                             "<|DSML|>" in _content_str or
                             "<|invoke|>" in _content_str)
                 if finish_reason == "stop" and _has_leak:
-                    import sys as _sys2
-                    _sys2.stderr.write(f"[REACT-DEBUG] DSML DETECTED! user_text={user_text[:80]} rev_match={bool(re.search(r'r\d{4,6}', user_text or ''))}\n")
-                    _sys2.stderr.flush()
-                    logger.warning(f"[ReAct] Tool_calls text leak detected in probe, using direct tool execution")
+                    logger.warning(f"[ReAct] Tool_calls text leak detected in probe")
                     
-                    # ▸ 直接解析用户意图，绕过 LLM 工具决策
-                    _ut = user_text or ""
-                    _rev_match = re.search(r'(?:r|版本\s*)\s*(\d{4,6})', _ut)
-                    _issue_match = re.search(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])', _ut)
-                    _ask_diff = bool(re.search(r'diff|分析.*代码|代码.*分析|代码.*审查|变更|改了.*什么|改了什么', _ut))
-                    _ask_list = bool(re.search(r'提交|commit|提交记录|提交内容|有哪些.*提交|提交.*列表|提交了啥', _ut))
-                    
-                    if _rev_match and _ask_diff:
-                        # Diff 请求 → 直接调 get_single_commit_diff
-                        _rev_id = _rev_match.group(1)
-                        logger.info(f"[ReAct] DSML direct: calling get_single_commit_diff for r{_rev_id}")
-                        try:
-                            from knowledge_retriever import get_single_commit_diff
-                            _raw_diff = get_single_commit_diff(_rev_id)
-                            if _raw_diff and len(str(_raw_diff)) > 20:
-                                yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice Diff】\\n\\n' + str(_raw_diff)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-                                yield b"data: [DONE]\n\n"
-                                return
-                        except Exception as _de:
-                            logger.error(f"[ReAct] DSML diff direct failed: {_de}")
-                    elif _issue_match and _ask_list:
-                        # 列表请求 → 直接调 get_issue_commits
-                        _ik = _issue_match.group(1)
-                        logger.info(f"[ReAct] DSML direct: calling get_issue_commits for {_ik}")
-                        try:
-                            from knowledge_retriever import fetch_precise_commits_via_fisheye
-                            _raw_commits = fetch_precise_commits_via_fisheye(_ik)
-                            if _raw_commits and len(str(_raw_commits)) > 20:
-                                yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice 查询结果】\\n\\n' + str(_raw_commits)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-                                yield b"data: [DONE]\n\n"
-                                return
-                        except Exception as _ce:
-                            logger.error(f"[ReAct] DSML commit direct failed: {_ce}")
+                    # ▸ Inception 检查
+                    _is_inception_dsml = any(
+                        "[系统预置数据]" in str(m.get("content", ""))
+                        for m in tool_messages if m.get("role") == "user"
+                    )
+                    if _is_inception_dsml:
+                        # Inception: 跳过 direct execution → 走 retry (无tools, 纯文本模式)
+                        logger.info(f"[ReAct] DSML in Inception — using retry path (no tools)")
+                    else:
+                        # ▸ 直接解析用户意图，绕过 LLM 工具决策
+                        _ut = user_text or ""
+                        _rev_match = re.search(r'(?:r|版本\s*)\s*(\d{4,6})', _ut)
+                        _issue_match = re.search(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])', _ut)
+                        _ask_diff = bool(re.search(r'diff|分析.*代码|代码.*分析|代码.*审查|变更|改了.*什么|改了什么', _ut))
+                        _ask_list = bool(re.search(r'提交|commit|提交记录|提交内容|有哪些.*提交|提交.*列表|提交了啥', _ut))
+                        
+                        if _rev_match and _ask_diff:
+                            # Diff 请求 → 直接调 get_single_commit_diff
+                            _rev_id = _rev_match.group(1)
+                            logger.info(f"[ReAct] DSML direct: calling get_single_commit_diff for r{_rev_id}")
+                            try:
+                                from knowledge_retriever import get_single_commit_diff
+                                _raw_diff = get_single_commit_diff(_rev_id)
+                                if _raw_diff and len(str(_raw_diff)) > 20:
+                                    yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice Diff】\\n\\n' + str(_raw_diff)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                                    yield b"data: [DONE]\n\n"
+                                    return
+                            except Exception as _de:
+                                logger.error(f"[ReAct] DSML diff direct failed: {_de}")
+                        elif _issue_match and _ask_list:
+                            # 列表请求 → 直接调 get_issue_commits
+                            _ik = _issue_match.group(1)
+                            logger.info(f"[ReAct] DSML direct: calling get_issue_commits for {_ik}")
+                            try:
+                                from knowledge_retriever import fetch_precise_commits_via_fisheye
+                                _raw_commits = fetch_precise_commits_via_fisheye(_ik)
+                                if _raw_commits and len(str(_raw_commits)) > 20:
+                                    yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice 查询结果】\\n\\n' + str(_raw_commits)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                                    yield b"data: [DONE]\n\n"
+                                    return
+                            except Exception as _ce:
+                                logger.error(f"[ReAct] DSML commit direct failed: {_ce}")
                     
                     # 如果以上都不匹配 → 回退到原有 retry 逻辑
                     for _m in tool_messages:
@@ -2084,12 +2090,19 @@ def chat_completions():
         if not _final_content_yielded and (_has_diff_tool or _is_inception):
             logger.error(f"[FINAL-SAFETY] LLM output fully filtered! Fallback to tool/probe data")
             if _is_inception:
-                # Inception 模式: 直接用 probe 文本 (Step N 已有完整分析)
+                # Inception 模式: 搜索最近 3 条 assistant 消息, 找有效分析文本
                 _probe_text = ""
+                _found_count = 0
                 for _tm in reversed(tool_messages):
                     if _tm.get("role") == "assistant" and _tm.get("content"):
-                        _probe_text = str(_tm["content"])
-                        break
+                        _c = str(_tm["content"]).strip()
+                        # 跳过太短的或纯 tool_calls 的
+                        if len(_c) > 50 and not any(t in _c for t in ['<|tool_calls|>', '<|DSML|>', '<|invoke|>']):
+                            _probe_text = _c
+                            break
+                        _found_count += 1
+                        if _found_count > 3:
+                            break
                 if _probe_text:
                     yield f"data: {json.dumps({'choices':[{'delta':{'content':_probe_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
             else:
