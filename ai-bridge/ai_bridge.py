@@ -1796,7 +1796,49 @@ def chat_completions():
             logger.info(f"[ReAct] Empty-check injected for: {empty_tools}")
 
         # ══════════════════════════════════════════════
-        #  最终回答: 流式 SSE 输出
+        #  Rabbit Nuclear Intercept V2: 最终防线
+        #  不管 ReAct 如何退出（tool_calls/stop/DSML/预注入元数据）,
+        #  只要用户问了提交相关的问题且有 Issue Key，强制调工具输出
+        # ══════════════════════════════════════════════
+        _has_commit_tool = any(
+            m.get("role") == "tool" and m.get("name") == "get_issue_commits"
+            for m in tool_messages
+        )
+        _user_asks_commit = bool(re.search(
+            r'提交|commit|改了什么代码|代码变更|diff|变更了哪些|改了哪些文件|提交记录|提交内容|改了.*什么',
+            user_text or ""
+        ))
+        _has_issue_key = bool(issue_keys_found)
+        
+        if _user_asks_commit and _has_issue_key and not _has_commit_tool:
+            logger.error(f"[NUCLEAR-V2] Commit query detected but no tool was called! Force-executing get_issue_commits for {issue_keys_found}")
+            try:
+                from knowledge_retriever import fetch_precise_commits_via_fisheye
+                for ik in sorted(issue_keys_found, key=len, reverse=True)[:1]:
+                    commit_data = fetch_precise_commits_via_fisheye(ik)
+                    if commit_data and len(str(commit_data)) > 20:
+                        import json as _json_nuke
+                        yield f"data: {_json_nuke.dumps({'choices':[{'delta':{'content': '【Alice 查询结果】\\n\\n' + str(commit_data)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                        yield b"data: [DONE]\n\n"
+                        return
+            except Exception as _nuke_err:
+                logger.error(f"[NUCLEAR-V2] Force-execute failed: {_nuke_err}")
+
+        # 如果已有 tool 结果（通过 ReAct 正常调用），也直接输出
+        _all_tool_results = []
+        for _tm in tool_messages:
+            if _tm.get("role") == "tool":
+                _all_tool_results.append(str(_tm.get("content", "")))
+        if _all_tool_results:
+            _nuke_combined = "\n\n---\n\n".join(_all_tool_results)[:6000]
+            logger.info(f"[NUCLEAR-V2] Direct-output {len(_nuke_combined)} chars from existing tool data")
+            import json as _json_nuke2
+            yield f"data: {_json_nuke2.dumps({'choices':[{'delta':{'content': '【Alice 查询结果】\\n\\n' + _nuke_combined}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+            yield b"data: [DONE]\n\n"
+            return
+
+        # ══════════════════════════════════════════════
+        #  最终回答: 流式 SSE 输出 (只有核拦截未触发时才到达这里)
         # ══════════════════════════════════════════════
         logger.info(f"[ReAct] Streaming final answer with {len(tool_messages)} messages")
 
