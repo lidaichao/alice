@@ -1564,6 +1564,7 @@ def chat_completions():
                 choice = probe_data.get("choices", [{}])[0]
                 msg = choice.get("message", {})
                 finish_reason = choice.get("finish_reason", "")
+                logger.error(f"[ReAct-TRACE] Step {step}: finish_reason={finish_reason} | has_tool_calls={bool(msg.get('tool_calls'))} | content_first_100={str(msg.get('content',''))[:100]}")
                 
                 # ▸ 检测 tool_calls / DSML 文本泄漏: 如果 finish=stop 但 content 是 tool_calls 文本
                 # 兼容 deepseek-v4-flash 的 <|DSML|>tool_calls> 变体
@@ -1574,6 +1575,13 @@ def chat_completions():
                             "<|invoke|>" in _content_str)
                 if finish_reason == "stop" and _has_leak:
                     logger.warning(f"[ReAct] Tool_calls text leak detected in probe, retrying without tools")
+                    
+                    # ▸ 关键修复: 在 retry 前清理 tool_messages 中的 tool_calls 历史
+                    # 防止 LLM 看到历史中的 function calling 格式后继续模仿输出
+                    for _m in tool_messages:
+                        if _m.get("role") == "assistant" and "tool_calls" in _m:
+                            del _m["tool_calls"]
+                    
                     tool_messages.append({
                         "role": "system",
                         "content": "你现在是纯文本回答模式。禁止输出任何 XML/DSML/tool_calls 标记。直接基于上文数据回答。"
@@ -1587,6 +1595,34 @@ def chat_completions():
                     choice2 = probe_data2.get("choices", [{}])[0]
                     msg = choice2.get("message", {})
                     finish_reason = choice2.get("finish_reason", "")
+                    
+                    # ══ DSML Retry 成功 → 直接输出重试文本，跳过 Final Stream ══
+                    _retry_content = str(msg.get("content", "")).strip()
+                    if finish_reason == "stop":
+                        import re as _re_clean
+                        _retry_content = _re_clean.sub(r'<\|tool_calls\|>.*?</\|tool_calls\|>', '', _retry_content, flags=_re_clean.DOTALL)
+                        _retry_content = _re_clean.sub(r'<\|invoke\|.*?</\|invoke\|>', '', _retry_content, flags=_re_clean.DOTALL)
+                        _retry_content = _re_clean.sub(r'<\|parameter\|.*?</\|parameter\|>', '', _retry_content, flags=_re_clean.DOTALL)
+                        _retry_content = _re_clean.sub(r'<\|DSML\|>.*?</\|DSML\|>', '', _retry_content, flags=_re_clean.DOTALL)
+                        _retry_content = _re_clean.sub(r'</?\|DSML\|>', '', _retry_content).strip()
+                        
+                        if _retry_content and not any(tag in _retry_content for tag in ['<|tool_calls|>', '<|DSML|>', '<|invoke|>', '<|parameter|>']):
+                            logger.info(f"[ReAct] DSML retry success, direct-output {len(_retry_content)} chars")
+                            yield f"data: {json.dumps({'choices':[{'delta':{'content':_retry_content}}]})}\n\n".encode('utf-8')
+                            yield b"data: [DONE]\n\n"
+                            return  # 跳过 Final Stream
+                        else:
+                            logger.error(f"[ReAct] DSML retry still has tool_calls after cleaning: {_retry_content[:200]}")
+                            # Fallback: 从 tool messages 中提取最近的 tool result 直接输出原始数据
+                            _fallback_lines = ["[Alice] 以下是从 SVN/FishEye 获取的原始提交数据：", ""]
+                            for _fm in reversed(tool_messages):
+                                if _fm.get("role") == "tool":
+                                    _fallback_lines.append(str(_fm.get("content", ""))[:2000])
+                                    break
+                            _fallback_text = "\n".join(_fallback_lines)
+                            yield f"data: {json.dumps({'choices':[{'delta':{'content':_fallback_text}}]})}\n\n".encode('utf-8')
+                            yield b"data: [DONE]\n\n"
+                            return
             except Exception as e:
                 logger.error(f"[ReAct] LLM probe failed at step {step}: {e}")
                 break
@@ -1664,8 +1700,22 @@ def chat_completions():
                         "content": str(tool_content)
                     })
 
-                continue  # 继续循环让 LLM 处理工具结果
+                # ══ Rabbit 核选项: 工具执行后直接输出数据，跳过后续 ReAct 步骤 ══
+                # deepseek-v4-flash 在后续轮次中持续输出 tool_calls 文本而非事实回答
+                _nuke_results = []
+                for _nm in reversed(tool_messages):
+                    if _nm.get("role") == "tool":
+                        _nuke_results.insert(0, str(_nm.get("content", "")))
+                    elif _nm.get("role") == "assistant":
+                        break
+                if _nuke_results:
+                    _nuke_text = "\n\n---\n\n".join(_nuke_results)[:6000]
+                    logger.info(f"[ReAct] [NUCLEAR] Direct-output {len(_nuke_text)} chars from tool data (step {step})")
+                    yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice 查询结果】\\n\\n' + _nuke_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                    yield b"data: [DONE]\n\n"
+                    return
 
+                continue  # 继续循环让 LLM 处理工具结果
             # ── 分支 B: LLM 决定输出最终回答 ──
             elif finish_reason == "stop":
                 # 过滤 msg 中的 tool_calls / DSML 文本泄漏
@@ -1782,13 +1832,26 @@ def chat_completions():
         # ══════════════════════════════════════════════
         #  Rabbit Debug Interceptor: 检查最终消息完整性
         # ══════════════════════════════════════════════
-        print("=================== RABBIT DEBUG INTERCEPTOR ===================")
-        print(f"Total messages count: {len(tool_messages)}")
-        import json as _json_dbg
+        import json as _json_dbg, sys as _sys
+        _dbg_lines = [
+            "=================== RABBIT DEBUG INTERCEPTOR ===================",
+            f"Total messages count: {len(tool_messages)}",
+        ]
         for idx, msg in enumerate(tool_messages[-3:]):
             content_raw = str(msg.get('content', ''))
-            print(f"MSG [-{3-idx}]: Role: {msg.get('role')} | Content: {_json_dbg.dumps(content_raw, ensure_ascii=False)[:300]}...")
-        print("================================================================")
+            _dbg_lines.append(f"MSG [-{3-idx}]: Role: {msg.get('role')} | Content: {_json_dbg.dumps(content_raw, ensure_ascii=False)[:300]}...")
+        _dbg_lines.append("================================================================")
+        _dbg_text = "\n".join(_dbg_lines)
+        _sys.stderr.write(_dbg_text + "\n")
+        _sys.stderr.flush()
+        logger.error(f"[RABBIT] Interceptor fired: {len(tool_messages)} msgs, last role={tool_messages[-1].get('role') if tool_messages else 'NONE'}")
+
+        # ▸ 清理 tool_messages: 移除 assistant 消息中的 tool_calls 字段
+        # 防止 LLM 被历史中的 function calling 格式诱导继续输出 tool_calls 文本
+        for _msg in tool_messages:
+            if _msg.get("role") == "assistant" and "tool_calls" in _msg:
+                del _msg["tool_calls"]
+        logger.info(f"[ReAct] Cleaned tool_calls from assistant msgs, streaming {len(tool_messages)} msgs")
 
         try:
             final_resp = http.post(DEEPSEEK_URL, headers=headers, json={
@@ -1798,6 +1861,7 @@ def chat_completions():
                 "temperature": 0.1
             }, stream=True, timeout=60)
 
+            consecutive_filtered = 0
             for raw_line in final_resp.iter_lines():
                 if raw_line:
                     # 过滤 tool_calls / DSML 文本泄漏
@@ -1806,7 +1870,15 @@ def chat_completions():
                         '<|tool_calls|>', '<|invoke|>', '<|parameter|>',
                         '<|DSML|>', '</|DSML|>'
                     )):
+                        consecutive_filtered += 1
+                        # 如果连续过滤超过 20 行，LLM 大概率在持续输出 tool_calls
+                        # 强行注入停止信号
+                        if consecutive_filtered > 20:
+                            logger.error("[ReAct] Too many filtered lines, LLM stuck in tool_calls mode")
+                            yield f"data: {json.dumps({'choices':[{'delta':{'content':'[系统提示] AI 模型输出异常，请刷新页面重试。'}}]})}\n\n".encode('utf-8')
+                            break
                         continue
+                    consecutive_filtered = 0
                     yield raw_line + b"\n"
         except Exception as e:
             yield f"data: {json.dumps({'choices':[{'delta':{'content':f'[Error: {e}]'}}]})}\n\n".encode('utf-8')
