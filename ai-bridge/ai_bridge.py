@@ -1530,8 +1530,35 @@ def chat_completions():
             issue_keys_found.update(found)
         
         # ══════════════════════════════════════════════════════════
+        #  VIP 共享: 流式输出辅助函数 (Diff VIP 和 Catalog VIP 共用)
+        # ══════════════════════════════════════════════════════════
+        def _vip_stream(prompt: str, fallback_text: str = ""):
+            """VIP 直通车: 纯 prompt → LLM stream (无 tools, 不经过 ReAct)"""
+            _msgs = [{"role": "user", "content": prompt}]
+            logger.info(f"[VIP] Direct stream ({len(prompt)} chars), no tools, no ReAct")
+            try:
+                vip_resp = http.post(DEEPSEEK_URL, headers=headers, json={
+                    "model": user_cfg["deepseek_model"],
+                    "messages": _msgs,
+                    "stream": True,
+                    "temperature": 0.1
+                }, stream=True, timeout=90)
+                _yielded = False
+                for raw_line in vip_resp.iter_lines():
+                    if raw_line:
+                        decoded = raw_line.decode('utf-8', errors='replace')
+                        if any(tag in decoded for tag in ('<|tool_calls|>', '<|DSML|>', '<|invoke|>', '<|parameter|>')):
+                            continue
+                        _yielded = True
+                        yield raw_line + b"\n"
+                if not _yielded and fallback_text:
+                    yield f"data: {json.dumps({'choices':[{'delta':{'content': fallback_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+            except Exception as _ve:
+                logger.error(f"[VIP] Stream failed: {_ve}")
+                yield f"data: {json.dumps({'choices':[{'delta':{'content':'⚠️ 系统底层数据服务暂不可用（SVN或知识库异常），请联系管理员或稍后重试。'}}]})}\n\n".encode('utf-8')
+
+        # ══════════════════════════════════════════════════════════
         #  VIP 直通车: Pre-flight RAG — Python 层完成所有检索
-        #  剥夺 LLM 工具权, 直接给"开卷考试" Prompt → Final Stream
         # ══════════════════════════════════════════════════════════
         _diff_rev = re.search(r'(?:r|版本\s*)\s*(\d{4,6})', user_text or "")
         _diff_intent = bool(re.search(r'diff|分析.*代码|代码.*分析|代码.*审查|变更|改了.*什么', user_text or ""))
@@ -1608,32 +1635,6 @@ def chat_completions():
                     f"【用户的真实特定诉求】：{user_text}\n"
                     f"（请在审查或输出时特别关注用户的上述诉求）"
                 )
-            
-            # ── VIP 流式输出辅助函数 ──
-            def _vip_stream(prompt: str, fallback_text: str = ""):
-                """VIP 直通车: 纯 prompt → LLM stream (无 tools, 不经过 ReAct)"""
-                _msgs = [{"role": "user", "content": prompt}]
-                logger.info(f"[VIP] Direct stream ({len(prompt)} chars), no tools, no ReAct")
-                try:
-                    vip_resp = http.post(DEEPSEEK_URL, headers=headers, json={
-                        "model": user_cfg["deepseek_model"],
-                        "messages": _msgs,
-                        "stream": True,
-                        "temperature": 0.1
-                    }, stream=True, timeout=90)
-                    _yielded = False
-                    for raw_line in vip_resp.iter_lines():
-                        if raw_line:
-                            decoded = raw_line.decode('utf-8', errors='replace')
-                            if any(tag in decoded for tag in ('<|tool_calls|>', '<|DSML|>', '<|invoke|>', '<|parameter|>')):
-                                continue
-                            _yielded = True
-                            yield raw_line + b"\n"
-                    if not _yielded and fallback_text:
-                        yield f"data: {json.dumps({'choices':[{'delta':{'content': fallback_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-                except Exception as _ve:
-                    logger.error(f"[VIP] Stream failed: {_ve}")
-                    yield f"data: {json.dumps({'choices':[{'delta':{'content':'⚠️ 系统底层数据服务暂不可用（SVN或知识库异常），请联系管理员或稍后重试。'}}]})}\n\n".encode('utf-8')
             
             # ── Hop 5: 执行 VIP 流式 ──
             yield from _vip_stream(final_prompt, '【VIP 直通车】LLM 未能生成分析，以下是原始 Diff：\\n\\n' + raw_diff[:4000])

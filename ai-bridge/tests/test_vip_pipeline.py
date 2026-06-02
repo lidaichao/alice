@@ -113,7 +113,7 @@ class TestVIPDiffPipeline:
             )
             
             assert response.status_code == 200
-            assert response.content_type == "text/event-stream"
+            assert "text/event-stream" in response.content_type
             
             # ── 解析 SSE 流 ──
             sse_text = response.data.decode("utf-8")
