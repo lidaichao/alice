@@ -10,10 +10,13 @@ class AgentState(TypedDict):
     # 对话历史 (自动合并消息)
     messages: Annotated[list, add_messages]
 
-    # 当前步骤规划: ["1. 查询 CT-10888 状态", "2. 获取 SVN 提交", "3. 汇总分析"]
+    # 当前步骤规划
     plan: List[str]
 
-    # 已执行的工具记录: [{"step": 1, "tool": "query_jira_metadata", "result": "..."}]
+    # 规划模式: "doc_only"(仅文档) / "cross_domain"(跨域) / "chat"(闲聊)
+    plan_mode: str
+
+    # 已执行的工具记录
     past_steps: List[dict]
 
     # 最终回答 (流式输出)

@@ -1657,6 +1657,12 @@ def chat_completions():
         if user_cfg.get("engine") == "v2-graph" or os.environ.get("ALICE_ENGINE") == "v2":
             logger.info("[V2 Graph] Invoking LangGraph Plan-and-Execute agent")
             try:
+                # 确保 parent dir 在 sys.path 中
+                import sys as _sys
+                _parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                if _parent not in _sys.path:
+                    _sys.path.insert(0, _parent)
+
                 from backend.agent.graph import graph as _v2_graph
                 from backend.agent.nodes import init_agent as _v2_init
 
@@ -1680,6 +1686,7 @@ def chat_completions():
                 initial_state = {
                     "messages": _v2_msgs,
                     "plan": [],
+                    "plan_mode": "cross_domain",
                     "past_steps": [],
                     "final_answer": "",
                 }
