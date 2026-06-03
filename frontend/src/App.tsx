@@ -147,10 +147,14 @@ export const App: React.FC = () => {
           <div className="p-4 bg-background border-t border-border flex-shrink-0 flex flex-col gap-2 relative">
             <div className="flex justify-center gap-2 mb-2">
               {isGenerating && (
-                <Button variant="ghost" size="sm" onClick={stop} className="text-red-500 hover:text-red-700 text-xs gap-1">
+                <Button variant="ghost" size="sm" onClick={() => { stop(); }} className="text-red-500 hover:text-red-700 text-xs gap-1">
                   <Square size={12} /> ⏹ 停止生成
                 </Button>
               )}
+              {/* 强制重置 — 解除 isLoading 僵尸状态 */}
+              <Button variant="ghost" size="sm" onClick={() => { stop(); setMessages([]); createSession(); }} className="text-amber-500 hover:text-amber-700 text-xs gap-1">
+                <RefreshCw size={12} /> 🔄 强制重置
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => { if (isGenerating) stop(); createSession(); }} className="text-muted-foreground hover:text-foreground text-xs gap-1">
                 <RefreshCw size={12} /> 🧹 新话题
               </Button>
@@ -166,7 +170,7 @@ export const App: React.FC = () => {
                 className="flex-1 max-h-48 min-h-[56px] resize-none rounded-xl border border-input bg-background px-4 py-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring shadow-sm"
               />
               <Button type="submit"
-                disabled={!(input || '').trim() || isGenerating} className="h-12 w-12 shrink-0 rounded-xl shadow-md">
+                disabled={!(input || '').trim()} className="h-12 w-12 shrink-0 rounded-xl shadow-md">
                 <svg className="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
                 </svg>

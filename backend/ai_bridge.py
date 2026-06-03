@@ -2999,8 +2999,14 @@ def test_connection():
     jira_url = data.get("jira_url", "").strip()
     jira_pat = data.get("jira_pat", "").strip()
     
+    # 空 body → 从 global_config 读取
     if not jira_url or not jira_pat:
-        return jsonify({"ok": False, "error": "缺少 jira_url 或 jira_pat"}), 400
+        _cfg = load_global_config()
+        jira_url = jira_url or _cfg.get("jira_url", "") or os.getenv("JIRA_URL", "")
+        jira_pat = jira_pat or _cfg.get("jira_pat", "") or os.getenv("JIRA_PAT", "")
+    
+    if not jira_url or not jira_pat:
+        return jsonify({"ok": False, "error": "Jira 未配置 — 请前往 /admin.html 填写凭据"}), 400
     
     try:
         import urllib.request as _ur, json as _j, base64 as _b64

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useSessionStore } from '@/store/useSessionStore';
 import { Button } from '@/components/ui/button';
 import { useTheme } from 'next-themes';
-import { Sun, Moon, Monitor, Plus, Trash2, Edit2, Wifi, Bug } from 'lucide-react';
+import { Sun, Moon, Monitor, Plus, Trash2, Edit2, Wifi, Bug, ExternalLink } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 export const Sidebar: React.FC = () => {
@@ -57,8 +57,8 @@ export const Sidebar: React.FC = () => {
             return (
               <div
                 key={session.id}
-                onClick={() => switchSession(session.id)}
-                className={`group mx-2 my-0.5 px-3 py-2 rounded-lg cursor-pointer transition-colors text-sm ${
+                onClick={() => { console.log('[Sidebar] Switching to:', session.id); switchSession(session.id); }}
+                className={`group mx-2 my-0.5 px-3 py-2 rounded-lg cursor-pointer transition-colors text-sm z-0 ${
                   isActive
                     ? 'bg-primary/10 text-primary font-medium border border-primary/20'
                     : 'hover:bg-muted/60 text-foreground/80'
@@ -129,6 +129,14 @@ export const Sidebar: React.FC = () => {
           </div>
         </div>
         <TestConnectionWidget />
+        <button
+          onClick={() => window.open('http://127.0.0.1:9099/admin.html', '_blank')}
+          className="flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-border/50 bg-muted/50 hover:bg-muted transition-colors"
+          title="后端管理后台"
+        >
+          <ExternalLink size={12} className="text-muted-foreground" />
+          管理后台
+        </button>
         <BugReportButton />
       </div>
     </aside>
@@ -142,19 +150,32 @@ function TestConnectionWidget() {
 
   const test = async () => {
     setStatus('testing');
+    setMsg('');
     try {
-      const res = await fetch('/api/test_connection', {
+      // 先检查后端心跳
+      const hres = await fetch('/health');
+      if (!hres.ok) throw new Error('health check failed');
+      const hdata = await hres.json();
+
+      // 再尝试 Jira 连通性 (后端 global_config 中的凭据)
+      const jres = await fetch('/api/test_connection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jira_url: localStorage.getItem('jiraUrl') || '',
-          jira_pat: localStorage.getItem('jiraPat') || ''
-        })
+        body: JSON.stringify({})
       });
-      const data = await res.json();
-      if (data.ok) { setStatus('ok'); setMsg(`已连接: ${data.user}`); }
-      else { setStatus('fail'); setMsg(data.error || '未知错误'); }
-    } catch { setStatus('fail'); setMsg('网络错误或后端未启动'); }
+      const jdata = await jres.json();
+
+      if (jdata.ok) {
+        setStatus('ok');
+        setMsg(`Jira: ${jdata.user || '已连接'} | 后端: ${hdata.service || 'ok'}`);
+      } else {
+        setStatus('ok'); // 后端在线但 Jira 未配
+        setMsg(`后端在线 (${hdata.service || 'ok'}) | Jira: ${jdata.error || '未配置'}`);
+      }
+    } catch {
+      setStatus('fail');
+      setMsg('后端不可达 @ :9099');
+    }
   };
 
   return (
@@ -165,7 +186,7 @@ function TestConnectionWidget() {
         {status === 'testing' ? '检测中...' : 'Test Connection'}
       </button>
       {status !== 'idle' && (
-        <span className={`text-[10px] truncate max-w-[120px] ${status === 'ok' ? 'text-green-600' : 'text-red-500'}`}>{msg}</span>
+        <span className={`text-[10px] truncate max-w-[140px] ${status === 'ok' ? 'text-green-600' : 'text-red-500'}`}>{msg}</span>
       )}
     </div>
   );
