@@ -1009,7 +1009,7 @@ except ImportError:
 #  LLM 自主决策工具的选择、顺序和参数,Python 代码只负责执行。
 # ═══════════════════════════════════════════════════════════════
 
-def _exec_query_jira_metadata(args: dict, user_pat: str = "") -> str:
+def _exec_query_jira_metadata(args: dict, user_pat: str = "", **kwargs) -> str:
     """工具1: 获取 Jira 任务元数据 (仅标题/状态/经办人 — 轻量级)"""
     issue_key = args.get("issue_key", "").strip()
     if not issue_key:
@@ -1026,7 +1026,7 @@ def _exec_query_jira_metadata(args: dict, user_pat: str = "") -> str:
                 "title": f.get("summary", ""),
                 "type": f.get("issuetype", {}).get("name", ""),
                 "status": f.get("status", {}).get("name", ""),
-                "assignee": f.get("assignee", {}).get("displayName", "未分配"),
+                "assignee": (f.get("assignee") or {}).get("displayName", "未分配"),
                 "url": f"{jira.base_url}/browse/{issue_key}"
             }}, ensure_ascii=False)
         return json.dumps({"status": "error", "result": f"Issue {issue_key} 查询失败 (HTTP {resp.status_code})"})
@@ -1034,7 +1034,7 @@ def _exec_query_jira_metadata(args: dict, user_pat: str = "") -> str:
         return json.dumps({"status": "error", "result": f"Jira 查询异常: {str(e)[:200]}"})
 
 
-def _exec_get_issue_commits(args: dict) -> str:
+def _exec_get_issue_commits(args: dict, **kwargs) -> str:
     """工具2: SVN FishEye 双跳精确检索代码 Diff"""
     issue_key = args.get("issue_key", "").strip()
     if not issue_key:
@@ -1049,7 +1049,7 @@ def _exec_get_issue_commits(args: dict) -> str:
     except Exception as e:
         return json.dumps({"status": "error", "result": f"SVN 检索异常: {str(e)[:200]}"})
 
-def _exec_get_single_commit_diff(args: dict) -> str:
+def _exec_get_single_commit_diff(args: dict, **kwargs) -> str:
     """工具5: 按需召回单次 SVN 提交的代码 Diff（供 LLM 分析用）"""
     revision_id = str(args.get("revision_id", "")).strip()
     if not revision_id:
@@ -1065,7 +1065,7 @@ def _exec_get_single_commit_diff(args: dict) -> str:
         return json.dumps({"status": "error", "result": f"Diff 检索异常: {str(e)[:200]}"})
 
 
-def _exec_search_docs_catalog(args: dict) -> str:
+def _exec_search_docs_catalog(args: dict, **kwargs) -> str:
     """工具3: 知识库目录检索 — 仅返回标题+摘要候选列表
     【复刻 LlamaIndex "查目录" 阶段: 获取所有 summary_ids → 格式化批次】
     不返回全文！获取候选列表后请用 read_specific_doc 读详情。"""
@@ -1182,7 +1182,7 @@ def _exec_search_docs_catalog(args: dict) -> str:
     return json.dumps({"status": "ok", "result": catalog, "llm_text": llm_text}, ensure_ascii=False)
 
 
-def _exec_read_specific_doc(args: dict) -> str:
+def _exec_read_specific_doc(args: dict, **kwargs) -> str:
     """工具4: 按文档 ID 读取全文 — 复刻 LlamaIndex docstore.get_nodes()"""
     doc_id = args.get("doc_id", "").strip()
     source = args.get("source", "").strip()
@@ -1253,7 +1253,7 @@ def _exec_read_specific_doc(args: dict) -> str:
     return json.dumps({"status": "error", "result": f"不支持的文档来源: {source}"})
 
 
-def _exec_search_jira_issues(args: dict, user_pat: str = "", frontend_cfg: dict = None) -> str:
+def _exec_search_jira_issues(args: dict, user_pat: str = "", frontend_cfg: dict = None, **kwargs) -> str:
     """工具5: Jira 关键词搜索 — 无具体 Issue Key 时的模糊搜索"""
     keyword = args.get("keyword", "").strip()
     if not keyword:
@@ -1306,7 +1306,7 @@ def _exec_search_jira_issues(args: dict, user_pat: str = "", frontend_cfg: dict 
                 "key": issue["key"],
                 "summary": f.get("summary", ""),
                 "status": f.get("status", {}).get("name", ""),
-                "assignee": f.get("assignee", {}).get("displayName", "未分配"),
+                "assignee": (f.get("assignee") or {}).get("displayName", "未分配"),
                 "type": f.get("issuetype", {}).get("name", ""),
             })
         llm_text = f"【Jira 关键词搜索 '{keyword}' — 共 {total} 条】\n"
@@ -1894,10 +1894,8 @@ def chat_completions():
                             break
                     if _nuke_results:
                         _nuke_text = "\n\n---\n\n".join(_nuke_results)[:6000]
-                        logger.info(f"[ReAct] [NUCLEAR] Direct-output {len(_nuke_text)} chars from tool data (step {step})")
-                        yield f"data: {json.dumps({'choices':[{'delta':{'content': '【Alice 查询结果】\\n\\n' + _nuke_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-                        yield b"data: [DONE]\n\n"
-                        return
+                        # 数据已收集在 tool_messages 中, 交由 Final Stream LLM 合成
+                        logger.info(f"[ReAct] Collected {len(_nuke_text)} chars from tool data — passing to Final Stream (nuclear yield removed)")
                 else:
                     logger.info(f"[ReAct] [NUCLEAR-SKIP] get_single_commit_diff detected, bypassing nuclear — let LLM analyze diff")
 
@@ -2010,31 +2008,25 @@ def chat_completions():
             _has_issue_key = bool(issue_keys_found)
             
             if _user_asks_commit and _has_issue_key and not _has_commit_tool:
-                logger.error(f"[NUCLEAR-V2] Commit query detected but no tool was called! Force-executing get_issue_commits for {issue_keys_found}")
+                logger.error(f"[NUCLEAR-V2] Commit query detected — force-executing get_issue_commits for {issue_keys_found}")
                 try:
                     from knowledge_retriever import fetch_precise_commits_via_fisheye
                     for ik in sorted(issue_keys_found, key=len, reverse=True)[:1]:
                         commit_data = fetch_precise_commits_via_fisheye(ik)
                         if commit_data and len(str(commit_data)) > 20:
-                            import json as _json_nuke
-                            yield f"data: {_json_nuke.dumps({'choices':[{'delta':{'content': '【Alice 查询结果】\\n\\n' + str(commit_data)[:6000]}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-                            yield b"data: [DONE]\n\n"
-                            return
+                            # 将工具结果注入 tool_messages, 交由 Final Stream LLM 合成
+                            tool_messages.append({"role": "tool", "content": str(commit_data)[:6000]})
+                            logger.info(f"[NUCLEAR-V2] Force-fetched commit data — passing to Final Stream")
                 except Exception as _nuke_err:
                     logger.error(f"[NUCLEAR-V2] Force-execute failed: {_nuke_err}")
 
-        # 如果已有 tool 结果（通过 ReAct 正常调用），也直接输出
+        # 如果已有 tool 结果，确保数据在 tool_messages 中供 Final Stream 使用
         _all_tool_results = []
         for _tm in tool_messages:
             if _tm.get("role") == "tool":
                 _all_tool_results.append(str(_tm.get("content", "")))
         if _all_tool_results and not _has_diff_tool:
-            _nuke_combined = "\n\n---\n\n".join(_all_tool_results)[:6000]
-            logger.info(f"[NUCLEAR-V2] Direct-output {len(_nuke_combined)} chars from existing tool data")
-            import json as _json_nuke2
-            yield f"data: {_json_nuke2.dumps({'choices':[{'delta':{'content': '【Alice 查询结果】\\n\\n' + _nuke_combined}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-            yield b"data: [DONE]\n\n"
-            return
+            logger.info(f"[NUCLEAR-V2] Collected {sum(len(r) for r in _all_tool_results)} total chars from tool data — passing to Final Stream")
 
         # ══════════════════════════════════════════════
         #  最终回答: 流式 SSE 输出 (只有核拦截未触发时才到达这里)
