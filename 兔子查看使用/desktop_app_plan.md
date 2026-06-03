@@ -1,0 +1,42 @@
+# 桌面端重构方案 — 执行状态报告
+
+> 日期：2026-06-03 | 状态：✅ 已完成
+
+---
+
+## 阶段执行状态
+
+| 阶段 | 名称 | 状态 |
+|------|------|------|
+| 一 | 服务端独立 + 基础部署 | ✅ |
+| 二 | 鉴权与参数动态化 | ✅ |
+| 三 | 桌面壳 + IPC 桥接 | ✅ |
+| 四 | Admin API + Web 面板 | ✅ |
+| 五 | 安全测试 + 打包分发 | ⏳ 待启动 |
+
+---
+
+## 已完成架构
+
+```
+Electron 28 (纯UI壳)
+    ↓ HTTP/SSE :9099
+Python AI Bridge (Flask + Waitress)
+    ↓
+DeepSeek V4 Flash API → SSE 流式返回
+```
+
+**前端**：React 19 + TypeScript + Vite + Zustand + Dexie IndexedDB
+
+**VIP 直通车**：diff 分析完全在 Python 层检索后直通 LLM，不经过 ReAct 循环。
+
+---
+
+## 对比白泽 (Baize) 的差异
+
+| 维度 | 白泽 | Alice V2.0 |
+|------|------|-----------|
+| 架构 | 单体 Python 进程 | C/S 分离 (Electron + Python) |
+| AI 调用 | ReAct 循环 | VIP 直通车 + ReAct |
+| 工具链 | 本地文件 | Jira/SVN/Notion/GDrive |
+| 安全 | 基础 | IntentRouter + Nuclear V2 + AuditGateway |
