@@ -118,7 +118,7 @@ def executor_node(state: dict) -> dict:
 
     # ── 纯净提取模式: 锁定工具为文档类 ──
     if plan_mode == "doc_only":
-        _allowed = {"search_docs_catalog", "read_specific_doc", "llm"}
+        _allowed = {"search_docs_catalog", "search_doc_chunks", "llm"}
         logger.info(f"[Executor] DOC_ONLY mode — restricting tools to {_allowed}")
 
     if not plan:
@@ -158,7 +158,7 @@ def executor_node(state: dict) -> dict:
             tool_args = {"revision_id": match.group(1)}
 
     elif "文档" in step_text or "notion" in step_lower or "知识" in step_lower or plan_mode == "doc_only":
-        tool_name = "search_docs_catalog"
+        tool_name = "search_doc_chunks" if plan_mode == "doc_only" else "search_docs_catalog"
 
     if tool_name and tool_name in _tool_executors:
         try:

@@ -1334,6 +1334,14 @@ _ATOMIC_TOOLS = {
     "search_jira_issues":   ("search_jira_issues",   _exec_search_jira_issues),
 }
 
+def _rag_search(args: dict) -> str:
+    """RAG 工具包装器: search_doc_chunks"""
+    from backend.rag_engine import search_doc_chunks
+    query = args.get("query", "")
+    doc_id = args.get("doc_id")
+    top_k = int(args.get("top_k", 3))
+    return search_doc_chunks(query, doc_id, top_k)
+
 # ── V2.0 Agent 工具执行器映射 (必须在所有 _exec_* 定义之后) ──
 _TOOL_EXECUTORS = {
     "query_jira_metadata": _exec_query_jira_metadata,
@@ -1342,6 +1350,7 @@ _TOOL_EXECUTORS = {
     "search_docs_catalog": _exec_search_docs_catalog,
     "read_specific_doc": _exec_read_specific_doc,
     "search_jira_issues": _exec_search_jira_issues,
+    "search_doc_chunks": lambda args: _rag_search(args),  # RAG 工具
 }
 
 
