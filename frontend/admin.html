@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alice AI Bridge — 管理后台</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f4f5f7; color: #172b4d; }
+    .container { max-width: 800px; margin: 0 auto; padding: 32px 16px; }
+    h1 { font-size: 24px; margin-bottom: 8px; }
+    .subtitle { color: #6b778c; font-size: 14px; margin-bottom: 24px; }
+    .card { background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .card h2 { font-size: 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+    .status { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .status.ok { background: #e3fcef; color: #006644; }
+    .status.off { background: #ffebe6; color: #bf2600; }
+    .status.testing { background: #deebff; color: #0747a6; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    td { padding: 8px 12px; border-bottom: 1px solid #f4f5f7; }
+    td:first-child { font-weight: 600; color: #42526e; width: 200px; }
+    td:last-child { color: #8993a4; font-family: monospace; }
+    button { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; margin-right: 8px; }
+    .btn-primary { background: #0052cc; color: #fff; }
+    .btn-primary:hover { background: #0747a6; }
+    .btn-outline { background: #fff; color: #0052cc; border: 1px solid #0052cc; }
+    .btn-outline:hover { background: #deebff; }
+    .log-box { background: #f4f5f7; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 11px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🛡️ Alice AI Bridge — 管理后台</h1>
+    <p class="subtitle">版本: <span id="version">-</span> | 状态: <span id="healthStatus" class="status testing">检测中...</span></p>
+
+    <!-- 连接状态 -->
+    <div class="card">
+      <h2>🔗 服务连通性</h2>
+      <table>
+        <tr><td>Backend 健康</td><td><span id="svc_health" class="status testing">-</span></td></tr>
+        <tr><td>Jira 连接</td><td><span id="svc_jira" class="status testing">-</span></td></tr>
+        <tr><td>SVN 连接</td><td><span id="svc_svn" class="status testing">-</span></td></tr>
+        <tr><td>DeepSeek</td><td><span id="svc_deepseek" class="status testing">-</span></td></tr>
+      </table>
+      <div style="margin-top:16px;">
+        <button class="btn-primary" onclick="testAll()">🔄 全部检测</button>
+        <button class="btn-outline" onclick="testConnection('jira')">Jira</button>
+        <button class="btn-outline" onclick="testConnection('svn')">SVN</button>
+        <button class="btn-outline" onclick="testConnection('deepseek')">DeepSeek</button>
+      </div>
+    </div>
+
+    <!-- 统计信息 -->
+    <div class="card">
+      <h2>📊 运行统计</h2>
+      <table id="statsTable">
+        <tr><td>加载中...</td><td>-</td></tr>
+      </table>
+    </div>
+
+    <!-- 最近日志 -->
+    <div class="card">
+      <h2>📋 最近日志 <button class="btn-outline" onclick="loadLogs()" style="float:right;font-size:12px;">刷新</button></h2>
+      <div class="log-box" id="logBox">点击刷新加载...</div>
+    </div>
+
+    <!-- API 索引 -->
+    <div class="card">
+      <h2>📡 API 端点</h2>
+      <table id="apiTable">
+        <tr><td>加载中...</td><td>-</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const BASE = '';
+
+    async function testHealth() {
+      try {
+        const r = await fetch(`${BASE}/health`);
+        const d = await r.json();
+        document.getElementById('svc_health').className = 'status ok';
+        document.getElementById('svc_health').textContent = d.status;
+        document.getElementById('healthStatus').className = 'status ok';
+        document.getElementById('healthStatus').textContent = d.status + ' (' + d.service + ')';
+        document.getElementById('version').textContent = d.service || '-';
+      } catch {
+        document.getElementById('svc_health').className = 'status off';
+        document.getElementById('svc_health').textContent = '不可达';
+        document.getElementById('healthStatus').className = 'status off';
+        document.getElementById('healthStatus').textContent = '离线';
+      }
+    }
+
+    async function testConnection(type) {
+      const el = document.getElementById('svc_' + type);
+      el.className = 'status testing';
+      el.textContent = '检测中...';
+      try {
+        const r = await fetch(`/v1/admin/test/${type}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const d = await r.json();
+        el.className = d.ok ? 'status ok' : 'status off';
+        el.textContent = d.ok ? '✅ ' + (d.user || '已连接') : '❌ ' + (d.error || '失败');
+      } catch (e) {
+        el.className = 'status off';
+        el.textContent = '❌ 请求失败';
+      }
+    }
+
+    async function testAll() {
+      await testHealth();
+      await testConnection('jira');
+      await testConnection('svn');
+      await testConnection('deepseek');
+      loadStats();
+    }
+
+    async function loadStats() {
+      try {
+        const r = await fetch('/v1/admin/stats');
+        const d = await r.json();
+        const t = document.getElementById('statsTable');
+        t.innerHTML = Object.entries(d).map(([k, v]) => `<tr><td>${k}</td><td>${typeof v === 'object' ? JSON.stringify(v) : v}</td></tr>`).join('');
+      } catch {
+        document.getElementById('statsTable').innerHTML = '<tr><td>错误</td><td>无法加载统计</td></tr>';
+      }
+    }
+
+    async function loadLogs() {
+      const box = document.getElementById('logBox');
+      box.textContent = '加载中...';
+      try {
+        const r = await fetch('/api/diagnostics/logs');
+        const d = await r.json();
+        if (d.ok) {
+          box.textContent = d.lines.slice(-50).join('\n');
+        } else {
+          box.textContent = d.error;
+        }
+      } catch {
+        box.textContent = '无法获取日志';
+      }
+    }
+
+    async function loadAPIs() {
+      try {
+        const r = await fetch(`${BASE}/admin`, { headers: { Accept: 'application/json' } });
+        const d = await r.json();
+        if (d.endpoints) {
+          const t = document.getElementById('apiTable');
+          t.innerHTML = Object.entries(d.endpoints).map(([k, v]) => {
+            const methods = typeof v === 'object' ? Object.keys(v).join(', ') : v;
+            const paths = typeof v === 'object' ? Object.values(v).join(', ') : v;
+            return `<tr><td>${k}</td><td>${methods} → ${paths}</td></tr>`;
+          }).join('');
+        }
+      } catch {}
+    }
+
+    // 初始化
+    testHealth();
+    loadStats();
+    loadLogs();
+    loadAPIs();
+  </script>
+</body>
+</html>
