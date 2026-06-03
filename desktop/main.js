@@ -114,7 +114,13 @@ function createWindow() {
     }
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'ui', 'index.html'));
+  // 开发模式: 连接 Vite dev server (前端在 ../frontend/)
+  const isDev = process.env.NODE_ENV !== 'production' || !app.isPackaged;
+  if (isDev) {
+    mainWindow.loadURL('http://127.0.0.1:5174');
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '..', 'frontend', 'dist', 'index.html'));
+  }
 }
 
 // ═══════════════ 启动 ═══════════════

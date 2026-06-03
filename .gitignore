@@ -35,9 +35,17 @@ build/
 desktop/node_modules/
 desktop/dist/
 
-# AI Bridge specific
-ai-bridge/node_modules/
-ai-bridge/__pycache__/
+# AI Bridge specific → backend
+backend/node_modules/
+backend/__pycache__/
+backend/rabbit_test.py
+backend/rabbit_test2.py
+backend/test_simple.py
+backend/logs/
+
+# Frontend specific
+frontend/node_modules/
+frontend/dist/
 
 # CRITICAL: 配置文件含 API Key，禁止提交
 global_config.json
@@ -51,6 +59,3 @@ plugin/**/node_modules/
 workspace/.workbuddy/memory/
 research/LobeHub/
 research/baize/
-ai-bridge/rabbit_test.py
-ai-bridge/rabbit_test2.py
-ai-bridge/test_simple.py

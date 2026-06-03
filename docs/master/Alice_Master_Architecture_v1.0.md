@@ -6,6 +6,17 @@
 
 ---
 
+## 【核心约束】奥卡姆剃刀原则 (2026-06-03 确立)
+
+> **本项目采取 Electron (容器) + React (前端视图) + Python (后端大脑) 的唯一主干架构。**
+>
+> - **前端**：唯一入口为 `frontend/` (React 19 + TypeScript + Vite)，Electron 仅作为容器加载
+> - **后端**：唯一入口为 `backend/` (Python Flask + Waitress)，监听 `:9099`
+> - **Java Jira 插件**：正式降级为边缘维护分支，**严禁在其上开发任何与 Electron 端重叠的新业务特性**
+> - **禁止双轨**：不允许同时维护两套前端 UI（原生 HTML 已物理删除）
+
+---
+
 ## 一、全局系统架构
 
 ```mermaid
@@ -85,65 +96,46 @@ graph TB
 
 ---
 
-## 二、三端交付形态详解
-
-### 2.1 Python AI Bridge (`ai-bridge/`)
+## 二、项目目录结构 (奥卡姆剃刀后)
 
 ```
-ai-bridge/
-├── ai_bridge.py              # 主引擎: VIP 入口 + ReAct 循环 + Flask 路由
-├── knowledge_retriever.py    # 知识检索: SVN CLI, Notion, 动态关键词
-├── intent_router.py          # 意图路由: 4 类意图正则匹配
-├── prompt_manager.py         # 提示词引擎: CORE_SYSTEM_PROMPT_V2
-├── intent_classifier.py      # 安全分类: dangerous/write/readonly (20/20 测试)
-├── jira_api.py               # Jira REST 客户端
-├── jira_mcp_server.py        # MCP 工具服务
-├── jira_operation_manager.py # 确认卡状态机 (11/11 测试)
-├── audit_gateway.py          # 安全审计网关 (9/9 测试)
-├── logic_engine.py           # 业务逻辑与断言规则
-├── eval_engine.py            # 评估引擎
-├── tools/
-│   └── registry.yaml         # 6 原子工具注册表
-├── skills/
-│   └── registry.yaml         # 插件注册表 (8 个工具)
-├── tests/
-│   └── test_vip_pipeline.py  # VIP 离线测试 (2/2 PASS)
-├── logs/
-│   └── alice_bridge.log      # 持久化日志 (10MB×5)
-├── src/                      # React 19 前端 (App.tsx, chatSlice.ts, etc.)
-├── static/                   # 静态资源
-└── eval/                     # 评估数据集
+H:\workbuddy\alice\
+├── backend/                  # Python AI 引擎
+│   ├── ai_bridge.py          # 主引擎: VIP 入口 + ReAct 循环
+│   ├── knowledge_retriever.py
+│   ├── intent_router.py
+│   ├── tools/
+│   │   └── registry.yaml    # 6 原子工具
+│   ├── tests/
+│   ├── logs/
+│   └── requirements.txt
+│
+├── frontend/                 # React 19 + TS + Vite (唯一前端)
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── MobileApp.tsx
+│   │   └── store/slices/chatSlice.ts
+│   ├── index.html
+│   ├── package.json
+│   └── vite.config.ts
+│
+├── desktop/                  # Electron 容器 (仅主进程)
+│   ├── main.js               # 加载 ../frontend/
+│   ├── preload.js
+│   └── dev.bat
+│
+├── plugin/jira-workbuddy-plugin/  # Jira 插件 (边缘维护)
+├── docs/master/              # 设计文档
+└── .gitignore
 ```
 
-### 2.2 Jira 插件 (`plugin/jira-workbuddy-plugin/`)
+### 交付形态
 
-基于 Atlassian OSGi 架构的 Jira Server 9.12.5 插件。通过 Tampermonkey 脚本注入聊天面板。
-
-```
-jira-workbuddy-plugin/
-├── pom.xml                   # Maven 依赖
-├── atlassian-plugin.xml      # OSGi 插件描述
-├── ConfigService.java        # 配置服务
-├── AdminServlet.java         # 管理页面
-├── ChatDialogServlet.java    # 聊天面板
-├── ChatEndpoint.java         # WebSocket 端点
-├── HttpUtil.java             # HTTP 工具
-└── static/                   # HTML/CSS/JS 静态资源
-```
-
-### 2.3 Electron 桌面端 (`desktop/`)
-
-```
-desktop/
-├── main.js                   # 主进程: 窗口管理 + IPC 路由
-├── preload.js                # contextBridge 安全桥
-├── conversations.js          # 多会话 JSON 存储
-├── bridge-manager.js         # Python 子进程启动/健康检查/重启
-├── package.json              # electron-builder 配置
-├── dev.bat                   # 一键开发启动
-├── ui/                       # HTML/CSS 渲染进程
-└── dist/                     # 打包产物
-```
+| 形态 | 技术栈 | 入口 | 状态 |
+|------|--------|------|------|
+| **Electron 桌面** | Electron + React 19 | `desktop/dev.bat` | ✅ 主力 |
+| **Jira 插件** | Java OSGi + HTML | Jira Server 内嵌 | 🟡 边缘维护 |
+| **Web 管理后台** | Flask `/admin` | `:9099/admin` | ✅ 可用 |
 
 ---
 
