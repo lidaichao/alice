@@ -104,6 +104,19 @@ export const useSessionStore = create<SessionState>()(
         sessions: state.sessions,
         activeId: state.activeId,
       }),
+      // 水合完成后自动创建默认会话
+      onRehydrateStorage: () => (state, error) => {
+        if (error) { console.error('[SessionStore] Rehydrate failed:', error); return; }
+        if (state && (!state.sessions || state.sessions.length === 0)) {
+          // delay ensures store is ready before calling createSession
+          setTimeout(() => {
+            const current = useSessionStore.getState();
+            if (!current.sessions || current.sessions.length === 0) {
+              current.createSession();
+            }
+          }, 100);
+        }
+      },
     }
   )
 );

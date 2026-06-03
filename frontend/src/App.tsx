@@ -20,20 +20,10 @@ export const App: React.FC = () => {
   const switchSession = useSessionStore((s) => s.switchSession);
   const updateMessages = useSessionStore((s) => s.updateMessages);
 
-  // 确保至少有一个会话
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    // zustand persist 异步恢复完成后检查
-    const t = setTimeout(() => {
-      const { sessions: s, activeId: aid, createSession: cs } = useSessionStore.getState();
-      if (!s.length) cs();
-      else if (!aid) useSessionStore.setState({ activeId: s[0].id });
-      setReady(true);
-    }, 200);
-    return () => clearTimeout(t);
-  }, []);
+  // onRehydrateStorage 自动创建默认会话, 这里只检查就绪状态
+  const hydrating = sessions === undefined || (sessions.length === 0 && activeId === null);
 
-  const activeSession = sessions.find((s) => s.id === activeId);
+  const activeSession = sessions?.find((s) => s.id === activeId);
 
   // ── Vercel AI SDK 流式引擎 ──
   const { messages, input, handleInputChange: sdkHandleInput, handleSubmit: sdkHandleSubmit, stop, setMessages, isLoading } = useChat({
@@ -127,7 +117,7 @@ export const App: React.FC = () => {
     }
   };
 
-  if (!ready) return <div className="h-screen w-screen flex items-center justify-center text-muted-foreground">加载会话中...</div>;
+  if (hydrating) return <div className="h-screen w-screen flex items-center justify-center text-muted-foreground">加载会话中...</div>;
 
   return (
     <ThemeProvider>
