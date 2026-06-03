@@ -48,3 +48,18 @@
     --ring: 224.3 76.3% 48%;
   }
 }
+
+/* ── 流式输出闪烁光标 ── */
+.blinking-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 18px;
+  background: currentColor;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}

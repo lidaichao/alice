@@ -28,7 +28,9 @@ export const App: React.FC = () => {
   const [selectedCmdIndex, setSelectedCmdIndex] = useState(0);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [userScrolledUp, setUserScrolledUp] = useState(false);  // 智能滚动
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
 
@@ -43,8 +45,18 @@ export const App: React.FC = () => {
   }, [activeSessionId]);
 
   useEffect(() => {
+    // 智能滚动: 用户上滑时暂停, 回到底部时恢复
+    if (isGenerating && userScrolledUp) return;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activeSession?.messages]);
+  }, [activeSession?.messages, isGenerating, userScrolledUp]);
+
+  // 智能滚动监听
+  const handleChatScroll = () => {
+    if (!chatContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 80;
+    setUserScrolledUp(!isNearBottom && isGenerating);
+  };
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -106,6 +118,9 @@ export const App: React.FC = () => {
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const el = e.target;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
     const val = e.target.value;
     setInput(val);
 
@@ -186,7 +201,7 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+        <div ref={chatContainerRef} onScroll={handleChatScroll} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
           {!activeSession?.messages.length ? (
             <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-70">
               <span className="text-4xl mb-4">⚛️</span>
@@ -307,6 +322,7 @@ export const App: React.FC = () => {
               </div>
             )})
           )}
+          {isGenerating && <span className="blinking-cursor" />}
           <div ref={messagesEndRef} className="h-1" />
         </div>
         
@@ -332,6 +348,27 @@ export const App: React.FC = () => {
               </div>
             </div>
           )}
+
+          {/* ── 控制栏 ── */}
+          <div className="flex justify-center gap-2 mb-2">
+            {isGenerating && (
+              <Button variant="ghost" size="sm" onClick={stopGenerating}
+                className="text-red-500 hover:text-red-700 text-xs gap-1">
+                <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                ⏹ 停止生成
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={() => {
+              stopGenerating();
+              const sid = activeSessionId;
+              if (sid) {
+                useChatStore.getState().clearMessages(sid);
+                useChatStore.getState().addSession();
+              }
+            }} className="text-muted-foreground hover:text-foreground text-xs gap-1">
+              🧹 新话题
+            </Button>
+          </div>
 
           <div className="flex items-end gap-3 max-w-4xl mx-auto w-full relative">
             {showCommands && (
