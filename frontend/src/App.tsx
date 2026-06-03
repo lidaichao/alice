@@ -10,7 +10,7 @@ import ConfirmCard from '@/components/ConfirmCard';
 import { useChat } from '@ai-sdk/react';
 import { ChatList } from '@lobehub/ui/chat';
 import { ThemeProvider } from '@lobehub/ui';
-import { Square, RefreshCw } from 'lucide-react';
+import { Square } from 'lucide-react';
 
 export const App: React.FC = () => {
   // ═══ 所有 Hook 必须在最顶层，无条件调用 ═══
@@ -142,9 +142,6 @@ export const App: React.FC = () => {
                   <Square size={12} /> ⏹ 停止生成
                 </Button>
               )}
-              <Button variant="ghost" size="sm" onClick={() => { if (isGenerating) stop(); createSession(); }} className="text-muted-foreground hover:text-foreground text-xs gap-1">
-                <RefreshCw size={12} /> 🧹 新话题
-              </Button>
             </div>
 
             <form onSubmit={sdkHandleSubmit} className="flex items-end gap-3 max-w-4xl mx-auto w-full relative">

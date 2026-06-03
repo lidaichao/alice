@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useSessionStore } from '@/store/useSessionStore';
 import { Button } from '@/components/ui/button';
 import { useTheme } from 'next-themes';
-import { Sun, Moon, Monitor, Plus, Trash2, Edit2, Wifi, Bug, ExternalLink } from 'lucide-react';
+import { Sun, Moon, Monitor, Plus, Trash2, Edit2, Wifi, Bug } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 export const Sidebar: React.FC = () => {
@@ -120,8 +120,7 @@ export const Sidebar: React.FC = () => {
 
       {/* Footer */}
       <div className="p-3 border-t border-border shrink-0 flex flex-col gap-2 bg-background/50">
-        <div className="text-xs text-muted-foreground font-medium px-2">设置</div>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-center">
           <div className="flex items-center gap-1 bg-muted rounded-full p-1 border border-border/50 shadow-inner">
             <button onClick={() => setTheme('light')} className={`p-1.5 rounded-full transition-all ${theme === 'light' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground'}`} title="浅色"><Sun size={14} /></button>
             <button onClick={() => setTheme('system')} className={`p-1.5 rounded-full transition-all ${theme === 'system' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground'}`} title="系统"><Monitor size={14} /></button>
@@ -129,14 +128,6 @@ export const Sidebar: React.FC = () => {
           </div>
         </div>
         <TestConnectionWidget />
-        <button
-          onClick={() => window.open('http://127.0.0.1:9099/admin.html', '_blank')}
-          className="flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-border/50 bg-muted/50 hover:bg-muted transition-colors"
-          title="后端管理后台"
-        >
-          <ExternalLink size={12} className="text-muted-foreground" />
-          管理后台
-        </button>
         <BugReportButton />
       </div>
     </aside>
