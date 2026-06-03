@@ -1641,53 +1641,6 @@ def chat_completions():
             yield b"data: [DONE]\n\n"
             return  # 完全跳过后续所有逻辑
 
-        # ══════════════════════════════════════════════════════════
-        #  Catalog VIP: 文档目录直通车
-        #  用户问"有哪些文档"/"查Notion" → Python 直检索 + 纯文本输出
-        # ══════════════════════════════════════════════════════════
-        _doc_intent = bool(re.search(r'notion|文档|wiki|知识库|设计案|策划案', user_text or "", re.I))
-        if _doc_intent:
-            logger.info(f"[VIP] Catalog Pre-flight RAG")
-            _ik_str = list(issue_keys_found)[:1]
-            _ik_str = _ik_str[0] if _ik_str else ""
-            try:
-                from knowledge_retriever import extract_dynamic_keywords
-                _search_kw = extract_dynamic_keywords(user_text or "", _ik_str)
-            except Exception:
-                _search_kw = _ik_str or (user_text or "")[:30]
-            logger.info(f"[VIP-Catalog] Search keyword: '{_search_kw}'")
-            
-            # Python 后台检索
-            try:
-                _search_result = _exec_search_docs_catalog({"query": _search_kw, "source": "all"})
-                _sr_obj = json.loads(_search_result)
-                catalog = _sr_obj.get("result", []) if isinstance(_sr_obj, dict) else []
-            except Exception:
-                catalog = []
-            
-            if catalog and isinstance(catalog, list) and len(catalog) > 0:
-                cat_text = "\n".join([f"- [{d.get('source','').upper()}] 《{d.get('title','未知')}》" for d in catalog[:5]])
-                _cat_prompt = (
-                    f"用户正在询问相关的文档。系统已在后台自动检索了关键词 '{_search_kw}'，"
-                    f"找到以下真实存在的文档：\n\n{cat_text}\n\n"
-                    f"【强制指令】：请直接将这个真实的文档列表整理后告诉用户。"
-                    f"绝对禁止编造列表中没有的文档！如果不在此列表中，就说不知道！\n\n"
-                    f"【用户的真实特定诉求】：{user_text}\n"
-                    f"（请在输出时特别关注用户的上述诉求）"
-                )
-            else:
-                _cat_prompt = (
-                    f"用户正在询问相关的文档。系统已在后台自动检索了关键词 '{_search_kw}'，"
-                    f"但没有找到任何结果。\n\n"
-                    f"【强制指令】：请如实告诉用户未找到，绝对禁止捏造、编造任何假文档！\n\n"
-                    f"【用户的真实特定诉求】：{user_text}\n"
-                    f"（请在输出时特别关注用户的上述诉求）"
-                )
-            
-            yield from _vip_stream(_cat_prompt, '【VIP Catalog】LLM 未能生成回答，以下是原始检索结果。')
-            yield b"data: [DONE]\n\n"
-            return
-
         # ── 构建初始消息列表 ────────────────────────
         system_context = CORE_SYSTEM_PROMPT_V2
 
