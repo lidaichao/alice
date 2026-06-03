@@ -152,29 +152,14 @@ function TestConnectionWidget() {
     setStatus('testing');
     setMsg('');
     try {
-      // 先检查后端心跳
-      const hres = await fetch('/health');
-      if (!hres.ok) throw new Error('health check failed');
-      const hdata = await hres.json();
-
-      // 再尝试 Jira 连通性 (后端 global_config 中的凭据)
-      const jres = await fetch('/api/test_connection', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-      });
-      const jdata = await jres.json();
-
-      if (jdata.ok) {
-        setStatus('ok');
-        setMsg(`Jira: ${jdata.user || '已连接'} | 后端: ${hdata.service || 'ok'}`);
-      } else {
-        setStatus('ok'); // 后端在线但 Jira 未配
-        setMsg(`后端在线 (${hdata.service || 'ok'}) | Jira: ${jdata.error || '未配置'}`);
-      }
+      const res = await fetch('/api/system/status');
+      if (!res.ok) throw new Error('down');
+      const data = await res.json();
+      setStatus('ok');
+      setMsg(data.service || data.status || '在线');
     } catch {
       setStatus('fail');
-      setMsg('后端不可达 @ :9099');
+      setMsg('后端不可达');
     }
   };
 

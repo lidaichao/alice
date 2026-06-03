@@ -2435,6 +2435,7 @@ def test_suite():
     return send_file(path)
 
 @app.route("/health")
+@app.route("/api/system/status")
 def health():
     with _active_lock:
         return jsonify({
