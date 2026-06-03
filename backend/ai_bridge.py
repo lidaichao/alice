@@ -994,6 +994,15 @@ except ImportError:
     logger.warning("yaml module not available, using hardcoded tools")
     AVAILABLE_TOOLS = _FALLBACK_TOOLS if '_FALLBACK_TOOLS' in dir() else []
 
+# ── V2.0 Agent 工具执行器映射 ─────────────────────────────
+_TOOL_EXECUTORS = {
+    "query_jira_metadata": _exec_query_jira_metadata,
+    "get_issue_commits": _exec_get_issue_commits,
+    "get_single_commit_diff": _exec_get_single_commit_diff,
+    "search_docs_catalog": _exec_search_docs_catalog,
+    "read_specific_doc": _exec_read_specific_doc,
+    "search_jira_issues": _exec_search_jira_issues,
+}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1641,7 +1650,56 @@ def chat_completions():
             yield b"data: [DONE]\n\n"
             return  # 完全跳过后续所有逻辑
 
-        # ── 构建初始消息列表 ────────────────────────
+        # ══════════════════════════════════════════════════════════
+        #  V2.0 LangGraph Plan-and-Execute 大脑 (优先)
+        #  替换旧 ReAct while 循环
+        # ══════════════════════════════════════════════════════════
+        if user_cfg.get("engine") == "v2-graph" or os.environ.get("ALICE_ENGINE") == "v2":
+            logger.info("[V2 Graph] Invoking LangGraph Plan-and-Execute agent")
+            try:
+                from backend.agent.graph import graph as _v2_graph
+                from backend.agent.nodes import init_agent as _v2_init
+
+                # 初始化 V2 Agent
+                _v2_init(
+                    deepseek_key=user_cfg["deepseek_key"],
+                    model=user_cfg["deepseek_model"],
+                    tools=active_tools[:5],
+                    executors=_TOOL_EXECUTORS,
+                    http_module=http,
+                )
+
+                # 构建初始消息
+                _v2_msgs = []
+                for msg in cleaned_msgs:
+                    if msg.get("role") != "system":
+                        _v2_msgs.append(msg)
+                if user_text:
+                    _v2_msgs.append({"role": "user", "content": user_text})
+
+                initial_state = {
+                    "messages": _v2_msgs,
+                    "plan": [],
+                    "past_steps": [],
+                    "final_answer": "",
+                }
+
+                final_state = _v2_graph.invoke(initial_state)
+                answer = final_state.get("final_answer", "")
+
+                if answer:
+                    _v2sse = json.dumps({"choices":[{"delta":{"content": answer}}]}, ensure_ascii=False)
+                    yield f"data: {_v2sse}\n\n".encode('utf-8')
+                else:
+                    _v2fallback = json.dumps({"choices":[{"delta":{"content": "[V2 Agent] 分析完成，但未生成回答。"}}]}, ensure_ascii=False)
+                    yield f"data: {_v2fallback}\n\n".encode('utf-8')
+                yield b"data: [DONE]\n\n"
+                return
+            except Exception as _v2e:
+                logger.error(f"[V2 Graph] Failed: {_v2e}, falling back to ReAct")
+                # 降级到旧 ReAct 循环
+
+        # ── 构建初始消息列表 (旧 ReAct) ────────────────────────
         system_context = CORE_SYSTEM_PROMPT_V2
 
         # 预注入 Issue Key 基本信息
