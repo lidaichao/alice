@@ -10,7 +10,7 @@ from config import DEEPSEEK_KEY
 
 ALICE_URL = "http://127.0.0.1:9099/v1/chat/completions"
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
-TEST_CSV = os.path.join(os.path.dirname(__file__), "data", "testset_v1.csv")
+TEST_CSV = os.path.join(os.path.dirname(__file__), "data", "testset_v2_golden.csv")
 REPORT_PATH = os.path.join(os.path.dirname(__file__), "reports", "eval_report_latest.md")
 
 GREEN, RED, CYAN, RESET = '\033[92m', '\033[91m', '\033[96m', '\033[0m'
@@ -169,7 +169,7 @@ def main():
         if alice_answer:
             print(f"    {CYAN}{alice_answer[:120]}{RESET}", flush=True)
 
-        verdict = judge(q, row["context"], row["ground_truth"], alice_answer)
+        verdict = judge(q, row.get("context", row["ground_truth"]), row["ground_truth"], alice_answer)
         print(f"    Judge: F={verdict.get('faithfulness')} R={verdict.get('relevance')} | {verdict.get('reason','?')[:80]}", flush=True)
 
         results.append({

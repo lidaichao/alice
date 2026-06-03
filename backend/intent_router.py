@@ -71,6 +71,14 @@ INTENT_PATTERNS = [
         ["query_jira_metadata"],
         "ISSUE_METADATA"
     ),
+
+    # P5: 知识库/文档查询 (补天修复)
+    # 匹配: "查文档"、"知识库里有什么"、"wiki"、"云盘"、"策划案"等
+    (
+        r"文档|知识库|wiki|云盘|策划案|设计案|KB-",
+        ["search_docs_catalog", "read_specific_doc"],
+        "KNOWLEDGE_QUERY"
+    ),
 ]
 
 # ── 路由函数 ──────────────────────────────────────────────
