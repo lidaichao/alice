@@ -1,6 +1,6 @@
 # Alice AI Bridge — 技术架构文档 (V2.1 Final)
 
-> 版本：v2.1 | 日期：2026-06-03 | 分支：master
+> 版本：v2.1 | 日期：2026-06-03 | 分支：master | 最新提交：2a61258
 
 ---
 
@@ -21,8 +21,9 @@
 | 智能体 | **LangGraph Plan-and-Execute** | V2.0 图状大脑 |
 | 向量检索 | **FAISS + DeepSeek Embedding** | V2.1 RAG 语义搜索 |
 | 前端 | React 19 + TypeScript + Vite + Tailwind | SPA UI |
-| 状态管理 | Zustand + Dexie IndexedDB | 会话持久化 |
-| Markdown | react-markdown + syntax-highlighter | 渲染 |
+| AI 流式 | **Vercel AI SDK (@ai-sdk/react)** | `useChat` + `append` API |
+| UI 组件 | **@lobehub/ui (ChatList, CopyButton)** | 商业级聊天皮肤 |
+| 状态管理 | **Zustand + idb-keyval (IndexedDB)** | 会话持久化 (突破 5MB) |
 | 安全 | IntentRouter + AuditGateway | 多层防护 |
 
 ---
