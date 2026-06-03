@@ -2920,6 +2920,39 @@ def test_deepseek():
         return jsonify({"ok": False, "error": "频率限制 (429)"})
     return jsonify({"ok": False, "error": f"HTTP {r.status_code}"})
 
+# ═══════════════════════════════════════════════════════════
+#  /api/test_connection — 自助排障探测器
+#  用当前 PAT 尝试获取 Jira 用户信息，验证连通性
+# ═══════════════════════════════════════════════════════════
+@app.route('/api/test_connection', methods=['POST'])
+def test_connection():
+    """轻量级连通性测试：用 PAT 请求 Jira /rest/api/2/myself"""
+    data = request.json or {}
+    jira_url = data.get("jira_url", "").strip()
+    jira_pat = data.get("jira_pat", "").strip()
+    
+    if not jira_url or not jira_pat:
+        return jsonify({"ok": False, "error": "缺少 jira_url 或 jira_pat"}), 400
+    
+    try:
+        import urllib.request as _ur, json as _j, base64 as _b64
+        url = f"{jira_url.rstrip('/')}/rest/api/2/myself"
+        auth = _b64.b64encode(f"{jira_pat}:".encode()).decode()
+        req = _ur.Request(url, headers={
+            "Authorization": f"Basic {auth}",
+            "Accept": "application/json"
+        })
+        resp = _ur.urlopen(req, timeout=10)
+        user_data = _j.loads(resp.read().decode())
+        return jsonify({
+            "ok": True,
+            "user": user_data.get("displayName", "Unknown"),
+            "email": user_data.get("emailAddress", ""),
+            "active": user_data.get("active", False)
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Jira 连接失败: {str(e)[:200]}"}), 500
+
 @app.route('/v1/admin/token', methods=['POST'])
 @require_admin
 def update_admin_password():

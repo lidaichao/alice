@@ -6,6 +6,7 @@ import { RightPanel } from '@/RightPanel';
 import { Button } from '@/components/ui/button';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { CommandPanel } from '@/components/CommandPanel';
+import ConfirmCard from '@/components/ConfirmCard';
 import { Loader2, CheckCircle2, Blocks, Image as ImageIcon, X, Paperclip, Copy, Trash2 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -254,6 +255,34 @@ export const App: React.FC = () => {
                     )
                     )}
                   </div>
+
+                  {/* 🛡️ 确认卡: 高危操作拦截 */}
+                  {(msg as any).pendingCard && (msg as any).pendingCard.event === 'confirm_card' && (
+                    <ConfirmCard
+                      card={(msg as any).pendingCard}
+                      onConfirm={async (opId) => {
+                        await fetch(`/operations/${opId}/confirm`, { method: 'POST' });
+                        // 更新本地状态
+                        const { sessions, activeSessionId } = useChatStore.getState();
+                        const updated = sessions.map(s =>
+                          s.id === activeSessionId ? { ...s, messages: s.messages.map(m =>
+                            m.id === msg.id ? { ...m, pendingCard: null } : m
+                          )} : s
+                        );
+                        useChatStore.setState({ sessions: updated });
+                      }}
+                      onReject={async (opId) => {
+                        await fetch(`/operations/${opId}/reject`, { method: 'POST' });
+                        const { sessions, activeSessionId } = useChatStore.getState();
+                        const updated = sessions.map(s =>
+                          s.id === activeSessionId ? { ...s, messages: s.messages.map(m =>
+                            m.id === msg.id ? { ...m, pendingCard: null } : m
+                          )} : s
+                        );
+                        useChatStore.setState({ sessions: updated });
+                      }}
+                    />
+                  )}
 
                   {/* hover 操作按钮：复制 + 删除 */}
                   <div className={`absolute -bottom-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ${
