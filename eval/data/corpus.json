@@ -1,0 +1,98 @@
+[
+  {
+    "doc_id": "36862e00-69d9-80dc-b579-e7b7cfe079ae",
+    "title": "https://app.notion.com/p/BattleRec-36862e0069d980dcb579e7b7cfe079ae",
+    "chunk_id": 0,
+    "content": "# 战斗录播系统（BattleRec）技术架构文档\n\n目录: Assets/Scripts/TsubasaGame/BattleRec\n\n---\n\n## 1. 概述\n\nBattleRec（战斗录播系统）是一个数据驱动的回放系统，核心思路是：在真实战斗过程中逐帧录制关键状态数据（球员位置、动画、球状态、Timeline 事件等），回放时按帧读取数据驱动渲染组件，实现与战斗表现一致的观战/回放体验。\n\n系统支持多片段切换（如进球回放切换不同角度）、时间缩放、Timeline 技能特写等功能。\n\n---\n\n## 2. 架构分层\n\n```plain text\n┌─────────────────────────────────────────────────────────────────┐\n│                    Match（编排层）                                │\n│          BattleRecMatch / BattleRecStateRecover                  │\n│         核心循环：计时 → 推进帧 → 驱动组件                        │\n├────────┬───────┬──────────┬────────┬───────────────────────────┤\n│        │       │          │        │                           │\n│  Data  │  Res  │ Component│  Util  │ 录制端                    │\n│ (数据层)│(资源层)│ (渲染层) │ (工具层)│ FrameDataRecUtil         │\n│        │       │          │        │                           │\n└────────┴───────┴──────────┴────────┴───────────────────────────┘\n```\n\n---\n\n## 3. 各模块详解\n\n### 3.1 Data（数据层）— Data/\n\n定义录播系统全部数据模型与序列化方案。"
+  },
+  {
+    "doc_id": "36862e00-69d9-80dc-b579-e7b7cfe079ae",
+    "title": "https://app.notion.com/p/BattleRec-36862e0069d980dcb579e7b7cfe079ae",
+    "chunk_id": 1,
+    "content": "---\n\n## 3. 各模块详解\n\n### 3.1 Data（数据层）— Data/\n\n定义录播系统全部数据模型与序列化方案。\n\n[表格 — 已省略]\n\n序列化方案：\n\n- 元数据 → JSON（Newtonsoft.Json）\n\n- 帧数据 → 自定义二进制（BinaryWriter/Reader），文件头带版本号 v1\n\n- 每种子数据类均实现 Write(BinaryWriter) / Read(BinaryReader) 方法\n\n### 3.2 Res（资源层）— Res/\n\n负责在回放开始前异步加载所有所需资源，完成后产出挂载好组件的 GameObject。\n\n[表格 — 已省略]\n\n### 3.3 Component（渲染层）— Component/\n\n运行时渲染组件，无状态纯渲染器，每帧由 Match 注入数据驱动。\n\n[表格 — 已省略]\n\n### 3.4 Match（编排层）— Match/\n\n回放核心引擎，驱动整个播放循环。\n\nBattleRecMatch（单例，~431行）：\n\n- 回放帧率：固定 FRAME_INTERVAL = 1/30 s（约33ms/帧）\n\n- 主循环（Update）：\n\n- 播放控制：Play() / Pause() / SetPlaybackSpeed()\n\n- 切换片段：SwitchToSegment(segmentId) 静态方法，预加载目标帧数据 + 调用状态恢复\n\n- 工厂方法：CreateAndInitialize() 使用资源层产出的组件列表完成初始化注册\n\nBattleRecStateRecover（切片切换状态恢复）：\n\n- 反向扫描目标帧前的动画状态 → RecoverAnimStates\n\n- 直接读取目标帧位置 Snap → RecoverPlayerPositions / RecoverBallPosition\n\n- 全部跳过 Lerp 插值，避免跳变\n\n### 3.5 Util（工具层）— Util/\n\n纯逻辑静态工具类，封装配置表查询与 ID 覆写逻辑。\n\n[表格 — 已省略]\n\n### 3.6 录制端 — Data/FrameDataRecUtil.cs\n\n唯一录制端文件（357行），在真实战斗过程中录制数据："
+  },
+  {
+    "doc_id": "36862e00-69d9-80dc-b579-e7b7cfe079ae",
+    "title": "https://app.notion.com/p/BattleRec-36862e0069d980dcb579e7b7cfe079ae",
+    "chunk_id": 2,
+    "content": "- 全部跳过 Lerp 插值，避免跳变\n\n### 3.5 Util（工具层）— Util/\n\n纯逻辑静态工具类，封装配置表查询与 ID 覆写逻辑。\n\n[表格 — 已省略]\n\n### 3.6 录制端 — Data/FrameDataRecUtil.cs\n\n唯一录制端文件（357行），在真实战斗过程中录制数据：\n\n- 通过 OnFrameRec（每帧回调）从 TsubasaBattle.Context 提取所有状态\n\n- MapToBattleRecData：将网络协议 ResRoomInfo 映射为内部 BattleRecData，支持 PVP、PVE、机器人三种数据源\n\n- EndRec：将录制的帧数据写入二进制文件\n\n---\n\n## 4. 关键设计模式\n\n[表格 — 已省略]\n\n---\n\n## 5. 数据流\n\n```plain text\n[战斗过程] → FrameDataRecUtil.OnFrameRec → 逐帧录制 FrameData\n                                                  ↓\n                             二进制序列化 → .rec 文件（元数据 JSON + 帧数据 Binary）\n                                                  ↓\n                             反序列化（多片段预加载）→ FrameData[]\n                                                  ↓\nBattleRecMatch.Update 循环 → 按帧索引取出 FrameData\n      ↓                     ↓                       ↓              ↓\n  RecBallComponent   RecPlayerLocation    RecPlayerAnimation   RecTimeline\n  RecCameraComponent  (多个组件×球员数)    (多个组件×球员数)     Component\n```\n\n---\n\n## 6. 多片段切换流程"
+  },
+  {
+    "doc_id": "36862e00-69d9-80dc-b579-e7b7cfe079ae",
+    "title": "https://app.notion.com/p/BattleRec-36862e0069d980dcb579e7b7cfe079ae",
+    "chunk_id": 3,
+    "content": "---\n\n## 6. 多片段切换流程\n\n```plain text\nSwitchToSegment(segmentId)\n  ├─ 反序列化目标片段帧数据\n  ├─ BattleRecStateRecover.RecoverAnimStates（反向扫描动画状态）\n  ├─ BattleRecStateRecover.RecoverPlayerPositions（Snap 位置）\n  ├─ BattleRecStateRecover.RecoverBallPosition（Snap 球位置）\n  └─ 重置帧索引 → 继续播放\n```\n\n---\n\n## 7. 文件清单（16 个 .cs 文件）"
+  },
+  {
+    "doc_id": "36862e00-69d9-80dc-b579-e7b7cfe079ae",
+    "title": "https://app.notion.com/p/BattleRec-36862e0069d980dcb579e7b7cfe079ae",
+    "chunk_id": 4,
+    "content": "---\n\n## 7. 文件清单（16 个 .cs 文件）\n\n```plain text\nBattleRec/\n├── Component/                # 运行时渲染组件\n│   ├── RecBallComponent.cs\n│   ├── RecCameraComponent.cs\n│   ├── RecPlayerAnimationComponent.cs\n│   ├── RecPlayerLocationComponent.cs\n│   ├── RecSkillComponent.cs\n│   └── RecTimelineComponent.cs\n├── Data/                     # 数据模型与序列化 + 录制端\n│   ├── BattleRecData.cs\n│   ├── FrameBallData.cs\n│   ├── FrameCloseupData.cs\n│   ├── FrameData.cs\n│   ├── FrameDataRecUtil.cs   # ← 唯一录制端文件\n│   ├── FramePlayerData.cs\n│   └── FramePlayerStateChangeData.cs\n├── Match/                    # 回放核心引擎\n│   ├── BattleRecMatch.cs\n│   └── BattleRecStateRecover.cs\n├── Res/                      # 资源异步加载\n│   ├── BattleRecResBallModel.cs\n│   ├── BattleRecResManager.cs\n│   ├── BattleRecResPlayerModel.cs\n│   └── BattleRecResTimeline.cs\n└── Util/                     # 配置查询与覆写工具\n    ├── BattleRecOverrideUtil.cs\n    └── SkillOverrideUtil.cs\n```"
+  },
+  {
+    "doc_id": "36762e00-69d9-80b9-a732-c438021de3b4",
+    "title": "https://app.notion.com/p/36762e0069d980b9a732c438021de3b4",
+    "chunk_id": 0,
+    "content": "# 足球小将服务器开发技能指南\n\n## 目录\n\n- 项目架构概述\n\n- 核心概念\n\n- 安全注意事项\n\n- 开发检查清单\n\n## 项目架构概述\n\n### 服务节点类型\n\n```plain text\nauth     - 认证服务：处理用户登录认证\nlogic    - 逻辑服务：处理游戏核心逻辑\nrecharge - 充值服务：处理充值相关功能\nclub     - 俱乐部服务：处理俱乐部相关功能\nteam     - 组队服务：处理组队相关功能\nbattle   - 战斗服务：处理战斗相关功能\nrobot    - 压测机器人服务：处理压测相关功能\nscript   - 脚本服务：处理脚本执行\n```\n\n### 技术栈\n\n- 语言: Go 1.21.5\n\n- 数据库: Redis\n\n- 网络: 自定义 antnet 网络库，底层基于http、tcp、udp\n\n- 序列化: Protocol Buffers\n\n- 配置: json\n\n- 日志: zap\n\n- 埋点: thinkingdata\n\n### 项目结构"
+  },
+  {
+    "doc_id": "36762e00-69d9-80b9-a732-c438021de3b4",
+    "title": "https://app.notion.com/p/36762e0069d980b9a732c438021de3b4",
+    "chunk_id": 1,
+    "content": "- 语言: Go 1.21.5\n\n- 数据库: Redis\n\n- 网络: 自定义 antnet 网络库，底层基于http、tcp、udp\n\n- 序列化: Protocol Buffers\n\n- 配置: json\n\n- 日志: zap\n\n- 埋点: thinkingdata\n\n### 项目结构\n\n```plain text\ncaptain_tsubasa_server/\n├── antnet/           # 自定义网络库和基础工具包\n├── battlelib/        # 战斗库，包含战斗逻辑\n├── conf/             # 配置文件目录\n├── log/              # 日志目录，包含游戏运行时的日志文件\n├── reportlog/        # 报告日志目录，包含游戏运行时的报告日志文件\n├── thinkingLog/      # 埋点日志目录，包含游戏运行时的埋点日志文件\n├── src/\n│   ├── api/          # API接口定义（自动生成）\n│   ├── apistr/       # API 字符串常量（自动生成）\n│   ├── common/       # 公共常量、工具函数\n│   ├── model/        # 数据模型和数据库操作\n│   ├── proto/pb/     # Protocol Buffers生成的代码\n│   ├── script/       # 脚本服务，用于执行游戏脚本\n│   ├── sdk/thinking/ # 埋点数据\n│   ├── server/       # 各服务节点实现\n│   │   ├── auth/     # 认证服务\n│   │   ├── logic/    # 逻辑服务\n│   │   ├── battle/   # 战斗服务\n│   │   ├── club/     # 俱乐部服务\n│   │   ├── team/     # 组队服务\n│   │   └── robot/    # 机器人服务\n│   ├── staticdata/   # 静态配置数据\n│   └── untils/       # 工具函数\n└── tools/            # 开发工具目录\n```"
+  },
+  {
+    "doc_id": "36762e00-69d9-80b9-a732-c438021de3b4",
+    "title": "https://app.notion.com/p/36762e0069d980b9a732c438021de3b4",
+    "chunk_id": 2,
+    "content": "### 更新方式\n\n配置热更：仅conf下的json配置修改，且不依赖客户端的更新内容灰度更新：代码和配置都有修改，且不依赖客户端的更新内容停服更新：代码和配置都有修改\n\n## 核心概念\n\n### 玩家数据模型\n\n### GamerCache - 玩家数据缓存\n\n- GamerCache定义玩家的所有缓存数据，包括GamerMain、GamerCard、GamerItem等\n\n- 用于加载其他玩家数据，只读，不能修改\n\n### ModelGamer - 玩家数据模型\n\n- ModelGamer定义玩家的所有数据，包括GamerMain、GamerCard、GamerItem等\n\n- 用于加载玩家自己数据，可读写\n\n- 修改后调用Save存档到数据库\n\n### Gamer功能 - 玩家每一块功能数据模型\n\n- Gamer功能 定义玩家的每一块功能数据，如GamerMain、GamerCard、GamerItem等\n\n- 包含 load 和 Save 函数，用于加载和保存数据库数据。\n\n- 定义 NewGamer功能 创建功能实例，并调用 load 函数。\n\n- 使用 antnet.ParsePbStr 解析消息体，将其转换为对应的结构体。\n\n- 使用 antnet.PbStr 将结构体转换为字符串，用于存储到数据库。\n\n- 定义 Gamer功能 获取和修改等操作方法，用于处理玩家功能操作。\n\n### 数据库操作\n\n- 键名定义在 src/model/redis_key.go，分为全局键、玩家键、俱乐部键等\n\n- 全局键定义格式是{global}.{key}，如{global}.main\n\n- 玩家键定义格式是{gamer.%d}.{key}，如{gamer.12345}.main\n\n- 俱乐部键定义格式是{club.%d}.{key}，如{club.67890}.main\n\n- 通过RedisKeyGenerate函数生成键名，如RedisKeyGenerate(RedisHashGamerMain, gamerId)\n\n- 通过GetGamerRedis()获取Redis连接，进行redis读写操作\n\n### 玩家控制中心"
+  },
+  {
+    "doc_id": "36762e00-69d9-80b9-a732-c438021de3b4",
+    "title": "https://app.notion.com/p/36762e0069d980b9a732c438021de3b4",
+    "chunk_id": 3,
+    "content": "- 俱乐部键定义格式是{club.%d}.{key}，如{club.67890}.main\n\n- 通过RedisKeyGenerate函数生成键名，如RedisKeyGenerate(RedisHashGamerMain, gamerId)\n\n- 通过GetGamerRedis()获取Redis连接，进行redis读写操作\n\n### 玩家控制中心\n\n- GamerControl 是玩家操作中心，登录成功后会创建玩家的 GamerControl 实例，包含玩家的所有控制方法，如卡牌、背包、商店等操作。\n\n- GamerControl 中包含 ModelGamer 实例，用于操作玩家数据。\n\n### 消息处理系统\n\n### 消息注册\n\n- initNotifyHandler 中注册redis的publish通知的消息处理器，如 model.NotifyHandlerMap[model.RedisNotifyGamer功能] = OnNotify功能\n\n- initOuterHandler 中注册游戏客户端消息处理器，如 api.功能_Register(&功能{}, api.OUTER)\n\n- initRpcHandler 中注册游戏服务端消息处理器，如 api.功能_Register(&功能{}, api.RPC)\n\n- initInnerHandler 中注册游戏服务端内部发动到玩家的消息处理器，如 api.功能_Register(&功能{}, api.INNER)\n\n- initEventHandler 中注册游戏服务端玩家事件消息处理器，如 GamerEventDispatcher().RegisterListener(common.GamerEvent功能, onGamer功能Event)\n\n### 玩家消息处理器\n\n- 在 logic 目录中 的 control_gamer_功能.go 文件中定义功能结构，并实现 api 中的方法，用于处理客户端的玩家消息。\n\n### RPC 消息\n\n- 调用 common.SendRpcMsg(serverId, msg) 发送 RPC 消息到目标服务节点\n\n- control_rpc_功能.go 文件中定义功能结构，并实现 api 中的方法，用于处理服务端消息。\n\n### Proto 数据结构"
+  },
+  {
+    "doc_id": "36762e00-69d9-80b9-a732-c438021de3b4",
+    "title": "https://app.notion.com/p/36762e0069d980b9a732c438021de3b4",
+    "chunk_id": 4,
+    "content": "### RPC 消息\n\n- 调用 common.SendRpcMsg(serverId, msg) 发送 RPC 消息到目标服务节点\n\n- control_rpc_功能.go 文件中定义功能结构，并实现 api 中的方法，用于处理服务端消息。\n\n### Proto 数据结构\n\n- 生成的 go 文件在 src/proto/pb 目录下\n\n- 功能数据定义在 功能.go 文件中\n\n- 消息号由 cmd 和 act 组成，定义在 public.pb.go 中\n\n### Config 数据结构\n\n- 配置数据结构定义在 src/staticdata 目录下\n\n- staticbean.go 定义所有配置数据结构\n\n- staticdataagain.go 定义所有配置数据拓展结构，使用 staticbean.go 中的数据生成\n\n- staticenum.go 定义配置数据的枚举值\n\n- staticdatainit.go 初始化配置数据，加载配置文件到内存\n\n- staticdata.GetStaticBean() 获取配置数据实例，staticdata.GetExtend() 获取配置数据拓展实例\n\n- 其他配置文件对应一个功能，文件名与功能相同，如 config_card.go 对应 Card 配置。使用 addAgainFunc 函数添加到配置数据拓展中。\n\n## 安全注意事项\n\n- 参数校验: 所有客户端参数必须校验\n\n- 防刷机制: 先检查条件和存档玩家数据，再发奖励。\n\n- 数据验证: 验证所有外部数据\n\n- 敏感信息: 不要在日志中记录敏感信息\n\n- 权限检查: 检查玩家是否有权限执行操作\n\n- 并发检查: 检查并发操作，避免竞态条件。\n\n## 开发检查清单\n\n- 数据模型已创建\n\n- 数据库操作已集成\n\n- 消息处理器已实现\n\n- 消息处理器已注册\n\n- 参数校验已添加\n\n- 并发检查已完成\n\n- 错误处理已完善\n\n- 日志埋点记录已添加"
+  },
+  {
+    "doc_id": "36762e00-69d9-80ed-8f72-f470040a08ae",
+    "title": "https://app.notion.com/p/36762e0069d980ed8f72f470040a08ae",
+    "chunk_id": 0,
+    "content": "# 球员共鸣系统需求文档\n\n[表格 — 已省略]\n\n## 一、 设计目的\n\n为玩家前期的游戏提供玩平滑的数值提升体验，管控玩家整体成长节奏，降低新手玩家养成操作成本\n\n## 二、 概述\n\n1. 系统提供11个共鸣槽位，分为1个门将位和10个普通球员位\n\n1. 每个槽位有独立的等级，玩家可以消耗道具逐级提升这些槽位的等级\n\n1. 玩家可将自己的球员置入槽位中，球员被置入槽位后，该球员的等级变为槽位的等级\n\n1. 所有槽位等级中，最低的等级被称为共鸣等级，所有其他未置入槽位的球员的等级等于共鸣等级\n\n## 三、 详细设计\n\n### 1. 功能解锁\n\n- 玩家账号等级达到X级后解锁（待新手引导方案确定，暂定1级）\n\n- 功能未解锁的玩家，无法进入功能界面，也无法提升共鸣槽位等级\n\n### 2. 共鸣槽位\n\n- 共鸣槽位总共有11个，分为1个门将位和10个普通球员位\n\n1. 玩家可以将球员置入共鸣槽位中\n\n1. 门将位仅可置入门将，普通球员位仅可置入非门将球员\n\n1. 账号初始化时，默认将玩家的初始阵容置入共鸣槽位中，玩家可以随时更换槽位中的球员，但不可卸下球员\n\n- 每个槽位有独立的等级，玩家可以消耗道具逐级提升这些槽位的等级\n\n1. 共鸣槽位初始等级为1，最大等级为60（支持配置）\n\n1. 所有槽位等级中，最低的等级被称为共鸣等级（如：11个槽位中，10个槽位为5级，1个槽位为4级，则共鸣等级为4级）\n\n1. 提升槽位等级时，槽位的等级不可比共鸣等级大10级以上（支持配置）\n\n1. 一键升级：一键轮巡所有共鸣槽位，找出其中可升级，且材料足够的槽位，优先提升等级最低的槽位，直至所有的槽位升级所需材料不足或达到等级上限\n\n1. 置入槽位的球员等级等于该槽位的等级，其他未置入槽位的球员等级等于共鸣等级\n\n- 自动更换共鸣角色开关\n\n1. 开关默认为开，开关状态保存至服务器\n\n1. 开启开关后，玩家更改阵容1的球员时，系统自动把该阵容中的球员置入共鸣槽位中\n\n1. 开关由关至开时，自动映射阵容中的球员至共鸣槽位，根据ID一一对应\n\n### 3. 数值预期\n\n- 升级带来的属性数值占总战力的20%\n\n- 每10级为一个梯度，每隔10级，升1级的材料消耗和战力提升有明显差异\n\n- 每10级设计一个额外的稀有材料卡点\n\n- 拉满所有等级需要4-6周"
+  },
+  {
+    "doc_id": "36762e00-69d9-80ed-8f72-f470040a08ae",
+    "title": "https://app.notion.com/p/36762e0069d980ed8f72f470040a08ae",
+    "chunk_id": 1,
+    "content": "1. 开启开关后，玩家更改阵容1的球员时，系统自动把该阵容中的球员置入共鸣槽位中\n\n1. 开关由关至开时，自动映射阵容中的球员至共鸣槽位，根据ID一一对应\n\n### 3. 数值预期\n\n- 升级带来的属性数值占总战力的20%\n\n- 每10级为一个梯度，每隔10级，升1级的材料消耗和战力提升有明显差异\n\n- 每10级设计一个额外的稀有材料卡点\n\n- 拉满所有等级需要4-6周\n\n- 共鸣等级的养成材料分为：基础来料、稀有材料；主要在生命周期前中期投放，如：主线关卡、新手活动、新手礼包等\n\n## 四、 UI说明\n\n### 1. 功能入口\n\n[表格 — 已省略]\n\n### 2. 共鸣界面"
+  },
+  {
+    "doc_id": "36762e00-69d9-80ed-8f72-f470040a08ae",
+    "title": "https://app.notion.com/p/36762e0069d980ed8f72f470040a08ae",
+    "chunk_id": 2,
+    "content": "![](https://prod-files-secure.s3.us-west-2.amazonaws.com/27d62e00-69d9-81a7-8eec-0003b0a6d204/d2b73b20-752a-4dca-95e3-d967bbf4040d/image"
+  },
+  {
+    "doc_id": "36762e00-69d9-80ed-8f72-f470040a08ae",
+    "title": "https://app.notion.com/p/36762e0069d980ed8f72f470040a08ae",
+    "chunk_id": 3,
+    "content": ".png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=ASIAZI2LB466RAX47KIU%2F20260603%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260603T113124Z&X-Amz-Expires=3600&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEHEaCXVzLXdlc3QtMiJHMEUCIAWyarf0A1LQk4NLTe9YddIk%2B%2FC%2BcLjutHUJmREjlyabAiEA2qTGxsqtYY7A%2FvNIbt1ixSa4m7YCktw7hCqpmqRoTiYq%2FwMIOhAAGgw2Mzc0MjMxODM4MDUiDDXMWAK%2FRiDO%2BmyXpyrcA7qCSrBKDk4Oij%2BxnJW5TpFtJQfcPJtK8VG20kVJxgb9mxNlT5N8L3Bdb%2Fce9M7iJHjG2VH8RIKvJHVKMkCtHWj725PhxMjVME%2FcWHSRZTkRy%2BolpS5Zf1abRTsvjX5R5LIqZHMcqKDGB20MZTu3DprwZzh1IEEx6AAWeuO6LiFdxCYyRh5Vb%2Fbxo4QCihNPyBqsB34ScA91UIl6d1as5al5VlfQrUbM06Wntjc5vBH3M%2FQlryjO2UJsoihXZJvvJNMCyTOtmkagqEkK8K3qwh0vEkZ9GQOKLX4h%2F8XvLT%2FrpAckWW6PXd0W1LTFCyWwbO97dfuskdOq3YRGgIgvwcylWexyOvXc5%2BAEgx0Std%2BxM6aI3ku1RhHHxgtk8elY5LK64zcb06C8KXu1ZhfNmFzFn9wowg9zUAzECNUZdxZDxWuzb7y09aDnc8YKgqNOSqpexs%2BE3NIzGICOpOUr8THN0KLxYyVd11FSle6uZoIFbXVhNXkgDrSXDBy09NU0ljcQTrL98v31ttkZKNLatRYOBtBqgFl77WP%2FVo4siL%2B"
+  },
+  {
+    "doc_id": "36762e00-69d9-80ed-8f72-f470040a08ae",
+    "title": "https://app.notion.com/p/36762e0069d980ed8f72f470040a08ae",
+    "chunk_id": 4,
+    "content": "2BxM6aI3ku1RhHHxgtk8elY5LK64zcb06C8KXu1ZhfNmFzFn9wowg9zUAzECNUZdxZDxWuzb7y09aDnc8YKgqNOSqpexs%2BE3NIzGICOpOUr8THN0KLxYyVd11FSle6uZoIFbXVhNXkgDrSXDBy09NU0ljcQTrL98v31ttkZKNLatRYOBtBqgFl77WP%2FVo4siL%2Bx1H4gMY8tyGPNl3zvB49G%2Fu9zM0Cv9%2FxeoecaEKvLm%2FRwk8stqz6OiEPnSv35YinPVmLW%2F81nqk%2BUOOBrMI3i%2F9AGOqUBuctbJXbtqCB%2FfAr83Bk8%2Fd62fs7YN%2FKHqNkkJznh5t6VWBZTiuXj%2F9LlRvYF8TVvoymkS91IF2s%2F36RQmMi%2FNjIfVqqAmWAO5D77rTJgPrCj7%2BO0OSlLKgvXL64Ey0Owh%2FngV%2Bu3JAxv%2BGXoyXOhIWHzqAYvOuFQPj44T%2Bv1Cg7%2Fi2F3MLyjp0pErtU%2BGTuagaJZMk%2B5Y%2FWSTeYMmrbgvzMUsIjT&X-Amz-Signature=f83d7c2ef32ce902e274e2aa14c504ccd62d0eb81156bb4535379e3122218658&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject)"
+  },
+  {
+    "doc_id": "36762e00-69d9-80ed-8f72-f470040a08ae",
+    "title": "https://app.notion.com/p/36762e0069d980ed8f72f470040a08ae",
+    "chunk_id": 5,
+    "content": "[表格 — 已省略]\n\n### 3. New标签\n\n- 新功能解锁：主界面入口按钮\n\n1. 触发：功能开启后\n\n1. 移除：进入过共鸣界面\n\n1. 开启记录保存至账号\n\n### 4. 提升角标\n\n- 可一键升级提示：主界面入口按钮（与NEW标签同时触发时，优先显示NEW标签）\n\n1. 触发：消耗道具足够一键升级\n\n1. 移除：消耗道具不足一键升级\n\n## 五、 配置表说明\n\n### 1. 新增配置表：resonanceConstantConf\n\n### 2. 新增配置表：resonanceLvConf（等级带来的属性变化配置方式待数值提供）\n\n## 六、 数据统计\n\n### 1. 数据上报\n\n## 七、 资源需求清单\n\n### 1. UI\n\n### 2. 特效"
+  }
+]

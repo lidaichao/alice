@@ -1,0 +1,6 @@
+ragas
+langchain
+langchain-community
+pandas
+datasets
+requests
