@@ -206,6 +206,8 @@ function BugReportButton() {
   const [open, setOpen] = useState(false);
   const [desc, setDesc] = useState('');
   const [sent, setSent] = useState(false);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [fullReport, setFullReport] = useState('');
 
   const clientInfo = (() => {
     const ua = navigator.userAgent;
@@ -220,19 +222,64 @@ function BugReportButton() {
     ].join('\n');
   })();
 
-  const handleSend = () => {
-    // 存入 localStorage 或发送到后端收集 API
+  const handleGenerate = async () => {
+    setLogsLoading(true);
+    let backendLogs = '';
+
+    try {
+      const res = await fetch('/api/diagnostics/logs');
+      const data = await res.json();
+      if (data.ok && data.lines?.length > 0) {
+        backendLogs = data.lines.join('\n');
+      } else {
+        backendLogs = data.error || '(日志接口不可达)';
+      }
+    } catch {
+      backendLogs = '(后端不可达，无法抓取日志)';
+    }
+
+    const report = [
+      `=== Alice 灰度测试反馈报告 ===`,
+      `时间: ${new Date().toISOString()}`,
+      ``,
+      `## 用户描述`,
+      desc || '(未填写)',
+      ``,
+      `## 客户端环境`,
+      clientInfo,
+      ``,
+      `## 后端日志 (最近200行)`,
+      backendLogs,
+    ].join('\n');
+
+    setFullReport(report);
+    setLogsLoading(false);
+
+    // 同时存 localStorage
     const reports = JSON.parse(localStorage.getItem('alice_bug_reports') || '[]');
-    reports.push({ desc, clientInfo, time: Date.now() });
+    reports.push({ desc, clientInfo, backendLogs, time: Date.now() });
     localStorage.setItem('alice_bug_reports', JSON.stringify(reports));
     setSent(true);
-    setTimeout(() => { setOpen(false); setSent(false); setDesc(''); }, 1500);
+  };
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(fullReport);
+  };
+
+  const handleDownload = () => {
+    const blob = new Blob([fullReport], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `alice_bug_report_${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
     <>
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => { setOpen(true); setSent(false); setFullReport(''); }}
         className="flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-border/50 bg-muted/50 hover:bg-muted transition-colors"
         title="反馈 Bug"
       >
@@ -243,7 +290,7 @@ function BugReportButton() {
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setOpen(false)}>
           <div
-            className="bg-background border border-border rounded-xl shadow-2xl p-5 w-[420px] max-w-[90vw] animate-in zoom-in-95"
+            className="bg-background border border-border rounded-xl shadow-2xl p-5 w-[460px] max-w-[92vw] max-h-[85vh] overflow-y-auto animate-in zoom-in-95"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center gap-2 mb-4">
@@ -256,17 +303,33 @@ function BugReportButton() {
             </div>
 
             <textarea
-              className="w-full h-24 text-sm border border-border rounded-lg p-3 resize-none bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="w-full h-20 text-sm border border-border rounded-lg p-3 resize-none bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 mb-3"
               placeholder="描述你遇到的问题..."
               value={desc}
               onChange={e => setDesc(e.target.value)}
             />
 
-            <div className="flex justify-end gap-2 mt-3">
-              <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>取消</Button>
-              <Button size="sm" onClick={handleSend} disabled={!desc.trim() || sent}>
-                {sent ? '✅ 已发送' : '提交反馈'}
+            {!sent && (
+              <Button size="sm" onClick={handleGenerate} disabled={logsLoading || !desc.trim()} className="w-full mb-2">
+                {logsLoading ? '⏳ 抓取后端日志中...' : '生成诊断报告'}
               </Button>
+            )}
+
+            {sent && fullReport && (
+              <>
+                <div className="text-xs text-muted-foreground mb-1">诊断报告已生成 ({fullReport.length} 字符)</div>
+                <pre className="text-[11px] bg-muted/50 rounded-lg p-3 max-h-48 overflow-y-auto mb-3 whitespace-pre-wrap font-mono border border-border/30">
+                  {fullReport.substring(0, 800)}...
+                </pre>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={handleCopy} className="flex-1">📋 复制到剪贴板</Button>
+                  <Button variant="outline" size="sm" onClick={handleDownload} className="flex-1">💾 下载 .txt</Button>
+                </div>
+              </>
+            )}
+
+            <div className="flex justify-end mt-3">
+              <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>关闭</Button>
             </div>
           </div>
         </div>

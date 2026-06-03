@@ -2983,6 +2983,41 @@ def update_admin_password():
     return jsonify({"ok": True, "message": "密码已更新，下次登录请使用新密码"})
 
 
+# ═══════════════════════════════════════════════════════════
+#  /api/diagnostics/logs — 飞行记录仪：返回最近 N 行日志
+#  供前端 BugReport 异步拉取，嵌入反馈报告
+# ═══════════════════════════════════════════════════════════
+@app.route('/api/diagnostics/logs', methods=['GET'])
+def diagnostics_logs():
+    """返回 app.log 最近 200 行（灰度测试诊断用）"""
+    import os as _os
+    log_paths = [
+        _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'logs', 'alice_bridge.log'),
+        _os.path.join('logs', 'alice_bridge.log'),
+    ]
+    log_file = None
+    for p in log_paths:
+        if _os.path.exists(p):
+            log_file = p
+            break
+
+    if not log_file:
+        return jsonify({"ok": False, "error": "日志文件未找到", "lines": [], "hint": "RotatingFileHandler 可能尚未写入"}), 404
+
+    try:
+        with open(log_file, 'r', encoding='utf-8', errors='replace') as f:
+            all_lines = f.readlines()
+        tail = all_lines[-200:] if len(all_lines) > 200 else all_lines
+        return jsonify({
+            "ok": True,
+            "path": log_file,
+            "total_lines": len(all_lines),
+            "returned_lines": len(tail),
+            "lines": [l.rstrip('\n\r') for l in tail]
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:200], "lines": []}), 500
+
 if __name__ == "__main__":
     from waitress import serve
     logger.info(f"AI Bridge v5 on port {config['port']} (Waitress threads=10, conn_limit=50, chan_timeout=60s)")
