@@ -2,13 +2,15 @@
   "name": "alice-jira-desktop",
   "version": "1.0.0",
   "private": true,
-  "description": "爱丽丝 Jira AI 桌面端 (Thin Client — 纯 UI 壳，连接服务端 AI Bridge)",
+  "description": "爱丽丝 Jira AI 桌面端 — Electron + React + PyInstaller",
   "main": "main.js",
   "scripts": {
     "dev": "set NODE_ENV=development && electron main.js",
     "start": "electron main.js",
-    "pack": "electron-builder --win --dir",
-    "dist": "electron-builder --win nsis",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
     "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "dependencies": {
@@ -26,31 +28,55 @@
   },
   "build": {
     "appId": "com.alice.desktop.jira",
-    "productName": "爱丽丝JiraAI",
+    "productName": "Alice Jira AI",
     "directories": {
       "output": "dist"
     },
-    "artifactName": "爱丽丝JiraAI.${ext}",
+    "artifactName": "Alice-Jira-AI-${version}-${os}-${arch}.${ext}",
     "files": [
       "main.js",
       "preload.js",
       "conversations.js",
       "package.json",
-      "ui/**/*",
       "!node_modules",
       "!dist"
     ],
+    "extraResources": [
+      {
+        "from": "../frontend/dist",
+        "to": "frontend-dist"
+      },
+      {
+        "from": "../backend/dist/ai_bridge",
+        "to": "backend-dist/ai_bridge"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "assets/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "Alice Jira AI",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    },
     "win": {
       "icon": "assets/icon.ico",
-      "target": [
-        "nsis"
-      ]
+      "target": "nsis"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "爱丽丝 Jira AI"
+      "shortcutName": "Alice Jira AI"
     }
   }
 }
