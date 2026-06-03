@@ -994,16 +994,6 @@ except ImportError:
     logger.warning("yaml module not available, using hardcoded tools")
     AVAILABLE_TOOLS = _FALLBACK_TOOLS if '_FALLBACK_TOOLS' in dir() else []
 
-# ── V2.0 Agent 工具执行器映射 ─────────────────────────────
-_TOOL_EXECUTORS = {
-    "query_jira_metadata": _exec_query_jira_metadata,
-    "get_issue_commits": _exec_get_issue_commits,
-    "get_single_commit_diff": _exec_get_single_commit_diff,
-    "search_docs_catalog": _exec_search_docs_catalog,
-    "read_specific_doc": _exec_read_specific_doc,
-    "search_jira_issues": _exec_search_jira_issues,
-}
-
 
 # ═══════════════════════════════════════════════════════════════
 #  Alice V2.0 — 4 原子工具执行器 (LlamaIndex 式层级检索)
@@ -1342,6 +1332,16 @@ _ATOMIC_TOOLS = {
     "search_docs_catalog":  ("search_docs_catalog",  _exec_search_docs_catalog),
     "read_specific_doc":    ("read_specific_doc",    _exec_read_specific_doc),
     "search_jira_issues":   ("search_jira_issues",   _exec_search_jira_issues),
+}
+
+# ── V2.0 Agent 工具执行器映射 (必须在所有 _exec_* 定义之后) ──
+_TOOL_EXECUTORS = {
+    "query_jira_metadata": _exec_query_jira_metadata,
+    "get_issue_commits": _exec_get_issue_commits,
+    "get_single_commit_diff": _exec_get_single_commit_diff,
+    "search_docs_catalog": _exec_search_docs_catalog,
+    "read_specific_doc": _exec_read_specific_doc,
+    "search_jira_issues": _exec_search_jira_issues,
 }
 
 

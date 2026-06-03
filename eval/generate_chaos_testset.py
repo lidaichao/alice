@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import DEEPSEEK_KEY
 
 CORPUS = os.path.join(os.path.dirname(__file__), "data", "omni_corpus.json")
-OUT = os.path.join(os.path.dirname(__file__), "data", "testset_chaos_v1.csv")
+OUT = os.path.join(os.path.dirname(__file__), "data", "testset_chaos_v2.csv")
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 
 SAMPLE_SIZE = 10  # 可通过命令行参数覆盖
