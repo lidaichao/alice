@@ -13,6 +13,7 @@ import { ThemeProvider } from '@lobehub/ui';
 import { Square, RefreshCw } from 'lucide-react';
 
 export const App: React.FC = () => {
+  // ═══ 所有 Hook 必须在最顶层，无条件调用 ═══
   const sessions = useSessionStore((s) => s.sessions);
   const activeId = useSessionStore((s) => s.activeId);
   const createSession = useSessionStore((s) => s.createSession);
@@ -22,9 +23,17 @@ export const App: React.FC = () => {
 
   const { messages, input, handleInputChange: sdkHandleInput, handleSubmit: sdkHandleSubmit, stop, setMessages, isLoading } = useChat({
     api: '/v1/chat/completions',
-    id: activeId,
-    initialMessages: useSessionStore.getState().sessions.find(s => s.id === activeId)?.messages || [],
+    id: activeId || 'default',
+    initialMessages: activeSession?.messages || [],
   } as any);
+
+  const isGenerating = isLoading;
+  const [showCommands, setShowCommands] = useState(false);
+  const [commandFilter, setCommandFilter] = useState('');
+  const [selectedCmdIndex, setSelectedCmdIndex] = useState(0);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const [userScrolledUp, setUserScrolledUp] = useState(false);
 
   // 持续同步 messages 到 IndexedDB
   useEffect(() => {
@@ -35,17 +44,6 @@ export const App: React.FC = () => {
       return () => clearTimeout(t);
     }
   }, [messages, activeId]);
-
-  const isGenerating = isLoading;
-  const [showCommands, setShowCommands] = useState(false);
-  const [commandFilter, setCommandFilter] = useState('');
-  const [selectedCmdIndex, setSelectedCmdIndex] = useState(0);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const chatContainerRef = useRef<HTMLDivElement>(null);
-  const [userScrolledUp, setUserScrolledUp] = useState(false);
-
-  // 水合中显示加载
-  if (!sessions || !activeId) return <div className="h-screen w-screen flex items-center justify-center text-muted-foreground">加载会话中...</div>;
 
   useEffect(() => {
     if (isGenerating && userScrolledUp) return;
@@ -97,6 +95,20 @@ export const App: React.FC = () => {
       sdkHandleSubmit(e as unknown as React.FormEvent);
     }
   };
+
+  // ═══ 渲染: 所有 Hook 之后才做条件判断 ═══
+  if (!sessions || !activeId) {
+    return (
+      <ThemeProvider>
+        <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
+          <Sidebar />
+          <main className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
+            加载会话中...
+          </main>
+        </div>
+      </ThemeProvider>
+    );
+  }
 
   return (
     <ThemeProvider>
