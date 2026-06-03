@@ -1,5 +1,6 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { useChatStore, COMMANDS, type Command } from '@/store/useChatStore';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { COMMANDS, type Command } from '@/store/useChatStore';
+import { useSessionStore, type ChatMessage } from '@/store/useSessionStore';
 import { Header } from '@/Header';
 import { Sidebar } from '@/Sidebar';
 import { RightPanel } from '@/RightPanel';
@@ -12,13 +13,60 @@ import { ThemeProvider } from '@lobehub/ui';
 import { Square, RefreshCw } from 'lucide-react';
 
 export const App: React.FC = () => {
-  const initDB = useChatStore((state) => state.initDB);
-  const isDbLoaded = useChatStore((state) => state.isDbLoaded);
-  const loadMemories = useChatStore((state) => state.loadMemories);
+  // ── IndexedDB 会话持久化 ──
+  const sessions = useSessionStore((s) => s.sessions);
+  const activeId = useSessionStore((s) => s.activeId);
+  const createSession = useSessionStore((s) => s.createSession);
+  const switchSession = useSessionStore((s) => s.switchSession);
+  const updateMessages = useSessionStore((s) => s.updateMessages);
 
+  // 确保至少有一个会话
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    // zustand persist 异步恢复完成后检查
+    const t = setTimeout(() => {
+      const { sessions: s, activeId: aid, createSession: cs } = useSessionStore.getState();
+      if (!s.length) cs();
+      else if (!aid) useSessionStore.setState({ activeId: s[0].id });
+      setReady(true);
+    }, 200);
+    return () => clearTimeout(t);
+  }, []);
+
+  const activeSession = sessions.find((s) => s.id === activeId);
+
+  // ── Vercel AI SDK 流式引擎 ──
   const { messages, input, handleInputChange: sdkHandleInput, handleSubmit: sdkHandleSubmit, stop, setMessages, isLoading } = useChat({
     api: '/v1/chat/completions',
+    initialMessages: activeSession?.messages.map(m => ({ id: m.id, role: m.role, content: m.content })) ?? [],
+    id: activeId ?? 'default', // 会话切换时重建 useChat
   });
+
+  // 每当 activeId 变化，加载对应会话的 messages
+  const prevActiveId = useRef(activeId);
+  useEffect(() => {
+    const prev = prevActiveId.current;
+    if (prev && prev !== activeId) {
+      // 保存当前消息到旧会话
+      updateMessages(prev, messages.map(m => ({ id: m.id, role: m.role, content: m.content })));
+    }
+    prevActiveId.current = activeId;
+    // 加载新会话消息
+    if (activeId) {
+      const msgs = useSessionStore.getState().sessions.find(s => s.id === activeId)?.messages ?? [];
+      setMessages(msgs.map(m => ({ id: m.id, role: m.role, content: m.content })));
+    }
+  }, [activeId]);
+
+  // 持续同步 messages 到 IndexedDB
+  useEffect(() => {
+    if (activeId && messages.length > 0) {
+      const debounced = setTimeout(() => {
+        updateMessages(activeId, messages.map(m => ({ id: m.id, role: m.role as ChatMessage['role'], content: m.content })));
+      }, 1000);
+      return () => clearTimeout(debounced);
+    }
+  }, [messages, activeId]);
 
   const isGenerating = isLoading;
   const [showCommands, setShowCommands] = useState(false);
@@ -27,8 +75,6 @@ export const App: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
-
-  useEffect(() => { initDB(); loadMemories(); }, [initDB, loadMemories]);
 
   useEffect(() => {
     if (isGenerating && userScrolledUp) return;
@@ -81,7 +127,7 @@ export const App: React.FC = () => {
     }
   };
 
-  if (!isDbLoaded) return <div className="h-screen w-screen flex items-center justify-center text-muted-foreground">加载会话中...</div>;
+  if (!ready) return <div className="h-screen w-screen flex items-center justify-center text-muted-foreground">加载会话中...</div>;
 
   return (
     <ThemeProvider>
@@ -95,16 +141,11 @@ export const App: React.FC = () => {
                 id: m.id,
                 role: m.role as any,
                 content: m.content,
-                // 确认卡渲染
                 extra: (m as any).pendingCard ? (
                   <ConfirmCard
                     card={(m as any).pendingCard}
-                    onConfirm={async (opId: string) => {
-                      await fetch(`/operations/${opId}/confirm`, { method: 'POST' });
-                    }}
-                    onReject={async (opId: string) => {
-                      await fetch(`/operations/${opId}/reject`, { method: 'POST' });
-                    }}
+                    onConfirm={async (opId: string) => { await fetch(`/operations/${opId}/confirm`, { method: 'POST' }); }}
+                    onReject={async (opId: string) => { await fetch(`/operations/${opId}/reject`, { method: 'POST' }); }}
                   />
                 ) : undefined,
               })) as any}
@@ -120,7 +161,7 @@ export const App: React.FC = () => {
                   <Square size={12} /> ⏹ 停止生成
                 </Button>
               )}
-              <Button variant="ghost" size="sm" onClick={() => { if (isGenerating) stop(); setMessages([]); }} className="text-muted-foreground hover:text-foreground text-xs gap-1">
+              <Button variant="ghost" size="sm" onClick={() => { if (isGenerating) stop(); createSession(); }} className="text-muted-foreground hover:text-foreground text-xs gap-1">
                 <RefreshCw size={12} /> 🧹 新话题
               </Button>
             </div>
