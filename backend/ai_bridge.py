@@ -2669,11 +2669,24 @@ def get_admin_stats():
 # ── Admin Web 页面路由 ──────────────────────────────────────────
 @app.route('/admin', methods=['GET'])
 def render_admin_page():
-    try:
-        with open("admin.html", "r", encoding="utf-8") as f:
-            return f.read()
-    except FileNotFoundError:
-        return "admin.html 文件未找到", 404
+    """管理后台: 返回 API 导航页面"""
+    return jsonify({
+        "admin": "Alice AI Bridge v5 — Management API",
+        "endpoints": {
+            "config": {"GET": "/v1/admin/config", "POST": "/v1/admin/config"},
+            "stats": {"GET": "/v1/admin/stats"},
+            "test_jira": {"POST": "/v1/admin/test/jira"},
+            "test_svn": {"POST": "/v1/admin/test/svn"},
+            "test_notion": {"POST": "/v1/admin/test/notion"},
+            "test_deepseek": {"POST": "/v1/admin/test/deepseek"},
+            "connection_check": {"POST": "/api/test_connection"},
+            "diagnostics": {"GET": "/api/diagnostics/logs"},
+            "health": {"GET": "/health"},
+            "models": {"GET": "/v1/admin/models"},
+            "eval_datasets": {"GET": "/v1/admin/eval/datasets"},
+        },
+        "frontend_ui": "http://127.0.0.1:5174"
+    })
 
 # =====================================================================
 # ── Admin 联通测试端点 ──────────────────────────────────────────────
