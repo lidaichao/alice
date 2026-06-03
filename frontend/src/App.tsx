@@ -21,7 +21,7 @@ export const App: React.FC = () => {
 
   const activeSession = sessions?.find((s) => s.id === activeId);
 
-  const { messages, input, handleInputChange: sdkHandleInput, handleSubmit: sdkHandleSubmit, stop, setMessages, isLoading } = useChat({
+  const { messages, input, setInput, append, isLoading, error, stop } = useChat({
     api: '/v1/chat/completions',
     id: activeId || 'default',
     initialMessages: activeSession?.messages || [],
@@ -56,28 +56,38 @@ export const App: React.FC = () => {
     setUserScrolledUp((scrollHeight - scrollTop - clientHeight > 80) && isGenerating);
   };
 
+  // ── 绝对防弹发送逻辑 ──
+  const doSendMessage = () => {
+    if (!input || input.trim() === '' || isLoading) return;
+    const text = input;
+    setInput('');
+    append({ role: 'user', content: text } as any);
+  };
+
   const filteredCmds = COMMANDS.filter(c =>
     c.key.toLowerCase().includes(commandFilter.toLowerCase()) ||
     c.label.toLowerCase().includes(commandFilter.toLowerCase())
   );
 
   const handleSelectCommand = (cmd: Command) => {
-    sdkHandleInput({ target: { value: cmd.template, style: { height: 'auto' } } } as any);
+    setInput(cmd.template);
     setShowCommands(false);
     setSelectedCmdIndex(0);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const el = e.target;
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
-    sdkHandleInput(e);
-    const val = e.target.value;
-    if (val.endsWith('/')) { setShowCommands(true); setCommandFilter(''); setSelectedCmdIndex(0); }
+    const val = e.target?.value ?? (e as any);
+    setInput(typeof val === 'string' ? val : String(val || ''));
+    // auto-resize
+    const el = e.target as HTMLTextAreaElement;
+    if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 200) + 'px'; }
+    // slash command
+    const v = typeof val === 'string' ? val : '';
+    if (v.endsWith('/')) { setShowCommands(true); setCommandFilter(''); setSelectedCmdIndex(0); }
     else if (showCommands) {
-      const idx = val.lastIndexOf('/');
+      const idx = v.lastIndexOf('/');
       if (idx !== -1) {
-        const txt = val.slice(idx + 1);
+        const txt = v.slice(idx + 1);
         txt.includes(' ') ? setShowCommands(false) : (setCommandFilter(txt), setSelectedCmdIndex(0));
       } else setShowCommands(false);
     }
@@ -92,7 +102,7 @@ export const App: React.FC = () => {
     }
     if (e.key === 'Enter' && !e.shiftKey && !showCommands) {
       e.preventDefault();
-      sdkHandleSubmit(e as unknown as React.FormEvent);
+      doSendMessage();
     }
   };
 
@@ -136,6 +146,9 @@ export const App: React.FC = () => {
           </div>
 
           <div className="p-4 bg-background border-t border-border flex-shrink-0 flex flex-col gap-2 relative">
+            {/* 错误守卫 — 暴露网络死因 */}
+            {error && <div className="text-red-500 text-xs mb-1 px-1">后端通信异常: {error.message}</div>}
+
             <div className="flex justify-center gap-2 mb-2">
               {isGenerating && (
                 <Button variant="ghost" size="sm" onClick={stop} className="text-red-500 hover:text-red-700 text-xs gap-1">
@@ -144,7 +157,7 @@ export const App: React.FC = () => {
               )}
             </div>
 
-            <form onSubmit={sdkHandleSubmit} className="flex items-end gap-3 max-w-4xl mx-auto w-full relative">
+            <div className="flex items-end gap-3 max-w-4xl mx-auto w-full relative">
               {showCommands && <CommandPanel filterText={commandFilter} selectedIndex={selectedCmdIndex} onSelect={handleSelectCommand} />}
               <textarea
                 value={input}
@@ -153,13 +166,13 @@ export const App: React.FC = () => {
                 placeholder="输入分析指令，或键入 / 呼出模板..." rows={1}
                 className="flex-1 max-h-48 min-h-[56px] resize-none rounded-xl border border-input bg-background px-4 py-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring shadow-sm"
               />
-              <Button type="submit"
+              <Button onClick={doSendMessage}
                 disabled={isLoading || !input || input.trim() === ''} className="h-12 w-12 shrink-0 rounded-xl shadow-md">
                 <svg className="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
                 </svg>
               </Button>
-            </form>
+            </div>
           </div>
         </main>
         <RightPanel />
