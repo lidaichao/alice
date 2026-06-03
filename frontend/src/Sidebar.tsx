@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useChatStore, AGENTS } from '@/store/useChatStore';
 import { Button } from '@/components/ui/button';
 import { useTheme } from 'next-themes';
-import { Sun, Moon, Monitor, Plus, MoreVertical, Pin, Trash2, Edit2, Wifi } from 'lucide-react';
+import { Sun, Moon, Monitor, Plus, MoreVertical, Pin, Trash2, Edit2, Wifi, Bug } from 'lucide-react';
 import { AgentMarket } from '@/components/AgentMarket';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -146,6 +146,7 @@ export const Sidebar: React.FC = () => {
           </div>
         </div>
         <TestConnectionWidget />
+        <BugReportButton />
       </div>
     </aside>
   );
@@ -197,5 +198,79 @@ function TestConnectionWidget() {
         </span>
       )}
     </div>
+  );
+}
+
+// ── 灰度测试反馈黑匣子 ───────────────────────────
+function BugReportButton() {
+  const [open, setOpen] = useState(false);
+  const [desc, setDesc] = useState('');
+  const [sent, setSent] = useState(false);
+
+  const clientInfo = (() => {
+    const ua = navigator.userAgent;
+    const appMatch = ua.match(/Alice\/(\S+)/);
+    return [
+      `OS: ${navigator.platform || 'unknown'}`,
+      `UA: ${ua.substring(0, 80)}`,
+      `Version: ${appMatch ? appMatch[1] : 'dev'}`,
+      `Screen: ${window.screen.width}x${window.screen.height}`,
+      `Lang: ${navigator.language}`,
+      `Time: ${new Date().toISOString()}`,
+    ].join('\n');
+  })();
+
+  const handleSend = () => {
+    // 存入 localStorage 或发送到后端收集 API
+    const reports = JSON.parse(localStorage.getItem('alice_bug_reports') || '[]');
+    reports.push({ desc, clientInfo, time: Date.now() });
+    localStorage.setItem('alice_bug_reports', JSON.stringify(reports));
+    setSent(true);
+    setTimeout(() => { setOpen(false); setSent(false); setDesc(''); }, 1500);
+  };
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-border/50 bg-muted/50 hover:bg-muted transition-colors"
+        title="反馈 Bug"
+      >
+        <Bug size={12} className="text-amber-500" />
+        反馈
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setOpen(false)}>
+          <div
+            className="bg-background border border-border rounded-xl shadow-2xl p-5 w-[420px] max-w-[90vw] animate-in zoom-in-95"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <Bug className="w-5 h-5 text-amber-500" />
+              <span className="font-semibold text-lg">🐞 灰度测试反馈</span>
+            </div>
+
+            <div className="text-xs text-muted-foreground mb-3 p-2 bg-muted/30 rounded-md font-mono whitespace-pre-wrap">
+              {clientInfo}
+            </div>
+
+            <textarea
+              className="w-full h-24 text-sm border border-border rounded-lg p-3 resize-none bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+              placeholder="描述你遇到的问题..."
+              value={desc}
+              onChange={e => setDesc(e.target.value)}
+            />
+
+            <div className="flex justify-end gap-2 mt-3">
+              <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>取消</Button>
+              <Button size="sm" onClick={handleSend} disabled={!desc.trim() || sent}>
+                {sent ? '✅ 已发送' : '提交反馈'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

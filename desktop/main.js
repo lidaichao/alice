@@ -220,6 +220,11 @@ app.whenReady().then(async () => {
 
   createWindow();
 
+  // ── OTA 静默更新: 检查 + 后台下载, 下次重启生效 ──
+  if (!isDev) {
+    autoUpdater.checkForUpdatesAndNotify();
+  }
+
   globalShortcut.register('Alt+Space', () => {
     if (!mainWindow) return;
     if (mainWindow.isVisible()) {
