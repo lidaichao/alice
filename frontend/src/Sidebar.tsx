@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useChatStore, AGENTS } from '@/store/useChatStore';
 import { Button } from '@/components/ui/button';
 import { useTheme } from 'next-themes';
-import { Sun, Moon, Monitor, Plus, MoreVertical, Pin, Trash2, Edit2, Wifi, Bug } from 'lucide-react';
+import { Sun, Moon, Monitor, Plus, MoreVertical, Pin, Trash2, Edit2, Wifi, Bug, Settings } from 'lucide-react';
 import { AgentMarket } from '@/components/AgentMarket';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -138,6 +138,16 @@ export const Sidebar: React.FC = () => {
 
       <div className="p-3 border-t border-border shrink-0 flex flex-col gap-2 bg-background/50">
         <div className="text-xs text-muted-foreground font-medium px-2">设置</div>
+
+        <button
+          onClick={() => (window as any).desktopAPI?.openSettings?.()}
+          className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] rounded-md border border-border/50 bg-muted/50 hover:bg-muted transition-colors"
+          title="系统集成配置 (Electron)"
+        >
+          <Settings size={12} />
+          系统配置
+        </button>
+
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1 bg-muted rounded-full p-1 border border-border/50 shadow-inner">
             <button onClick={() => setTheme('light')} className={`p-1.5 rounded-full transition-all ${theme === 'light' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground'}`} title="浅色"><Sun size={14} /></button>

@@ -13,6 +13,7 @@ const { spawn } = require('child_process');
 const { ConversationStore } = require('./conversations');
 
 let mainWindow;
+let settingsWindow; // ← Settings 子窗口引用
 let convStore;
 let pythonProcess = null; // ← 引用 Python 子进程，防僵尸
 
@@ -181,6 +182,27 @@ function registerIPC() {
   ipcMain.handle('updater:check', () => autoUpdater.checkForUpdates());
   ipcMain.handle('updater:download', () => autoUpdater.downloadUpdate());
   ipcMain.handle('updater:install', () => autoUpdater.quitAndInstall());
+
+  // ── Settings 子窗口 (Electron IPC 桥接) ──
+  ipcMain.on('open-settings', () => {
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.focus();
+      return;
+    }
+    settingsWindow = new BrowserWindow({
+      width: 1000, height: 700,
+      title: '爱丽丝控制中心 — 系统配置',
+      backgroundColor: '#f4f5f7',
+      parent: mainWindow,
+      modal: false,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+      }
+    });
+    settingsWindow.loadURL('http://127.0.0.1:9099/admin.html');
+    settingsWindow.on('closed', () => { settingsWindow = null; });
+  });
 }
 
 // ══════════════ 窗口创建 ══════════════

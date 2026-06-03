@@ -48,4 +48,7 @@ contextBridge.exposeInMainWorld('desktopAPI', {
     getServerURL: () => ipcRenderer.invoke('config:getServerURL'),
     setServerURL: (url) => ipcRenderer.invoke('config:setServerURL', url),
   },
+
+  // 系统设置子窗口
+  openSettings: () => ipcRenderer.send('open-settings'),
 });

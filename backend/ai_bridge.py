@@ -2678,6 +2678,14 @@ def render_admin_page():
         return send_file(admin_path)
     return "admin.html not found", 404
 
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    """离线静态资源: Vue 3 + Tailwind CDN 本地化"""
+    from flask import send_from_directory
+    import os as _os
+    static_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'static')
+    return send_from_directory(static_dir, filename)
+
 # =====================================================================
 # ── Admin 联通测试端点 ──────────────────────────────────────────────
 # =====================================================================
