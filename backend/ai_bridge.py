@@ -1747,7 +1747,7 @@ def chat_completions():
                     "model": user_cfg["deepseek_model"],
                     "messages": tool_messages,
                     "tools": active_tools,
-                    "tool_choice": "auto",
+                    "tool_choice": "required" if tool_names else "auto",
                     "stream": False
                 }, timeout=30)
                 probe_data = probe_resp.json()
@@ -1902,6 +1902,20 @@ def chat_completions():
                 continue  # 继续循环让 LLM 处理工具结果
             # ── 分支 B: LLM 决定输出最终回答 ──
             elif finish_reason == "stop":
+                # ══ Stop Interceptor: 第一轮话痨拦截 ══
+                # LLM 说"好的我来查"但不调工具 → 踹回循环
+                if step == 1 and issue_keys_found and not any(
+                    "tool_calls" in m for m in tool_messages if m.get("role") == "assistant"
+                ):
+                    _chatter = str(msg.get("content", ""))[:100]
+                    logger.warning(f"[ReAct] Stop Interceptor: step={step} with {issue_keys_found} but no tool_calls! Content='{_chatter}'")
+                    tool_messages.append(msg)
+                    tool_messages.append({
+                        "role": "user",
+                        "content": f"【系统强制指令】请勿只回复文本！用户提到了 Jira 任务 {list(issue_keys_found)[:3]}，你必须立刻调用工具查询这些任务的具体数据（如状态、负责人、提交记录），然后再总结回答！"
+                    })
+                    continue  # 不 break，强制进入下一轮
+
                 # 过滤 msg 中的 tool_calls / DSML 文本泄漏
                 if msg.get("content"):
                     import re as _re
