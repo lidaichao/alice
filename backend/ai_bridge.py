@@ -1906,14 +1906,20 @@ def chat_completions():
                 if msg.get("content"):
                     import re as _re
                     cleaned = str(msg["content"])
-                    # 标准 OpenAI tool_calls 文本泄漏
-                    cleaned = _re.sub(r'<\|tool_calls\|>.*?</\|tool_calls\|>', '', cleaned, flags=_re.DOTALL)
-                    cleaned = _re.sub(r'<\|invoke\|.*?</\|invoke\|>', '', cleaned, flags=_re.DOTALL)
-                    cleaned = _re.sub(r'<\|parameter\|.*?</\|parameter\|>', '', cleaned, flags=_re.DOTALL)
-                    # deepseek-v4-flash DSML 变体: <|DSML|>tool_calls> ... </|DSML|>tool_calls>
-                    cleaned = _re.sub(r'<\|DSML\|>.*?</\|DSML\|>', '', cleaned, flags=_re.DOTALL)
-                    # 残留的孤标签
-                    cleaned = _re.sub(r'</?\|DSML\|>', '', cleaned)
+                    # ── 行级过滤: 仅删除含 DSML/tool_calls 的行, 不跨行吞噬 ──
+                    lines = cleaned.split('\n')
+                    keep_lines = []
+                    for line in lines:
+                        stripped = line.strip()
+                        if not stripped:
+                            keep_lines.append(line)
+                            continue
+                        if _re.match(r'\s*<\s*\|?\s*(?:tool_calls|DSML|invoke|parameter)\s*\|?\s*>', stripped, _re.I):
+                            continue
+                        if _re.match(r'\s*<\s*\|?\s*/\s*(?:tool_calls|DSML)\s*\|?\s*>', stripped, _re.I):
+                            continue
+                        keep_lines.append(line)
+                    cleaned = '\n'.join(keep_lines)
                     if cleaned.strip():
                         msg["content"] = cleaned.strip()
                     else:
@@ -2084,7 +2090,19 @@ def chat_completions():
         for _msg in tool_messages:
             if _msg.get("role") == "assistant" and "tool_calls" in _msg:
                 del _msg["tool_calls"]
-        logger.info(f"[ReAct] Cleaned tool_calls from assistant msgs, streaming {len(tool_messages)} msgs")
+
+        # ▸ 转换 tool 消息为 user 消息 (DeepSeek API 要求 tool 必须关联 tool_calls)
+        _converted_messages = []
+        for _msg in tool_messages:
+            if _msg.get("role") == "tool":
+                _converted_messages.append({
+                    "role": "user",
+                    "content": f"[工具返回数据 — 请基于此回答]\n{_msg.get('content', '')}"
+                })
+            else:
+                _converted_messages.append(_msg)
+        tool_messages = _converted_messages
+        logger.info(f"[ReAct] Cleaned tool_calls from assistant msgs, converted tool→user, {len(tool_messages)} msgs for Final Stream")
 
         try:
             _final_content_yielded = False
@@ -2098,15 +2116,18 @@ def chat_completions():
             consecutive_filtered = 0
             for raw_line in final_resp.iter_lines():
                 if raw_line:
-                    # 过滤 tool_calls / DSML 文本泄漏
                     decoded = raw_line.decode('utf-8', errors='replace')
-                    if any(tag in decoded for tag in (
-                        '<|tool_calls|>', '<|invoke|>', '<|parameter|>',
-                        '<|DSML|>', '</|DSML|>'
-                    )):
+                    # ── 过滤 DSML/tool_calls 文本, 保留自然语言 ──
+                    import re as _re_stream
+                    cleaned = decoded
+                    cleaned = _re_stream.sub(r'<\|tool_calls\|>.*?</\|tool_calls\|>', '', cleaned, flags=_re_stream.DOTALL)
+                    cleaned = _re_stream.sub(r'<\|invoke\|.*?</\|invoke\|>', '', cleaned, flags=_re_stream.DOTALL)
+                    cleaned = _re_stream.sub(r'<\|parameter\|.*?</\|parameter\|>', '', cleaned, flags=_re_stream.DOTALL)
+                    cleaned = _re_stream.sub(r'<\|DSML\|>.*?</\|DSML\|>', '', cleaned, flags=_re_stream.DOTALL)
+                    cleaned = _re_stream.sub(r'</?\|DSML\|>', '', cleaned)
+                    # 只有当整行都被清空时才跳过
+                    if not cleaned.strip():
                         consecutive_filtered += 1
-                        # 如果连续过滤超过 20 行，LLM 大概率在持续输出 tool_calls
-                        # 强行注入停止信号
                         if consecutive_filtered > 20:
                             logger.error("[ReAct] Too many filtered lines, LLM stuck in tool_calls mode")
                             yield f"data: {json.dumps({'choices':[{'delta':{'content':'[系统提示] AI 模型输出异常，请刷新页面重试。'}}]})}\n\n".encode('utf-8')
@@ -2114,7 +2135,8 @@ def chat_completions():
                         continue
                     consecutive_filtered = 0
                     _final_content_yielded = True
-                    yield raw_line + b"\n"
+                    # 直接输出清洗后的 SSE 行 (已含 data: 前缀)
+                    yield cleaned.encode('utf-8') + b"\n"
         except Exception as e:
             yield f"data: {json.dumps({'choices':[{'delta':{'content':f'[Error: {e}]'}}]})}\n\n".encode('utf-8')
 
@@ -2610,12 +2632,14 @@ def orchestrate_agents():
                 }, stream=True, timeout=30)
                 for line in r2.iter_lines():
                     if line:
-                        # 防泄漏过滤（与 chat_completions 一致）
+                        # 行级 DSML 防泄漏过滤
                         try:
                             d = line.decode('utf-8')
-                            d = re.sub(r'<\s*\|?\s*DSML\s*\|?\s*(?:tool_calls)?\s*>', '', d, flags=re.I)
-                            d = re.sub(r'<\s*\|\s*tool_calls\s*>', '', d, flags=re.I)
-                            d = re.sub(r'<\s*/\s*\|\s*tool_calls\s*>', '', d, flags=re.I)
+                            stripped = d.strip()
+                            if re.match(r'\s*<\s*\|?\s*(?:tool_calls|DSML|invoke|parameter)\s*\|?\s*>', stripped, re.I):
+                                continue
+                            if re.match(r'\s*<\s*\|?\s*/\s*(?:tool_calls|DSML)\s*\|?\s*>', stripped, re.I):
+                                continue
                             line = d.encode('utf-8')
                         except: pass
                         yield line + b'\n'
