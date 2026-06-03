@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useChatStore, AGENTS } from '@/store/useChatStore';
 import { Button } from '@/components/ui/button';
 import { useTheme } from 'next-themes';
-import { Sun, Moon, Monitor, Plus, MoreVertical, Pin, Trash2, Edit2, Wifi, Bug } from 'lucide-react';
+import SettingsPanel, { SettingsSidebar } from '@/components/SettingsPanel';
+import { Sun, Moon, Monitor, Plus, MoreVertical, Pin, Trash2, Edit2, Wifi, Bug, Settings } from 'lucide-react';
 import { AgentMarket } from '@/components/AgentMarket';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -19,6 +20,8 @@ export const Sidebar: React.FC = () => {
 
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [editTitle, setEditTitle] = React.useState('');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsMenu, setSettingsMenu] = useState('settings');
 
   const handleRename = (id: string, title: string) => {
     setEditingId(id);
@@ -54,7 +57,8 @@ export const Sidebar: React.FC = () => {
   if (!isSidebarOpen) return null;
 
   return (
-    <aside className="w-64 border-r border-border bg-muted/20 flex flex-col transition-all duration-300 shrink-0">
+    <>
+      <aside className="w-64 border-r border-border bg-muted/20 flex flex-col transition-all duration-300 shrink-0">
       <div className="p-4 border-b border-border flex flex-col gap-3 shrink-0">
         <div className="flex items-center justify-between">
           <span className="font-semibold text-foreground flex items-center gap-2">
@@ -138,6 +142,15 @@ export const Sidebar: React.FC = () => {
 
       <div className="p-3 border-t border-border shrink-0 flex flex-col gap-2 bg-background/50">
         <div className="text-xs text-muted-foreground font-medium px-2">设置</div>
+
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] rounded-md border border-border/50 bg-muted/50 hover:bg-muted transition-colors"
+        >
+          <Settings size={12} />
+          系统配置
+        </button>
+
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1 bg-muted rounded-full p-1 border border-border/50 shadow-inner">
             <button onClick={() => setTheme('light')} className={`p-1.5 rounded-full transition-all ${theme === 'light' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground'}`} title="浅色"><Sun size={14} /></button>
@@ -149,6 +162,16 @@ export const Sidebar: React.FC = () => {
         <BugReportButton />
       </div>
     </aside>
+
+    {/* ⚙️ 系统配置全屏 Modal */}
+    {settingsOpen && (
+      <div className="fixed inset-0 z-[9999] flex bg-white">
+        <div className="flex w-full h-full">
+          <SettingsPanel fullPage onClose={() => setSettingsOpen(false)} />
+        </div>
+      </div>
+    )}
+    </>
   );
 };
 
