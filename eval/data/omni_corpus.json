@@ -1,0 +1,104 @@
+[
+  {
+    "source_type": "jira",
+    "source": "Alice-query",
+    "title": "CT项目近期任务",
+    "content": "根据已获取的信息，CT 项目中目前明确标记为 **【完成】** 的任务如下：\n\n| 任务编号 | 标题 | 负责人 |\n|:---:|:---|:---:|\n| **CT-10611** | 【战斗】技能释放流程优化：蓄力技能类型的释放仅在蓄力开始时检测，蓄力完成后不再二次检测。 | **蒋泓杞** |\n\n> ⚠️ **说明**：由于搜索工具对状态字段的匹配有限，仅找到这一条明确标记为\"完成\"的任务。搜索结果中还包含大量其他状态（如待处理、处理中、可发布、搁置等）的任务，但未标记为\"完成\"。如果你有具体的任务编号或想按模块（如战斗、系统、活动等）进一步筛选，可以告诉我，我帮你更精确地查询。"
+  },
+  {
+    "source_type": "jira",
+    "source": "CT-10888",
+    "title": "【系统】新增-阵型养成",
+    "content": "CT-10888: 【系统】新增-阵型养成 [策划配置+验收] 经办人:丁儒 类型:Story"
+  },
+  {
+    "source_type": "jira",
+    "source": "CT-11112",
+    "title": "【服务器】【数值】新版本球员属性定义",
+    "content": "CT-11112: 【服务器】【数值】新版本球员属性定义 [完成] 经办人:杨正江 类型:Task"
+  },
+  {
+    "source_type": "jira",
+    "source": "CT-11113",
+    "title": "【策划配置】球员属性定义和计算规则",
+    "content": "CT-11113: 【策划配置】球员属性定义和计算规则 [进行中] 经办人:张锡涛 类型:Bug"
+  },
+  {
+    "source_type": "jira",
+    "source": "CT-22053",
+    "title": "回放系统重构 — 多片段切换",
+    "content": "CT-22053: 回放系统重构 — 多片段切换 [完成] 经办人:袁伟伟 类型:Story"
+  },
+  {
+    "source_type": "jira",
+    "source": "CT-22160",
+    "title": "战术系统 — 进攻战术克制关系",
+    "content": "CT-22160: 战术系统 — 进攻战术克制关系 [开发中] 经办人:魏诗豪 类型:Task"
+  },
+  {
+    "source_type": "svn",
+    "source": "r40632",
+    "title": "阵型养成数据表更新",
+    "content": "r40632 | 张锡涛 | 2026-06-03 21:20 | 4文件 | +61/-3 | 阵型养成数据表更新"
+  },
+  {
+    "source_type": "svn",
+    "source": "r40609",
+    "title": "Merge分支 DevelopV4",
+    "content": "r40609 | 丁儒 | 2026-06-03 18:37 | 8文件 | +0/-0 | Merge分支 DevelopV4"
+  },
+  {
+    "source_type": "svn",
+    "source": "r40601",
+    "title": "新增阵型属性计算",
+    "content": "r40601 | 张锡涛 | 2026-06-03 18:20 | 4文件 | +61/-3 | 新增阵型属性计算"
+  },
+  {
+    "source_type": "svn",
+    "source": "r40593",
+    "title": "阵型养成等级配置",
+    "content": "r40593 | 张锡涛 | 2026-06-03 17:43 | 4文件 | +61/-18 | 阵型养成等级配置"
+  },
+  {
+    "source_type": "svn",
+    "source": "r40589",
+    "title": "批量调整命名空间",
+    "content": "r40589 | 丁儒 | 2026-06-03 17:37 | 19文件 | +2/-2 | 批量调整命名空间"
+  },
+  {
+    "source_type": "svn",
+    "source": "r40574",
+    "title": "修复阵型属性计算bug",
+    "content": "r40574 | 张锡涛 | 2026-06-03 16:23 | 4文件 | +39/-9 | 修复阵型属性计算bug"
+  },
+  {
+    "source_type": "doc",
+    "source": "36862e00-69d9-80dc-b",
+    "title": "https://app.notion.com/p/BattleRec-36862e0069d980dcb579e7b7cfe079ae",
+    "content": "# 战斗录播系统（BattleRec）技术架构文档\n\n目录: Assets/Scripts/TsubasaGame/BattleRec\n\n---\n\n## 1. 概述\n\nBattleRec（战斗录播系统）是一个数据驱动的回放系统，核心思路是：在真实战斗过程中逐帧录制关键状态数据（球员位置、动画、球状态、Timeline 事件等），回放时按帧读取数据驱动渲染组件，实现与战斗表现一致的观战/回放体验。\n\n系统支持多片段切换（如进球回放切换不同角度）、时间缩放、Timeline 技能特写等功能。\n\n---\n\n## 2. 架构分层\n\n```plain text\n┌─────────────────────────────────────────────────────────────────┐\n│                    Match（编排层）                                │\n│          BattleRecMatch / BattleRecStateRecover                  │\n│         核心循环：计时 → 推进帧 → 驱动组件                        │\n├────────┬───────┬──────────┬────────┬───────────────────────────┤\n│        │       │          │        │                           │\n│  Data  │  Res  │ Component│  Util  │ 录制端                    │\n│ (数据层)│(资源层)│ (渲染层) │ (工具层)│ FrameDataRecUtil         │\n│       "
+  },
+  {
+    "source_type": "doc",
+    "source": "36862e00-69d9-80dc-b",
+    "title": "https://app.notion.com/p/BattleRec-36862e0069d980dcb579e7b7cfe079ae",
+    "content": "---\n\n## 3. 各模块详解\n\n### 3.1 Data（数据层）— Data/\n\n定义录播系统全部数据模型与序列化方案。\n\n[表格 — 已省略]\n\n序列化方案：\n\n- 元数据 → JSON（Newtonsoft.Json）\n\n- 帧数据 → 自定义二进制（BinaryWriter/Reader），文件头带版本号 v1\n\n- 每种子数据类均实现 Write(BinaryWriter) / Read(BinaryReader) 方法\n\n### 3.2 Res（资源层）— Res/\n\n负责在回放开始前异步加载所有所需资源，完成后产出挂载好组件的 GameObject。\n\n[表格 — 已省略]\n\n### 3.3 Component（渲染层）— Component/\n\n运行时渲染组件，无状态纯渲染器，每帧由 Match 注入数据驱动。\n\n[表格 — 已省略]\n\n### 3.4 Match（编排层）— Match/\n\n回放核心引擎，驱动整个播放循环。\n\nBattleRecMatch（单例，~431行）：\n\n- 回放帧率：固定 FRAME_INTERVAL = 1/30 s（约33ms/帧）\n\n- 主循环（Update）：\n\n- 播放控制：Play() / Pause() / SetPlaybackSpeed()\n\n- 切换片段：SwitchToSegment(segmentId) 静态方法，预加载目标帧数据 + 调用状态恢复\n\n- 工厂方法：CreateAndInitialize() 使用资源层产出的组件列表完成初始化注册\n\nBattleRecStateRecover（切片切换状态恢复）：\n\n- 反向扫描目标帧前的动画状态 → RecoverAnimStates\n\n- 直接读取目标帧位置 Snap → RecoverPlayerPositions / RecoverBallPos"
+  },
+  {
+    "source_type": "doc",
+    "source": "36862e00-69d9-80dc-b",
+    "title": "https://app.notion.com/p/BattleRec-36862e0069d980dcb579e7b7cfe079ae",
+    "content": "- 全部跳过 Lerp 插值，避免跳变\n\n### 3.5 Util（工具层）— Util/\n\n纯逻辑静态工具类，封装配置表查询与 ID 覆写逻辑。\n\n[表格 — 已省略]\n\n### 3.6 录制端 — Data/FrameDataRecUtil.cs\n\n唯一录制端文件（357行），在真实战斗过程中录制数据：\n\n- 通过 OnFrameRec（每帧回调）从 TsubasaBattle.Context 提取所有状态\n\n- MapToBattleRecData：将网络协议 ResRoomInfo 映射为内部 BattleRecData，支持 PVP、PVE、机器人三种数据源\n\n- EndRec：将录制的帧数据写入二进制文件\n\n---\n\n## 4. 关键设计模式\n\n[表格 — 已省略]\n\n---\n\n## 5. 数据流\n\n```plain text\n[战斗过程] → FrameDataRecUtil.OnFrameRec → 逐帧录制 FrameData\n                                                  ↓\n                             二进制序列化 → .rec 文件（元数据 JSON + 帧数据 Binary）\n                                                  ↓\n                             反序列化（多片段预加载）→ FrameData[]\n                                                  ↓\nBattleRecMatch.Update 循环 → 按帧索引取出 FrameData\n      ↓                     ↓                  "
+  },
+  {
+    "source_type": "doc",
+    "source": "36862e00-69d9-80dc-b",
+    "title": "https://app.notion.com/p/BattleRec-36862e0069d980dcb579e7b7cfe079ae",
+    "content": "---\n\n## 6. 多片段切换流程\n\n```plain text\nSwitchToSegment(segmentId)\n  ├─ 反序列化目标片段帧数据\n  ├─ BattleRecStateRecover.RecoverAnimStates（反向扫描动画状态）\n  ├─ BattleRecStateRecover.RecoverPlayerPositions（Snap 位置）\n  ├─ BattleRecStateRecover.RecoverBallPosition（Snap 球位置）\n  └─ 重置帧索引 → 继续播放\n```\n\n---\n\n## 7. 文件清单（16 个 .cs 文件）"
+  },
+  {
+    "source_type": "doc",
+    "source": "36862e00-69d9-80dc-b",
+    "title": "https://app.notion.com/p/BattleRec-36862e0069d980dcb579e7b7cfe079ae",
+    "content": "---\n\n## 7. 文件清单（16 个 .cs 文件）\n\n```plain text\nBattleRec/\n├── Component/                # 运行时渲染组件\n│   ├── RecBallComponent.cs\n│   ├── RecCameraComponent.cs\n│   ├── RecPlayerAnimationComponent.cs\n│   ├── RecPlayerLocationComponent.cs\n│   ├── RecSkillComponent.cs\n│   └── RecTimelineComponent.cs\n├── Data/                     # 数据模型与序列化 + 录制端\n│   ├── BattleRecData.cs\n│   ├── FrameBallData.cs\n│   ├── FrameCloseupData.cs\n│   ├── FrameData.cs\n│   ├── FrameDataRecUtil.cs   # ← 唯一录制端文件\n│   ├── FramePlayerData.cs\n│   └── FramePlayerStateChangeData.cs\n├── Match/                    # 回放核心引擎\n│   ├── BattleRecMatch.cs\n│   └── BattleRecStateRecover.cs\n├── Res/                      # 资源异步加载\n│   ├── BattleRecResBallModel.cs\n│   ├── BattleRecResManager.cs\n│   ├── BattleRecResPlayerModel.cs\n│   └── BattleRecRes"
+  }
+]
