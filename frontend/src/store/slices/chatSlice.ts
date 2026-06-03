@@ -3,12 +3,28 @@ import { Message, Session } from '../useChatStore';
 import { db } from '@/lib/db';
 import { AGENTS } from '../useChatStore';
 
+// ── 确认卡类型定义 ───────────────────────────
+export interface ConfirmCard {
+  op_id: string;
+  event: 'confirm_card';
+  operation: {
+    type: string;
+    issue_key?: string;
+    summary?: string;
+    description?: string;
+    project?: string;
+  };
+  created_at?: string;
+  status?: 'pending' | 'confirmed' | 'rejected';
+}
+
 export interface ChatSlice {
   sessions: Session[];
   activeSessionId: string | null;
   isDbLoaded: boolean;
   isGenerating: boolean;
   abortController: AbortController | null;
+  pendingConfirmations: ConfirmCard[];
 
   initDB: () => Promise<void>;
   setActiveSession: (id: string) => void;
@@ -28,6 +44,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
   isDbLoaded: false,
   isGenerating: false,
   abortController: null,
+  pendingConfirmations: [],
 
   initDB: async () => {
     try {
@@ -170,9 +187,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: messagesPayload,
-          config: {
-            tool_whitelist: currentAgent.allowedTools || ['query_jira_issues', 'search_knowledge_base']
-          }
+          config: {}  // 对齐后端 parse_user_config, 凭据由 Electron store 注入
         }),
         signal: ctrl.signal
       });
@@ -198,6 +213,28 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
                       const lastMsg = s.messages[s.messages.length - 1];
                       if (lastMsg.id === aiMsgId) {
                         return { ...s, messages: [...s.messages.slice(0, -1), { ...lastMsg, plugin: data.plugin }] };
+                      }
+                      return s;
+                    })
+                  }));
+                  continue;
+                }
+
+                // ── 确认卡 SSE 事件 ──
+                if (data._event === 'confirm_card') {
+                  const card: ConfirmCard = {
+                    op_id: data.operation?.id || data.op_id || '',
+                    event: 'confirm_card',
+                    operation: data.operation || { type: '' },
+                    status: 'pending'
+                  };
+                  set((state) => ({
+                    pendingConfirmations: [...state.pendingConfirmations, card],
+                    sessions: state.sessions.map(s => {
+                      if (s.id !== activeSessionId) return s;
+                      const lastMsg = s.messages[s.messages.length - 1];
+                      if (lastMsg.id === aiMsgId) {
+                        return { ...s, messages: [...s.messages.slice(0, -1), { ...lastMsg, pendingCard: card }] };
                       }
                       return s;
                     })
@@ -243,11 +280,11 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
       const finalSession = get().sessions.find(s => s.id === activeSessionId);
       if (finalSession) {
         await db.sessions.put(finalSession);
-        // 5层记忆自动提取
-        if (finalSession.messages.length >= 2) {
-          const msgs = finalSession.messages.map(m => ({ role: m.role, content: m.content }));
-          (get() as any).extractMemories?.(msgs);
-        }
+        // 5层记忆自动提取 (后端 API 未就绪, 暂时禁用)
+        // if (finalSession.messages.length >= 2) {
+        //   const msgs = finalSession.messages.map(m => ({ role: m.role, content: m.content }));
+        //   (get() as any).extractMemories?.(msgs);
+        // }
       }
     } catch (error: any) {
       if (error.name === 'AbortError') {
