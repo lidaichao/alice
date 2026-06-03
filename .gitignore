@@ -51,3 +51,6 @@ plugin/**/node_modules/
 workspace/.workbuddy/memory/
 research/LobeHub/
 research/baize/
+ai-bridge/rabbit_test.py
+ai-bridge/rabbit_test2.py
+ai-bridge/test_simple.py
