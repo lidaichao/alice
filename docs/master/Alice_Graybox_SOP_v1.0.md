@@ -167,15 +167,19 @@ Alice 内置 OTA 更新机制：
 
 ## 八、发版门禁（开发/运维）
 
-每次合并 main 或对外发灰度包前，执行 [alice三期蓝图计划.md](alice三期蓝图计划.md) **§6.1**：
+每次合并 main 或对外发灰度包前，执行 [alice三期蓝图计划.md](alice三期蓝图计划.md) **§6.1**。
 
-| 步骤 | 命令 / 动作 |
-|------|-------------|
-| 意图自测 | `py -3 backend/intent_classifier.py` |
-| 闲聊冒烟 | `py -3 scripts/smoke_chat_only.py` → `SMOKE_CHAT_ONLY_OK` |
-| 草稿 e2e | `py -3 scripts/e2e_short_draft_memory.py` → `E2E_SHORT_OK` |
-| Eval 基线 | `eval/` 金标子集不低于上一版（见 E3） |
-| 人工点验 | 本 SOP 第四节场景勾选，纪要写入 `eval/reports/` |
+**可复制勾选单**：[`eval/reports/release_checklist_M1.md`](../../eval/reports/release_checklist_M1.md)（复制为 `eval/reports/release_YYYY-MM-DD.md` 并逐项打勾）
+
+| # | 步骤 | 命令 / 动作 | 勾选 |
+|---|------|-------------|------|
+| 1 | 意图自测 | `py -3 backend/intent_classifier.py` | [ ] |
+| 2 | kb 矩阵 | `py -3 scripts/validate_kb_matrix_yaml.py` | [ ] |
+| 3 | CI 静态门禁 | `py -3 scripts/ci_gate.py` | [ ] |
+| 4 | 闲聊冒烟 | `py -3 scripts/smoke_chat_only.py` → `SMOKE_CHAT_ONLY_OK`（Hub 9099） | [ ] |
+| 5 | 草稿 e2e | `py -3 scripts/e2e_short_draft_memory.py` → `E2E_SHORT_OK` | [ ] |
+| 6 | 协调者基线 | `py -3 backend/run_eval.py coordinator_m1` 不低于 [`coordinator_baseline_M1.md`](../../eval/reports/coordinator_baseline_M1.md) | [ ] |
+| 7 | 人工点验 | 本 SOP 第四节场景 | [ ] |
 
 ---
 

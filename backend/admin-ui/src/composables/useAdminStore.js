@@ -36,6 +36,8 @@ export function useAdminStore() {
   );
 
   const adminToken = ref(getAdminToken());
+  const healthSummary = ref(null);
+  const healthLoading = ref(false);
 
   const showToast = (msg, type = 'success') => {
     if (type === 'error') ElMessage.error(msg);
@@ -1271,9 +1273,34 @@ export function useAdminStore() {
     persistActiveMenu();
   };
 
+  const fetchHealth = async () => {
+    healthLoading.value = true;
+    try {
+      const res = await fetch(`${window.location.origin || ''}/health`);
+      healthSummary.value = await res.json();
+    } catch (e) {
+      healthSummary.value = { status: 'error', detail: e.message || '无法读取 /health' };
+    } finally {
+      healthLoading.value = false;
+    }
+  };
+
+  const integrationLabel = (probe) => {
+    if (!probe) return '未知';
+    const s = probe.status;
+    if (s === 'ok' || s === 'configured') return '正常';
+    if (s === 'partial') return '部分';
+    if (s === 'unconfigured') return '未配置';
+    if (s === 'gateway_error') return '网关502';
+    if (s === 'auth_error') return '凭据';
+    if (s === 'timeout') return '超时';
+    return s;
+  };
+
   onMounted(() => {
     persistActiveMenu();
     loadConfig();
+    fetchHealth();
   });
 
   return {
@@ -1290,6 +1317,10 @@ export function useAdminStore() {
     testResult,
     setActionHint,
     testAiSystem,
+    healthSummary,
+    healthLoading,
+    fetchHealth,
+    integrationLabel,
     testJiraSystem,
     testSvnSystem,
     testNotionSystem,

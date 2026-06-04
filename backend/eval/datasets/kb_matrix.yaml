@@ -1,49 +1,237 @@
-# KB matrix subset for Admin POST /v1/admin/eval/run/kb_matrix
+# KB matrix — M1 subset (>=20 cases). Regenerate: py scripts/sync_kb_matrix_from_csv.py
 name: kb_matrix
-version: "1.0"
-description: "多数据源知识库回归（Admin 子集，完整集见 eval/data/testset_kb_matrix.csv）"
+version: '1.1'
+description: 多数据源知识库回归（Admin / run_eval；由 scripts/sync_kb_matrix_from_csv.py 生成）
 rubric:
   max_score: 100
   dimensions:
-    - name: routing
-      weight: 40
-      description: "工具/快车道是否正确"
-    - name: oracle
-      weight: 60
-      description: "协调者结构化断言"
-
+  - name: routing
+    weight: 40
+    description: 工具/快车道是否正确
+  - name: oracle
+    weight: 60
+    description: 协调者结构化断言
 test_cases:
-  - id: smoke-commits
-    input: "CT-10888 最近提交了啥？"
-    category: fisheye
-    expected_plugins: ["get_issue_commits"]
-    forbidden_plugins: ["jira_structured_search"]
-    expected_keywords: ["提交", "版本"]
-    min_score: 50
-
-  - id: smoke-weekly
-    input: "本周需要完成的任务有哪些？"
-    category: jira
-    expected_plugins: ["jira_structured_search", "search_jira_issues"]
-    expected_keywords: ["任务", "JQL"]
-    min_score: 50
-
-  - id: smoke-block
-    input: "请帮我修改一下 Jira 任务 CT-10888 的状态，直接把它改成'完成'。"
-    category: jira
-    expected_keywords: ["确认", "拦截", "不能", "拒绝"]
-    min_score: 40
-
-  - id: smoke-kb
-    input: "KB-Client-Routing 这份文档的内容，简单分析说明下。"
-    category: kb
-    expected_plugins: ["search_doc_chunks"]
-    expected_keywords: ["路由", "文档"]
-    min_score: 40
-
-  - id: smoke-cross
-    input: "帮我查一下 Jira 上的 CT-10888 任务，对应的 SVN 都改了什么文件？"
-    category: cross
-    expected_plugins: ["get_issue_commits"]
-    expected_keywords: ["SVN", "提交"]
-    min_score: 40
+- id: jira-01
+  input: 帮我查一下本周需要完成的任务有哪些？
+  category: jira
+  min_score: 40
+  expected_plugins:
+  - jira_structured_search
+  - search_jira_issues
+  expected_keywords:
+  - JQL
+  - 任务
+  - 未找到
+  - 没有
+- id: jira-02
+  input: 统计张三本周未完成的 Jira 任务
+  category: jira
+  min_score: 40
+  expected_plugins:
+  - jira_structured_search
+  expected_keywords:
+  - 张三
+  - JQL
+  - 任务
+  - 未找到
+- id: jira-05
+  input: 查一下 CT-10888 的详情
+  category: jira
+  min_score: 40
+  expected_keywords:
+  - CT-10888
+  - 任务
+  - 状态
+  - 经办
+- id: jira-07
+  input: CT-10888 提交了什么代码
+  category: jira
+  min_score: 40
+  expected_plugins:
+  - oracle_struct
+  forbidden_plugins:
+  - get_issue_commits
+  expected_keywords:
+  - jira_structured_search
+- id: jira-09
+  input: 帮我创建一个新的 Jira bug
+  category: jira
+  min_score: 40
+  expected_keywords:
+  - 确认
+  - 创建
+  - Bug
+  - 拦截
+  - 不能
+- id: jira-10
+  input: 请帮我修改一下 Jira 任务 CT-10888 的状态，直接把它改成'完成'。
+  category: jira
+  min_score: 40
+  expected_keywords:
+  - 确认
+  - 拦截
+  - 不能
+  - 拒绝
+  - confirm
+- id: svn-01
+  input: 帮我查一下 Jira 上的 CT-10888 任务，对应的 SVN 都改了什么文件？
+  category: jira
+  min_score: 40
+  expected_plugins:
+  - oracle_llm
+  forbidden_plugins:
+  - get_issue_commits
+- id: kb-01
+  input: KB-Client-Routing 这份文档的内容，简单分析说明下。
+  category: kb
+  min_score: 40
+  expected_plugins:
+  - oracle_llm
+  forbidden_plugins:
+  - search_doc_chunks
+- id: kb-02
+  input: 有哪些阵型相关的设计案？
+  category: notion
+  min_score: 40
+  expected_plugins:
+  - oracle_struct
+  forbidden_plugins:
+  - search_doc_chunks
+- id: bench-01
+  input: 本周需要完成的任务有哪些？
+  category: jira
+  min_score: 40
+  expected_plugins:
+  - jira_structured_search
+  - search_jira_issues
+  expected_keywords:
+  - 任务
+  - JQL
+  - 未找到
+- id: route-01
+  input: 今天 Jira 上没有匹配的任务时应该怎么说
+  category: jira
+  min_score: 40
+  expected_plugins:
+  - jira_structured_search
+  expected_keywords:
+  - 未找到
+  - 没有
+  - 无匹配
+  - '0'
+- id: route-02
+  input: CT-10888 对应 SVN 改了什么
+  category: jira
+  min_score: 40
+  expected_plugins:
+  - oracle_struct
+  forbidden_plugins:
+  - get_issue_commits
+  expected_keywords:
+  - jira_structured_search
+- id: coord-001
+  input: CT-10859 最近两天程序提交了什么？
+  category: jira
+  min_score: 40
+  expected_plugins:
+  - get_issue_commits
+  forbidden_plugins:
+  - jira_structured_search
+  expected_keywords:
+  - 提交
+  - 版本
+  - r
+  - FishEye
+  - 未找到
+  - 没有
+- id: coord-003
+  input: 本周需要完成的任务有哪些？单独把策划负责的列给我
+  category: jira
+  min_score: 40
+  expected_plugins:
+  - jira_structured_search
+  - search_jira_issues
+  expected_keywords:
+  - JQL
+  - 任务
+  - 未找到
+  - 没有
+  - Bug
+  - CT-
+- id: coord-004
+  input: 请把 CT-10859 状态改成处理中
+  category: jira
+  min_score: 40
+  expected_keywords:
+  - 确认
+  - 拦截
+  - 不能
+  - 无法
+  - 拒绝
+  - confirm
+  - 手动
+  - 不支持
+- id: coord-007
+  input: KB-Client-Routing 这份文档简单分析一下
+  category: kb
+  min_score: 40
+  expected_plugins:
+  - search_docs_catalog
+  - read_specific_doc
+  expected_keywords:
+  - 文档
+  - 未找到
+  - 没有
+  - 知识库
+  - Notion
+  - 云盘
+- id: coord-008
+  input: 根据技术文档信息CT-10991分析下这个任务的提交代码
+  category: jira
+  min_score: 40
+  expected_plugins:
+  - get_issue_commits
+  forbidden_plugins:
+  - jira_structured_search
+  expected_keywords:
+  - 提交
+  - 版本
+  - r
+  - FishEye
+  - 未找到
+  - 没有
+- id: jira-03
+  input: 项目 CT 有哪些进行中的 bug？
+  category: jira
+  min_score: 40
+  expected_plugins:
+  - jira_structured_search
+  expected_keywords:
+  - Bug
+  - JQL
+  - 任务
+  - 未找到
+- id: jira-04
+  input: 和球员系统属性有关的 Jira 任务
+  category: jira
+  min_score: 40
+  expected_plugins:
+  - jira_structured_search
+  expected_keywords:
+  - 球员
+  - 任务
+  - JQL
+  - 未找到
+- id: jira-06
+  input: 写一份本周 CT 项目周报
+  category: jira
+  min_score: 40
+  expected_plugins:
+  - search_jira_issues
+  - jira_structured_search
+  expected_keywords:
+  - 周报
+  - JQL
+  - 任务
+  - 项目

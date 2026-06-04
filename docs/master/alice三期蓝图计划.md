@@ -157,7 +157,7 @@ flowchart TB
 
 | 里程碑 | 时间 | 验收 |
 |--------|------|------|
-| M1 | 近一期第 4 周 | E3 + E7 完成；灰盒 SOP 可跑通 |
+| M1 | 近一期第 4 周 | E3 + E7 完成；灰盒 SOP 可跑通 | **已交付 v1.0.2** |
 | M2 | 近一期第 8 周 | E1 + E2 + E5 完成；PRD 写路径点验 |
 | M3 | 近一期第 16 周 | E4 + E6 完成；内部「日常可用」签字 |
 
@@ -167,11 +167,11 @@ flowchart TB
 
 | ID | 任务 | 交付物 | DoD | 状态 |
 |----|------|--------|-----|------|
-| E3.1 | 扩展 `eval/datasets/kb_matrix.yaml` | 用例 ≥ 20 条 | CI 可跑通 | [ ] |
-| E3.2 | 闲聊误触发 Jira 用例 | `scripts/smoke_chat_only.py` 入 CI | 「你好」无 plugin_state | [x] 脚本已有 |
-| E3.3 | coordinator 金标子集 | `eval/reports/` 基线报告 | 通过率基线存档 | [ ] |
-| E3.4 | 发布 checklist | `docs/master/Alice_Graybox_SOP_v1.0.md` §发布 | 发版必须勾选 | [ ] |
-| E3.5 | PR 门禁 | GitHub Actions / 本地 `run_eval` | main 合并前失败则阻断 | [ ] |
+| E3.1 | 扩展 `eval/datasets/kb_matrix.yaml` | 用例 ≥ 20 条 | CI 可跑通 | [x] v1.1 共 20 条 + validate 脚本 |
+| E3.2 | 闲聊误触发 Jira 用例 | `scripts/smoke_chat_only.py` 入 CI | 「你好」无 plugin_state | [x] ci-gate 可选集成 |
+| E3.3 | coordinator 金标子集 | `eval/reports/` 基线报告 | 通过率基线存档 | [x] coordinator_m1 + baseline_M1 |
+| E3.4 | 发布 checklist | `docs/master/Alice_Graybox_SOP_v1.0.md` §发布 | 发版必须勾选 | [x] §八 + release_checklist_M1 |
+| E3.5 | PR 门禁 | GitHub Actions / 本地 `run_eval` | main 合并前失败则阻断 | [x] ci-gate.yml + scripts/ci_gate.py |
 
 ---
 
@@ -179,9 +179,9 @@ flowchart TB
 
 | ID | 任务 | 交付物 | DoD | 状态 |
 |----|------|--------|-----|------|
-| E7.1 | Jira 测试连接错误文案 | `test_jira_connection` + Admin UI | 502/401/超时 三类提示 | [ ] |
-| E7.2 | `/health` 扩展 | jira/kb/model 探活摘要 | Admin 仪表盘可读 | [ ] |
-| E7.3 | 配置备份说明 | Admin 文档一节 | shallow_memory + global_config 备份步骤 | [ ] |
+| E7.1 | Jira 测试连接错误文案 | `test_jira_connection` + Admin UI | 502/401/超时 三类提示 | [x] error_category + 中文文案 |
+| E7.2 | `/health` 扩展 | jira/kb/model 探活摘要 | Admin 仪表盘可读 | [x] integrations + Admin 顶栏 |
+| E7.3 | 配置备份说明 | Admin 文档一节 | shallow_memory + global_config 备份步骤 | [x] Settings 备份卡片 |
 
 ---
 
@@ -274,10 +274,11 @@ flowchart TB
 ### 6.1 发布门禁（近期每次发版）
 
 - [ ] `py -3 backend/intent_classifier.py` 全绿  
-- [ ] `py -3 scripts/smoke_chat_only.py` → SMOKE_CHAT_ONLY_OK  
-- [ ] `py -3 scripts/e2e_short_draft_memory.py` → E2E_SHORT_OK  
-- [ ] `eval/` 金标子集通过率不低于上一版基线  
-- [ ] 灰盒 SOP 相关条目人工点验（记录在 `eval/reports/`）  
+- [ ] `py -3 scripts/ci_gate.py` → `CI_GATE_OK`  
+- [ ] `py -3 scripts/smoke_chat_only.py` → `SMOKE_CHAT_ONLY_OK`  
+- [ ] `py -3 scripts/e2e_short_draft_memory.py` → `E2E_SHORT_OK`  
+- [ ] `py -3 backend/run_eval.py coordinator_m1` 不低于 `eval/reports/coordinator_baseline_M1.md`  
+- [ ] 灰盒 SOP §八勾选 + `eval/reports/release_YYYY-MM-DD.md`  
 
 ### 6.2 需求校准规则
 
@@ -312,5 +313,6 @@ flowchart TB
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| v1.0.2 | 2026-06-05 | M1：E3 Eval 门禁 + E7 Admin 运维（CI、health、kb_matrix 20 条） |
 | v1.0.1 | 2026-06-05 | master 文档索引与发版门禁对齐；治理规则落盘 |
 | v1.0 | 2026-06-05 | 首期可执行版：近/中/远 WBS + 架构宪法 + OSS 约束 |

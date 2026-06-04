@@ -21,6 +21,23 @@
           <h1 class="page-title">{{ pageTitle }}</h1>
           <p class="page-desc">{{ pageDesc }}</p>
         </div>
+        <div v-if="store.healthSummary" class="health-strip">
+          <span class="health-hub" :class="'hub-' + (store.healthSummary.status || 'ok')">
+            Hub {{ store.healthSummary.status === 'degraded' ? '降级' : '正常' }}
+          </span>
+          <span
+            v-for="key in ['jira', 'model', 'kb']"
+            :key="key"
+            class="health-pill"
+            :title="store.healthSummary.integrations?.[key]?.detail"
+          >
+            {{ key === 'jira' ? 'Jira' : key === 'model' ? '模型' : '知识库' }}：
+            {{ store.integrationLabel(store.healthSummary.integrations?.[key]) }}
+          </span>
+          <el-button link type="primary" :loading="store.healthLoading" @click="store.fetchHealth">
+            刷新探活
+          </el-button>
+        </div>
       </el-header>
       <el-main class="admin-main">
         <Transition name="page-fade" mode="out-in">
@@ -124,9 +141,35 @@ body,
   border-left: 3px solid #60a5fa;
 }
 
+.health-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.health-hub {
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #ecfdf5;
+  color: #047857;
+}
+.health-hub.hub-degraded {
+  background: #fff7ed;
+  color: #c2410c;
+}
+.health-pill {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #475569;
+}
 .admin-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   border-bottom: 1px solid var(--admin-border);
   background: rgb(255 255 255 / 92%);
   backdrop-filter: blur(8px);

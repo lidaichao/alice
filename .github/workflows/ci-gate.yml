@@ -1,0 +1,43 @@
+name: Alice M1 — CI Gate
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  static-gate:
+    name: Intent + kb_matrix + optional smokes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install minimal deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml requests
+
+      - name: M1 static gate
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python scripts/ci_gate.py
+
+      - name: Integration smokes (optional secrets)
+        if: ${{ secrets.DEEPSEEK_API_KEY != '' || secrets.DEEPSEEK_KEY != '' }}
+        env:
+          ALICE_RUN_INTEGRATION: "1"
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || secrets.DEEPSEEK_KEY }}
+        run: |
+          pip install -r backend/requirements.txt
+          cd backend
+          python ai_bridge.py &
+          echo $! > /tmp/alice.pid
+          sleep 8
+          cd ..
+          python scripts/ci_gate.py
+          kill $(cat /tmp/alice.pid) || true

@@ -1,0 +1,50 @@
+# Coordinator golden subset — M1 baseline (E3.3)
+name: coordinator_m1
+version: "1.0"
+description: "协调者金标子集；完整矩阵见 eval/data/testset_kb_matrix.csv coord-*"
+rubric:
+  max_score: 100
+  dimensions:
+    - name: routing
+      weight: 40
+      description: "工具/快车道是否正确"
+    - name: oracle
+      weight: 60
+      description: "协调者结构化断言"
+
+test_cases:
+  - id: coord-001
+    input: "CT-10859 最近两天程序提交了什么？"
+    category: jira
+    expected_plugins: ["get_issue_commits"]
+    forbidden_plugins: ["jira_structured_search"]
+    expected_keywords: ["提交", "版本", "未找到"]
+    min_score: 40
+
+  - id: coord-003
+    input: "本周需要完成的任务有哪些？单独把策划负责的列给我"
+    category: jira
+    expected_plugins: ["jira_structured_search", "search_jira_issues"]
+    expected_keywords: ["任务", "JQL", "未找到"]
+    min_score: 40
+
+  - id: coord-004
+    input: "请把 CT-10859 状态改成处理中"
+    category: jira
+    expected_keywords: ["确认", "拦截", "不能", "拒绝"]
+    min_score: 40
+
+  - id: coord-007
+    input: "KB-Client-Routing 这份文档简单分析一下"
+    category: kb
+    expected_plugins: ["search_docs_catalog", "read_specific_doc", "search_doc_chunks"]
+    expected_keywords: ["文档", "未找到", "路由"]
+    min_score: 40
+
+  - id: coord-008
+    input: "根据技术文档信息CT-10991分析下这个任务的提交代码"
+    category: jira
+    expected_plugins: ["get_issue_commits"]
+    forbidden_plugins: ["jira_structured_search"]
+    expected_keywords: ["提交", "未找到"]
+    min_score: 40

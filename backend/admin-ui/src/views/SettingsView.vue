@@ -189,11 +189,26 @@
         <el-button type="primary" @click="s.saveEdit('svn')">保存 SVN</el-button>
       </template>
     </ConfigCard>
+
+    <ConfigCard title="配置备份与恢复（Hub 数据目录）">
+      <template #icon><el-icon><Document /></el-icon></template>
+      <div class="backup-doc">
+        <p>以下文件位于 Hub 服务器 <code>backend/</code> 目录，<strong>升级或迁移前请备份</strong>：</p>
+        <ul>
+          <li><code>global_config.json</code> — Jira PAT、DeepSeek Key、模型与集成配置（含密钥，勿提交 Git）</li>
+          <li><code>data/shallow_memory.json</code> — 团队浅层记忆规则</li>
+          <li><code>data/jira_draft_box.json</code>、<code>data/operations.json</code> — 草稿与操作状态（运行期）</li>
+        </ul>
+        <p><strong>备份步骤</strong>：停止 Hub → 复制上述文件到安全目录（带日期，如 <code>backup_2026-06-05/</code>）→ 升级后若配置异常，停止 Hub 再覆盖还原。</p>
+        <p><strong>恢复</strong>：仅在同版本回滚或确认 JSON 格式兼容时覆盖；覆盖前对当前文件再留一份副本。</p>
+        <p class="field-hint">发版勾选见 <code>eval/reports/release_checklist_M1.md</code> 与灰盒 SOP §八。</p>
+      </div>
+    </ConfigCard>
   </div>
 </template>
 
 <script setup>
-import { Cpu, Link, Box } from '@element-plus/icons-vue';
+import { Cpu, Link, Box, Document } from '@element-plus/icons-vue';
 import { useAdminInject } from '../composables/useAdminInject.js';
 import ConfigCard from '../components/ConfigCard.vue';
 import StatusPill from '../components/StatusPill.vue';
@@ -221,5 +236,20 @@ const s = useAdminInject();
 .saving-hint {
   color: var(--admin-primary);
   margin-left: 8px;
+}
+.backup-doc {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--admin-text-primary);
+}
+.backup-doc ul {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+.backup-doc code {
+  font-size: 12px;
+  background: #f1f5f9;
+  padding: 1px 4px;
+  border-radius: 4px;
 }
 </style>

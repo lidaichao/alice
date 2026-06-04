@@ -11,6 +11,7 @@ IntentClassifier — 工程意图分类管道
 
 import re
 import logging
+import sys
 
 logger = logging.getLogger("intent-classifier")
 
@@ -475,3 +476,5 @@ if __name__ == "__main__":
         for item in cf:
             print(f"    ✗ chat lane '{item['input']}' expected={item['expected']} got={item['got']}")
     print(f"{'='*50}\n")
+    failed = bool(f) or bool(cf) or p < t or cp < ct
+    sys.exit(1 if failed else 0)

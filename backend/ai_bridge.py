@@ -3325,21 +3325,94 @@ def test_suite():
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "jira", "jira-workbuddy-plugin", "test_suite.html")
     return send_file(path)
 
+def _probe_jira_health(timeout: float = 3.0) -> dict:
+    """Lightweight Jira reachability for Admin /health (E7.2)."""
+    cfg = load_global_config()
+    base = (cfg.get("JIRA_BASE_URL") or os.getenv("JIRA_BASE_URL", "")).rstrip("/")
+    pat = cfg.get("JIRA_PAT") or os.getenv("JIRA_PAT", "")
+    if not base or not pat:
+        return {"status": "unconfigured", "detail": "缺少 JIRA_BASE_URL 或 PAT"}
+    t0 = time.time()
+    try:
+        res = http.get(
+            f"{base}/rest/api/2/myself",
+            headers={"Authorization": f"Bearer {pat}"},
+            timeout=timeout,
+        )
+        latency_ms = int((time.time() - t0) * 1000)
+        if res.status_code == 200:
+            return {"status": "ok", "latency_ms": latency_ms}
+        if res.status_code == 502:
+            return {
+                "status": "gateway_error",
+                "http_status": 502,
+                "detail": "Jira 网关错误 (502)：上游或反向代理不可达",
+                "latency_ms": latency_ms,
+            }
+        if res.status_code in (401, 403):
+            return {
+                "status": "auth_error",
+                "http_status": res.status_code,
+                "detail": f"Jira 凭据被拒绝 (HTTP {res.status_code})",
+                "latency_ms": latency_ms,
+            }
+        return {
+            "status": "http_error",
+            "http_status": res.status_code,
+            "detail": f"Jira 返回 HTTP {res.status_code}",
+            "latency_ms": latency_ms,
+        }
+    except http.exceptions.Timeout:
+        return {"status": "timeout", "detail": "Jira 连接超时，请检查网络或增大超时"}
+    except http.exceptions.RequestException as e:
+        return {"status": "unreachable", "detail": f"Jira 无法连接: {e}"}
+
+
+def _probe_model_health() -> dict:
+    cfg = load_global_config()
+    key = (cfg.get("DEEPSEEK_KEY") or os.getenv("DEEPSEEK_API_KEY") or os.getenv("DEEPSEEK_KEY") or "").strip()
+    url = (cfg.get("DEEPSEEK_URL") or os.getenv("DEEPSEEK_BASE_URL") or "").strip()
+    if not key:
+        return {"status": "unconfigured", "detail": "未配置 DeepSeek API Key"}
+    return {"status": "configured", "detail": "API Key 已配置", "url_set": bool(url)}
+
+
+def _probe_kb_health() -> dict:
+    cfg = load_global_config()
+    notion = bool((cfg.get("NOTION_TOKEN") or os.getenv("NOTION_TOKEN") or "").strip())
+    gdrive = bool((cfg.get("GDRIVE_CREDENTIALS_JSON") or cfg.get("GOOGLE_APPLICATION_CREDENTIALS") or "").strip())
+    if notion and gdrive:
+        return {"status": "ok", "detail": "Notion + Google 云盘已配置"}
+    if notion:
+        return {"status": "partial", "detail": "仅 Notion 已配置"}
+    if gdrive:
+        return {"status": "partial", "detail": "仅 Google 云盘已配置"}
+    return {"status": "unconfigured", "detail": "未配置知识库源（Notion / GDrive）"}
+
+
 @app.route("/health")
 @app.route("/api/system/status")
 def health():
+    integrations = {
+        "jira": _probe_jira_health(),
+        "model": _probe_model_health(),
+        "kb": _probe_kb_health(),
+    }
+    _bad = {"gateway_error", "auth_error", "timeout", "unreachable", "http_error", "error"}
+    degraded = any(integrations.get(k, {}).get("status") in _bad for k in ("jira", "model", "kb"))
     with _active_lock:
         return jsonify({
-            "status": "ok",
+            "status": "degraded" if degraded else "ok",
             "service": "ai-bridge-v5",
-            "engine": "deepseek-chat",
+            "engine": _resolved_deepseek_model(load_global_config()),
             "active_requests": _active_requests,
             "max_threads": 10,
+            "integrations": integrations,
             "cache": {
                 "context": len(_CONTEXT_CACHE),
                 "semantic": len(_SEMANTIC_CACHE),
-                "svn_commits": len(_SVN_COMMIT_CACHE)
-            }
+                "svn_commits": len(_SVN_COMMIT_CACHE),
+            },
         })
 
 @app.route("/cache/stats")
@@ -3696,16 +3769,45 @@ def test_jira_connection():
     start_time = time.time()
     try:
         headers = {"Authorization": f"Bearer {pat}"}
-        res = http.get(f"{jira_url}/rest/api/2/myself", headers=headers, timeout=5)
-        
+        res = http.get(f"{jira_url}/rest/api/2/myself", headers=headers, timeout=8)
         latency = int((time.time() - start_time) * 1000)
-        
         if res.status_code == 200:
             return jsonify({"success": True, "status": res.status_code, "latency_ms": latency})
-        else:
-            return jsonify({"success": False, "error": f"Jira 拒绝访问: HTTP {res.status_code}"}), 401
+        if res.status_code == 502:
+            return jsonify({
+                "success": False,
+                "error_category": "gateway",
+                "error": "Jira 网关错误 (HTTP 502)：上游 Jira 或反向代理不可达，请联系运维检查服务器/网关。",
+                "http_status": 502,
+                "latency_ms": latency,
+            }), 502
+        if res.status_code in (401, 403):
+            return jsonify({
+                "success": False,
+                "error_category": "auth",
+                "error": f"Jira 凭据无效或被拒绝 (HTTP {res.status_code})：请检查 PAT 是否过期、是否有 REST API 权限。",
+                "http_status": res.status_code,
+                "latency_ms": latency,
+            }), 401
+        return jsonify({
+            "success": False,
+            "error_category": "http",
+            "error": f"Jira 返回异常状态 HTTP {res.status_code}，请查看 Jira 日志或联系管理员。",
+            "http_status": res.status_code,
+            "latency_ms": latency,
+        }), 400
+    except http.exceptions.Timeout:
+        return jsonify({
+            "success": False,
+            "error_category": "timeout",
+            "error": "Jira 连接超时：请检查网络、防火墙或 Jira 地址是否可达。",
+        }), 504
     except http.exceptions.RequestException as e:
-        return jsonify({"success": False, "error": f"Jira 连接超时或无法解析: {str(e)}"}), 500
+        return jsonify({
+            "success": False,
+            "error_category": "network",
+            "error": f"Jira 无法连接或 DNS 解析失败：{e}",
+        }), 500
 
 
 def _admin_resolve_jira_pat(pat: str = "") -> str:
