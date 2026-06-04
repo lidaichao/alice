@@ -2,6 +2,16 @@ import { StateCreator } from 'zustand';
 import { Message, Session } from '../useChatStore';
 import { db } from '@/lib/db';
 import { AGENTS } from '../useChatStore';
+import type { JiraSearchSupplementCard } from '@/components/JiraSearchSupplement';
+
+function loadRuntimeConfig(): Record<string, string> {
+  try {
+    const raw = sessionStorage.getItem('alice_runtime_config');
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
 
 // ── 确认卡类型定义 ───────────────────────────
 export interface ConfirmCard {
@@ -25,6 +35,7 @@ export interface ChatSlice {
   isGenerating: boolean;
   abortController: AbortController | null;
   pendingConfirmations: ConfirmCard[];
+  pendingJiraSupplements: JiraSearchSupplementCard[];
 
   initDB: () => Promise<void>;
   setActiveSession: (id: string) => void;
@@ -45,6 +56,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
   isGenerating: false,
   abortController: null,
   pendingConfirmations: [],
+  pendingJiraSupplements: [],
 
   initDB: async () => {
     try {
@@ -187,7 +199,18 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: messagesPayload,
-          config: {}  // 对齐后端 parse_user_config, 凭据由 Electron store 注入
+          config: (() => {
+            const rc = loadRuntimeConfig();
+            return {
+              jira_pat: rc.jira_pat || '',
+              jira_projects: rc.jira_projects || rc.JIRA_PROJECTS || 'CT',
+              jira_url: rc.jira_url || '',
+            };
+          })(),
+          user_config: (() => {
+            const rc = loadRuntimeConfig();
+            return { jira_pat: rc.jira_pat || '' };
+          })(),
         }),
         signal: ctrl.signal
       });
@@ -220,12 +243,21 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
                   continue;
                 }
 
-                // ── 确认卡 SSE 事件 ──
-                if (data._event === 'confirm_card') {
+                // ── 确认卡 SSE 事件（confirm_card 或 legacy confirm_required）──
+                const isConfirmCard = data._event === 'confirm_card'
+                  || data.custom_type === 'confirm_required';
+                if (isConfirmCard) {
+                  const rawOp = data.operation || {};
                   const card: ConfirmCard = {
-                    op_id: data.operation?.id || data.op_id || '',
+                    op_id: data.op_id || data.operation_id || rawOp.id || '',
                     event: 'confirm_card',
-                    operation: data.operation || { type: '' },
+                    operation: {
+                      type: rawOp.type || rawOp.kind?.replace?.(/^jira_/, '') || 'unknown',
+                      issue_key: rawOp.issue_key,
+                      summary: rawOp.summary,
+                      description: rawOp.description,
+                      project: rawOp.project,
+                    },
                     status: 'pending'
                   };
                   set((state) => ({
@@ -238,6 +270,19 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
                       }
                       return s;
                     })
+                  }));
+                  continue;
+                }
+
+                if (data._event === 'jira_search_supplement' && data.supplement) {
+                  const sup = data.supplement;
+                  const card: JiraSearchSupplementCard = {
+                    id: `jira-sup-${Date.now()}`,
+                    prompt: sup.prompt || '请选择 Jira 用户',
+                    choices: sup.choices || [],
+                  };
+                  set((state) => ({
+                    pendingJiraSupplements: [...state.pendingJiraSupplements, card],
                   }));
                   continue;
                 }

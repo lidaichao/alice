@@ -189,6 +189,109 @@ class JiraClient:
             url = endpoint
         return self._request("POST", url, json_data=json_data, timeout=timeout, user_pat=user_pat)
 
+    def jira_put(self, endpoint: str, json_data: dict = None, timeout: int = 30, user_pat: str = None):
+        """便捷 PUT 请求 — 支持动态 PAT"""
+        if endpoint.startswith("http"):
+            url = endpoint.replace(self.api_url + "/", "/").replace(self.api_url, "/")
+            if not url.startswith("/"):
+                url = "/" + url
+        else:
+            url = endpoint
+        return self._request("PUT", url, json_data=json_data, timeout=timeout, user_pat=user_pat)
+
+    @staticmethod
+    def draft_to_fields(draft: dict, default_issue_type: str = "Task", skip_labels: bool = False) -> dict:
+        """将确认卡草稿转为 Jira REST fields（对齐 Baize draftToJiraFields）"""
+        project_key = (draft.get("projectKey") or "").strip()
+        if not project_key:
+            raise ValueError("Jira 项目 Key 不能为空。")
+        summary = (draft.get("summary") or "").strip()
+        if not summary:
+            raise ValueError("Issue 标题不能为空。")
+        fields = {
+            "project": {"key": project_key},
+            "summary": summary,
+            "description": draft.get("description") or "",
+            "issuetype": (
+                {"id": draft["issueTypeId"]}
+                if draft.get("issueTypeId")
+                else {"name": draft.get("issueType") or default_issue_type}
+            ),
+        }
+        assignee = draft.get("assigneeName") or draft.get("assigneeAccountId") or draft.get("assignee")
+        if assignee:
+            if draft.get("assigneeAccountId"):
+                fields["assignee"] = {"accountId": draft["assigneeAccountId"]}
+            else:
+                fields["assignee"] = {"name": assignee}
+        if draft.get("priority"):
+            fields["priority"] = {"name": draft["priority"]}
+        if not skip_labels and draft.get("labels"):
+            labels = draft["labels"]
+            if isinstance(labels, list) and labels:
+                fields["labels"] = labels
+        return fields
+
+    def create_issue(self, fields: dict, user_pat: str = None) -> dict:
+        """POST /rest/api/2/issue"""
+        r = self._request("POST", "/issue", json_data={"fields": fields}, timeout=30, user_pat=user_pat)
+        if r.status_code not in (200, 201):
+            raise RuntimeError(f"创建 Issue 失败 (HTTP {r.status_code}): {r.text[:300]}")
+        data = r.json()
+        return {"id": data.get("id"), "key": data.get("key"), "self": data.get("self")}
+
+    def create_issue_from_draft(self, draft: dict, user_pat: str = None,
+                                default_issue_type: str = "Task", skip_labels: bool = False) -> dict:
+        fields = self.draft_to_fields(draft, default_issue_type=default_issue_type, skip_labels=skip_labels)
+        created = self.create_issue(fields, user_pat=user_pat)
+        created["summary"] = draft.get("summary", "")
+        return created
+
+    def add_comment(self, issue_key: str, body: str, user_pat: str = None) -> dict:
+        """POST /rest/api/2/issue/{key}/comment"""
+        key = (issue_key or "").strip()
+        if not key:
+            raise ValueError("issue_key 不能为空")
+        r = self._request(
+            "POST", f"/issue/{key}/comment",
+            json_data={"body": body or ""},
+            timeout=30,
+            user_pat=user_pat,
+        )
+        if r.status_code not in (200, 201):
+            raise RuntimeError(f"添加评论失败 (HTTP {r.status_code}): {r.text[:300]}")
+        data = r.json()
+        return {"id": data.get("id"), "issue_key": key}
+
+    def list_transitions(self, issue_key: str, user_pat: str = None) -> list:
+        r = self._request("GET", f"/issue/{issue_key}/transitions", timeout=15, user_pat=user_pat)
+        if r.status_code != 200:
+            raise RuntimeError(f"查询流转失败 (HTTP {r.status_code}): {r.text[:200]}")
+        return r.json().get("transitions", [])
+
+    def transition_issue(self, issue_key: str, user_pat: str = None,
+                         transition_id: str = None, transition_name: str = None) -> dict:
+        body = {}
+        if transition_id:
+            body["transition"] = {"id": str(transition_id)}
+        elif transition_name:
+            body["transition"] = {"name": transition_name}
+        else:
+            raise ValueError("需要 transition_id 或 transition_name")
+        r = self._request(
+            "POST", f"/issue/{issue_key}/transitions",
+            json_data=body, timeout=30, user_pat=user_pat,
+        )
+        if r.status_code not in (200, 204):
+            raise RuntimeError(f"状态流转失败 (HTTP {r.status_code}): {r.text[:300]}")
+        return {"issue_key": issue_key, "transition": body["transition"]}
+
+    def update_issue_fields(self, issue_key: str, fields: dict, user_pat: str = None) -> dict:
+        r = self.jira_put(f"/issue/{issue_key}", json_data={"fields": fields or {}}, user_pat=user_pat)
+        if r.status_code not in (200, 204):
+            raise RuntimeError(f"更新 Issue 失败 (HTTP {r.status_code}): {r.text[:300]}")
+        return {"issue_key": issue_key}
+
     def test_connection(self, user_pat: str = None) -> dict:
         """测试连接，返回当前用户信息"""
         try:

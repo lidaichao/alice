@@ -10,6 +10,7 @@ JiraOperationManager — Jira 操作确认卡 + 失败恢复机制
 """
 
 import json
+import os
 import time
 import uuid
 import logging
@@ -250,11 +251,149 @@ def get_ai_created_count() -> int:
 #  OperationCard 生成
 # ══════════════════════════════════════════════════════════════
 
+def operation_to_confirm_ui(operation: dict) -> dict:
+    """将操作卡转为前端 ConfirmCard.operation 结构"""
+    kind = operation.get("kind", "")
+    ui_type = kind.replace("jira_", "") if kind.startswith("jira_") else kind
+    drafts = operation.get("drafts") or []
+    first = drafts[0] if drafts else {}
+    return {
+        "type": ui_type or "unknown",
+        "issue_key": first.get("issue_key", ""),
+        "summary": first.get("summary", ""),
+        "description": (first.get("body") or first.get("description") or "")[:500],
+        "project": first.get("projectKey", ""),
+        "drafts_count": len(drafts),
+    }
+
+
+def build_confirm_tool_response(operation: dict, message: str = "") -> dict:
+    """工具层返回 + SSE 共用的确认卡 JSON"""
+    return {
+        "status": "confirm_required",
+        "operation_id": operation["id"],
+        "operation": operation_to_confirm_ui(operation),
+        "result": message or f"请在确认卡上授权后执行（{operation.get('kind', '')}）。",
+    }
+
+
+def resolve_transition_for_target(transitions: list, target_status: str) -> dict:
+    """在 Jira transitions 列表中匹配目标状态，返回 {transition_id, transition_name, to_status}。"""
+    target = (target_status or "").strip().lower()
+    if not target:
+        return {}
+    aliases = {
+        "完成": ("完成", "done", "resolved", "解决", "可发布", "关闭"),
+        "关闭": ("关闭", "closed", "done"),
+        "进行中": ("进行中", "in progress", "处理"),
+        "待办": ("待办", "to do", "open", "新建"),
+    }
+    needles = list(aliases.get(target_status, (target,)))
+    best = None
+    for tr in transitions or []:
+        to_name = ((tr.get("to") or {}).get("name") or "").lower()
+        tr_name = (tr.get("name") or "").lower()
+        for needle in needles:
+            n = needle.lower()
+            if n in to_name or n in tr_name:
+                best = tr
+                break
+        if best:
+            break
+    if not best and transitions:
+        best = transitions[0]
+    if not best:
+        return {}
+    return {
+        "transition_id": str(best.get("id", "")),
+        "transition_name": best.get("name", ""),
+        "to_status": (best.get("to") or {}).get("name", ""),
+    }
+
+
+def create_transition_operation_card(
+    issue_key: str,
+    target_status: str,
+    transition_id: str = "",
+    transition_name: str = "",
+    to_status: str = "",
+    conversation_id: str = "",
+    client_id: str = "",
+    user_id: str = "",
+) -> dict:
+    """生成 Jira 状态流转确认卡"""
+    now = time.strftime("%Y-%m-%dT%H:%M:%S")
+    operation = {
+        "id": f"jira-op-{uuid.uuid4().hex[:12]}",
+        "kind": "jira_transition_issue",
+        "status": "awaiting_confirmation",
+        "conversation_id": conversation_id,
+        "client_id": client_id,
+        "user_id": user_id,
+        "drafts": [{
+            "issue_key": issue_key,
+            "target_status": target_status,
+            "transition_id": transition_id,
+            "transition_name": transition_name,
+            "to_status": to_status,
+        }],
+        "warnings": [],
+        "created_issues": [],
+        "error": None,
+        "failure": None,
+        "recovery": None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    if not issue_key:
+        operation["warnings"].append("缺少 issue_key。")
+    if not transition_id and not transition_name:
+        operation["warnings"].append(
+            f"未能解析「{target_status}」对应的 Jira 流转，确认前请检查权限或状态名。"
+        )
+    logger.info(f"[OpCard] Transition card: {operation['id']} | {issue_key} → {target_status}")
+    return operation
+
+
+def create_comment_operation_card(
+    issue_key: str,
+    body: str,
+    conversation_id: str = "",
+    client_id: str = "",
+    user_id: str = "",
+) -> dict:
+    """生成 Jira 评论确认卡"""
+    now = time.strftime("%Y-%m-%dT%H:%M:%S")
+    operation = {
+        "id": f"jira-op-{uuid.uuid4().hex[:12]}",
+        "kind": "jira_add_comment",
+        "status": "awaiting_confirmation",
+        "conversation_id": conversation_id,
+        "client_id": client_id,
+        "user_id": user_id,
+        "drafts": [{"issue_key": issue_key, "body": body}],
+        "warnings": [],
+        "created_issues": [],
+        "error": None,
+        "failure": None,
+        "recovery": None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    if not issue_key:
+        operation["warnings"].append("缺少 issue_key。")
+    if not (body or "").strip():
+        operation["warnings"].append("评论内容为空。")
+    logger.info(f"[OpCard] Comment card: {operation['id']} | {issue_key}")
+    return operation
+
+
 def create_operation_card(
     drafts: list,
     conversation_id: str = "",
     client_id: str = "",
     user_id: str = "",
+    kind: str = "jira_bulk_create",
 ) -> dict:
     """
     生成 Jira 操作确认卡。
@@ -271,7 +410,7 @@ def create_operation_card(
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
     operation = {
         "id": f"jira-op-{uuid.uuid4().hex[:12]}",
-        "kind": "jira_bulk_create",
+        "kind": kind,
         "status": "awaiting_confirmation",
         "conversation_id": conversation_id,
         "client_id": client_id,
@@ -370,11 +509,39 @@ def mark_rejected(operation: dict) -> dict:
 
 _store: dict = {}          # operation_id → operation
 _lock = threading.Lock()   # 线程安全
+_OPS_DIR = os.path.join(os.path.dirname(__file__), "runtime", "jira-operations")
+_OPS_INDEX = os.path.join(_OPS_DIR, "index.json")
+
+
+def _persist_operations_index():
+    try:
+        os.makedirs(_OPS_DIR, exist_ok=True)
+        with open(_OPS_INDEX, "w", encoding="utf-8") as f:
+            json.dump({"operations": list(_store.values())}, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning(f"[OpCard] persist failed: {e}")
+
+
+def _load_operations_index():
+    try:
+        if not os.path.isfile(_OPS_INDEX):
+            return
+        with open(_OPS_INDEX, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        for op in data.get("operations") or []:
+            if op.get("id"):
+                _store[op["id"]] = op
+    except Exception as e:
+        logger.warning(f"[OpCard] load index failed: {e}")
+
+
+_load_operations_index()
 
 
 def save_operation(op: dict) -> dict:
     with _lock:
         _store[op["id"]] = op
+        _persist_operations_index()
     return op
 
 
@@ -393,6 +560,76 @@ def get_pending_operations(conversation_id: str = "") -> list:
                     continue
                 ops.append(op)
         return sorted(ops, key=lambda o: o["created_at"], reverse=True)
+
+
+def execute_confirmed_operation(jira_client, operation: dict, user_pat: str = "",
+                                skip_labels: bool = False) -> dict:
+    """
+    用户确认后执行 Jira 写操作（对齐 Baize confirm → runJiraCreateOperation）。
+    返回: {created_issues: [...], comment: {...}, message: str}
+    """
+    kind = operation.get("kind", "")
+    if kind == "jira_add_comment":
+        draft = (operation.get("drafts") or [{}])[0]
+        issue_key = draft.get("issue_key", "")
+        body = draft.get("body", "")
+        comment = jira_client.add_comment(issue_key, body, user_pat=user_pat)
+        return {
+            "created_issues": [],
+            "comment": comment,
+            "message": f"已为 {issue_key} 添加评论。",
+        }
+
+    if kind == "jira_bulk_create":
+        drafts = operation.get("drafts") or []
+        already = operation.get("created_issues") or []
+        start_index = len(already)
+        created_issues = list(already)
+        for index in range(start_index, len(drafts)):
+            draft = drafts[index]
+            try:
+                item = jira_client.create_issue_from_draft(
+                    draft, user_pat=user_pat, skip_labels=skip_labels,
+                )
+                created_issues.append(item)
+                register_ai_created_issue(item.get("key", ""))
+            except Exception as e:
+                err_msg = str(e)
+                if not skip_labels and "labels" in err_msg.lower():
+                    try:
+                        item = jira_client.create_issue_from_draft(
+                            draft, user_pat=user_pat, skip_labels=True,
+                        )
+                        created_issues.append(item)
+                        register_ai_created_issue(item.get("key", ""))
+                        continue
+                    except Exception:
+                        pass
+                operation["created_issues"] = created_issues
+                raise RuntimeError(
+                    f"草稿 #{index + 1} 创建失败: {err_msg}"
+                ) from e
+        keys = ", ".join(i.get("key", "") for i in created_issues if i.get("key"))
+        return {
+            "created_issues": created_issues,
+            "message": f"已创建 {len(created_issues)} 个 Issue: {keys}",
+        }
+
+    if kind == "jira_transition_issue":
+        draft = (operation.get("drafts") or [{}])[0]
+        issue_key = draft.get("issue_key", "")
+        jira_client.transition_issue(
+            issue_key,
+            user_pat=user_pat,
+            transition_id=draft.get("transition_id"),
+            transition_name=draft.get("transition_name"),
+        )
+        return {
+            "created_issues": [],
+            "message": f"已更新 {issue_key} 状态。",
+        }
+
+    raise ValueError(f"不支持的操作类型: {kind}")
 
 
 def supersede_older(conversation_id: str, new_op_id: str):

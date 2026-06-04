@@ -27,10 +27,10 @@ logger = logging.getLogger('intent_router')
 
 INTENT_PATTERNS = [
 
-    # P0: 周报/日报/月报 — 项目级汇总，禁止走单 Issue 元数据
+    # P0: 周报/日报/月报 — 项目级汇总（VIP 车道处理，工具仅保留搜索）
     (
         r"周报|日报|月报|本周.{0,10}(?:总结|汇总|进度|情况|报告)|写.{0,8}(?:周报|月报|日报)",
-        ["search_jira_issues", "query_jira_metadata"],
+        ["search_jira_issues"],
         "WEEKLY_REPORT"
     ),
 
@@ -65,16 +65,31 @@ INTENT_PATTERNS = [
         "DOC_JIRA_CROSS"
     ),
 
-    # P3: 关键词搜索 Jira (无具体 Issue Key)
+    # P3: 结构化 Jira 查询（统计/人名/筛选 — 禁止仅靠 metadata）
+    (
+        r"统计|汇总|有多少|几个|列表|未完成的|待办|本周|今天|经办|负责人|分配",
+        ["search_jira_issues"],
+        "JIRA_STRUCTURED_SEARCH"
+    ),
+
+    # P3b: 关键词搜索 Jira (无具体 Issue Key)
     (
         r"找.*(?:任务|bug|需求|故事|缺陷)|搜索|查找.*jira|和.*有关的.*任务|相关.*任务",
-        ["search_jira_issues", "query_jira_metadata"],
+        ["search_jira_issues"],
         "JIRA_KEYWORD_SEARCH"
     ),
 
-    # P4: 具体任务状态查询 — 轻量
+    # P3c: Jira 写操作（状态流转/创建 — 由写直通车处理，ReAct 不抢答）
     (
-        r"状态|谁在负责|经办人|怎么样|是什么|详细信息",
+        r"(?<![a-z0-9])[a-z][a-z0-9]*-\d+(?![a-z0-9]).*(?:改成|改为|完成|关闭|流转)"
+        r"|(?:创建|新建|批量导入).*(?:jira|任务|issue)",
+        ["search_jira_issues"],
+        "JIRA_WRITE"
+    ),
+
+    # P4: 具体任务状态查询 — 轻量（排除写操作）
+    (
+        r"(?<!改成)(?<!改为)(?<!更新)状态|谁在负责|经办人|怎么样|是什么|详细信息",
         ["query_jira_metadata"],
         "ISSUE_METADATA"
     ),

@@ -6,6 +6,7 @@ import { RightPanel } from '@/RightPanel';
 import { Button } from '@/components/ui/button';
 import { CommandPanel } from '@/components/CommandPanel';
 import ConfirmCard from '@/components/ConfirmCard';
+import JiraSearchSupplement from '@/components/JiraSearchSupplement';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { PluginToolCard } from '@/components/MarkdownRenderer';
 import { ThemeProvider } from '@lobehub/ui';
@@ -21,6 +22,7 @@ export const App: React.FC = () => {
   const isGenerating = useChatStore((s) => s.isGenerating);
   const stopGenerating = useChatStore((s) => s.stopGenerating);
   const pendingConfirmations = useChatStore((s) => s.pendingConfirmations);
+  const pendingJiraSupplements = useChatStore((s) => s.pendingJiraSupplements);
 
   const currentSession = sessions.find((s) => s.id === activeSessionId);
   const messages = currentSession?.messages || [];
@@ -96,7 +98,11 @@ export const App: React.FC = () => {
   // ── Jira 确认卡回调 ──
   const handleConfirm = useCallback(async (opId: string) => {
     try {
-      await fetch(`/operations/${opId}/confirm`, { method: 'POST' });
+      const res = await fetch(`/operations/${opId}/confirm`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) {
+        console.error('[ConfirmCard] confirm failed:', data.error || res.statusText);
+      }
     } catch (e) {
       console.error('[ConfirmCard] confirm POST failed:', e);
     }
@@ -237,6 +243,30 @@ export const App: React.FC = () => {
                 <div className="w-10 h-10 shrink-0" />
                 <div className="max-w-[75%] flex-1">
                   <ConfirmCard card={card} onConfirm={handleConfirm} onReject={handleReject} />
+                </div>
+              </div>
+            ))}
+
+            {pendingJiraSupplements.map((card) => (
+              <div key={card.id} className="flex gap-4 flex-row">
+                <div className="w-10 h-10 shrink-0" />
+                <div className="max-w-[75%] flex-1">
+                  <JiraSearchSupplement
+                    card={card}
+                    onSelect={(username) => {
+                      useChatStore.setState((s) => ({
+                        pendingJiraSupplements: s.pendingJiraSupplements.filter((c) => c.id !== card.id),
+                      }));
+                      const label = card.choices.find((c) => c.value === username)?.label || username;
+                      const msg = `JIRA_USER:${username} ${label} 本周未完成的 Jira 任务`;
+                      useChatStore.getState().sendMessage(msg);
+                    }}
+                    onDismiss={() => {
+                      useChatStore.setState((s) => ({
+                        pendingJiraSupplements: s.pendingJiraSupplements.filter((c) => c.id !== card.id),
+                      }));
+                    }}
+                  />
                 </div>
               </div>
             ))}

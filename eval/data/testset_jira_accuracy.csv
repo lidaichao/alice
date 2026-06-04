@@ -1,0 +1,11 @@
+question,expected_behavior,jira_lane
+帮我查一下本周需要完成的任务有哪些？,返回待办列表且附带JQL,structured_search
+统计张三本周未完成的 Jira 任务,解析经办人+本周+未完成,structured_search
+项目 CT 有哪些进行中的 bug？,project+issuetype+status过滤,structured_search
+和球员系统属性有关的 Jira 任务,关键词OR搜索,structured_search
+查一下 CT-10888 的详情,单Issue VIP 全字段,issue_key_vip
+写一份本周 CT 项目周报,周报VIP+JQL透明,weekly_vip
+CT-10888 提交了什么代码,走FishEye而非结构化搜索,react_commits
+帮我创建一个新的 Jira bug,写操作确认卡,write_confirm
+今天 Jira 上没有匹配的任务时,必须明确无结果禁止编造,structured_search
+李四的任务列表,用户消歧或用户搜索,structured_search

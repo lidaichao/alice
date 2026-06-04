@@ -25,9 +25,10 @@ export default function ConfirmCard({ card, onConfirm, onReject }: Props) {
   };
 
   const op = card.operation || {};
-  const typeLabel = op.type === 'add_jira_comment' ? '添加评论'
-    : op.type === 'create_issue' ? '创建 Issue'
+  const typeLabel = (op.type === 'add_jira_comment' || op.type === 'add_comment') ? '添加评论'
+    : (op.type === 'create_issue' || op.type === 'bulk_create') ? '创建 Issue'
     : op.type === 'update_issue' ? '更新 Issue'
+    : op.type === 'transition_issue' ? '状态流转'
     : op.type || '未知操作';
 
   return (

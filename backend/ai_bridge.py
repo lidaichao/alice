@@ -752,8 +752,21 @@ def collect_context(issue_key: str, user_question: str = "", frontend_cfg: dict 
         return None
 
     def _jira_search_l1():
-        """Jira 搜索: LLM 决策 JQL → Python 执行"""
+        """Jira 搜索: 结构化引擎优先，LLM JQL 兜底"""
         try:
+            from jira_search_engine import (
+                parse_query_from_natural_language,
+                search_and_analyze,
+                format_search_result_for_llm,
+            )
+            from jira_runtime_config import load_jira_runtime_config
+
+            rt_cfg = load_jira_runtime_config(frontend_cfg)
+            query = parse_query_from_natural_language(q, rt_cfg)
+            result = search_and_analyze(jira, query, config=rt_cfg, user_pat=user_pat, frontend_cfg=frontend_cfg)
+            if result.get("total", 0) > 0:
+                return "## Jira 结构化搜索\n" + format_search_result_for_llm(result, q)[:L1_CHARS["jira"]]
+
             proj_keys = frontend_cfg.get("jira_projects", "") or os.getenv("JIRA_PROJECTS", "")
             if not proj_keys:
                 m = re.search(r'([A-Z]{2,})(?:\u9879\u76ee|\u9879\u76EE|\u4e13\u6848|\s)', q)
@@ -764,20 +777,16 @@ def collect_context(issue_key: str, user_question: str = "", frontend_cfg: dict 
             if not keys:
                 return None
 
-            # LLM 决策 JQL
             jql = llm_decide_jql(q, keys)
-
-            # 机械兜底：LLM 失败时，用问题中显式 Issue Key 构造基线查询
             if not jql:
                 explicit_keys = re.findall(r'([A-Z]{2,}-\d+)', q)
                 if explicit_keys:
                     jql = f"project in ({','.join(keys)}) AND issue in ({','.join(explicit_keys[:10])})"
-
             if not jql:
                 return None
 
             r = jira.jira_get(
-                f"{jira.api_url}/search",
+                "/search",
                 params={"jql": jql, "maxResults": 20, "fields": "key,summary,issuetype,status,priority,assignee"},
                 timeout=10, user_pat=user_pat
             )
@@ -1390,73 +1399,42 @@ def _exec_read_specific_doc(args: dict, **kwargs) -> str:
 
 
 def _exec_search_jira_issues(args: dict, user_pat: str = "", frontend_cfg: dict = None, **kwargs) -> str:
-    """工具5: Jira 关键词搜索 — 无具体 Issue Key 时的模糊搜索"""
-    keyword = args.get("keyword", "").strip()
+    """工具: Jira 结构化搜索（主路径 jira_search_engine，兼容 keyword 参数）"""
+    keyword = (args.get("keyword") or args.get("query") or "").strip()
     if not keyword:
         return json.dumps({"status": "error", "result": "缺少 keyword 参数"})
-
-    def _do_search(kw: str) -> tuple:
-        proj_keys = (frontend_cfg or {}).get("jira_projects", "") or os.getenv("JIRA_PROJECTS", "CT")
-        proj_cond = "project in (" + ",".join(k.strip() for k in proj_keys.split(",") if k.strip()) + ")"
-
-        # 仿 Baize: 中文 Bigram 分解, 用 OR 多词搜索替代短语匹配
-        # "球员系统属性设计" → summary~"球员" OR summary~"系统" OR summary~"属性" OR summary~"设计"
-        terms = []
-        if re.search(r'[\u4e00-\u9fff]', kw) and len(kw) >= 4:
-            # 中文: 拆为2字片段 (避免短语匹配0结果)
-            for i in range(len(kw) - 1):
-                bg = kw[i:i+2]
-                if bg not in terms:
-                    terms.append(bg)
-        if not terms:
-            terms = [kw]  # 英文或短词直接用原词
-
-        text_conds = " OR ".join([f'summary ~ "{t}" OR description ~ "{t}"' for t in terms[:8]])
-        jql = f'{proj_cond} AND ({text_conds}) ORDER BY updated DESC'
-        logger.info(f"[SearchJira] JQL: {jql[:120]}")
-        resp = jira.jira_get(
-            f"{jira.api_url}/search",
-            params={"jql": jql, "maxResults": 10, "fields": "key,summary,issuetype,status,assignee"},
-            timeout=10, user_pat=user_pat
-        )
-        if resp.status_code != 200:
-            return 0, []
-        data = resp.json()
-        return data.get("total", 0), data.get("issues", [])
-
     try:
-        total, issues = _do_search(keyword)
+        from jira_search_engine import (
+            parse_query_from_natural_language,
+            search_and_analyze,
+            format_search_result_for_llm,
+            JiraSearchQuery,
+        )
+        from jira_runtime_config import load_jira_runtime_config
 
-        # 降级: 首次0结果 + 关键词过长(>6中文) → 拆为2字片段重试
-        if total == 0 and len(keyword) > 6 and re.search(r'[\u4e00-\u9fff]', keyword):
-            short_kw = keyword[:4]  # 取前4字
-            logger.info(f"[SearchJira] 降级重试: '{keyword}' → '{short_kw}'")
-            total2, issues2 = _do_search(short_kw)
-            if total2 > 0:
-                total, issues = total2, issues2
-                keyword = short_kw  # 更新为实际使用的关键词
-        items = []
-        for issue in issues[:10]:
-            f = issue.get("fields", {})
-            items.append({
-                "key": issue["key"],
-                "summary": f.get("summary", ""),
-                "status": f.get("status", {}).get("name", ""),
-                "assignee": (f.get("assignee") or {}).get("displayName", "未分配"),
-                "type": f.get("issuetype", {}).get("name", ""),
-            })
-        llm_text = f"【Jira 关键词搜索 '{keyword}' — 共 {total} 条】\n"
-        for it in items:
-            llm_text += f"- {it['key']} [{it['status']}] {it['summary']} ({it['assignee']})\n"
-        if not items:
-            llm_text = (
-                "【系统提示 — 搜索无结果，禁止编造】\n"
-                f"Jira 关键词搜索 '{keyword}' 返回 0 条结果。\n"
-                "你必须如实告知用户：未找到匹配的 Jira 任务。\n"
-                "绝对禁止虚构 Issue Key（如 PLAYER-1234）或捏造任务列表！\n"
-                "如果用户需要的是一般性建议而非项目实际数据，请明确标注'以下为通用分析，非项目实际数据'。"
-            )
-        return json.dumps({"status": "ok", "result": {"total": total, "issues": items}, "llm_text": llm_text}, ensure_ascii=False)
+        rt_cfg = load_jira_runtime_config(frontend_cfg or {})
+        query = parse_query_from_natural_language(keyword, rt_cfg)
+        if not query.text and not query.assignees:
+            query.text = keyword
+        if args.get("project_key"):
+            query.project_key = args["project_key"]
+        if args.get("assignee"):
+            query.assignees = [args["assignee"]]
+        if args.get("unresolved_only"):
+            query.unresolved_only = True
+        result = search_and_analyze(jira, query, config=rt_cfg, user_pat=user_pat, frontend_cfg=frontend_cfg)
+        llm_text = format_search_result_for_llm(result, keyword)
+        items = result.get("issues") or []
+        return json.dumps({
+            "status": "ok",
+            "result": {
+                "total": result.get("total", 0),
+                "issues": items,
+                "jql": result.get("jql"),
+                "analysis": result.get("analysis"),
+            },
+            "llm_text": llm_text,
+        }, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"status": "error", "result": f"Jira 搜索异常: {str(e)[:200]}"})
 
@@ -1491,6 +1469,86 @@ _TOOL_EXECUTORS = {
 }
 
 
+def _iter_jira_structured_read_lane(user_text, frontend_cfg, user_cfg, vip_stream_fn):
+    """Jira 结构化读直通车 SSE 片段（成功或失败均 yield，失败不抛到 ReAct）。"""
+    from jira_search_engine import (
+        parse_query_from_natural_language,
+        search_and_analyze,
+        build_jira_read_answer_prompt,
+        format_search_result_for_llm,
+    )
+    from jira_runtime_config import load_jira_runtime_config
+
+    yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'jira_structured_search', 'status': 'running'}}, ensure_ascii=False)}\n\n".encode("utf-8")
+    _rt_cfg = load_jira_runtime_config(frontend_cfg)
+    _pat = user_cfg.get("jira_pat", "")
+    _query = parse_query_from_natural_language(user_text, _rt_cfg)
+    _search_result = search_and_analyze(
+        jira, _query, config=_rt_cfg, user_pat=_pat, frontend_cfg=frontend_cfg,
+    )
+    if _search_result.get("requires_user_input") and _search_result.get("supplement"):
+        _sup = _search_result["supplement"]
+        yield f"data: {json.dumps({'_event': 'jira_search_supplement', 'supplement': _sup, 'partial_jql': _search_result.get('jql')}, ensure_ascii=False)}\n\n".encode("utf-8")
+        _fallback = format_search_result_for_llm(_search_result, user_text)
+        yield from vip_stream_fn(
+            "用户需要在界面选择 Jira 用户后才能继续查询。请先说明需要用户确认的原因，并列出候选。\n\n" + _fallback,
+            _fallback,
+        )
+        return
+    yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'jira_structured_search', 'status': 'done', 'jql': _search_result.get('jql'), 'issue_count': _search_result.get('total', 0)}}, ensure_ascii=False)}\n\n".encode("utf-8")
+    _read_prompt = build_jira_read_answer_prompt(user_text, _search_result)
+    _fallback2 = format_search_result_for_llm(_search_result, user_text)
+    yield from vip_stream_fn(_read_prompt, _fallback2)
+
+
+def _iter_jira_write_express_lane(user_text, user_cfg, intent_info):
+    """Jira 写操作直通车：状态流转确认卡（避免 ReAct 空回复）。"""
+    from jira_search_engine import (
+        is_jira_transition_write_request,
+        parse_jira_transition_target,
+        ISSUE_KEY_RE,
+    )
+    from jira_operation_manager import (
+        create_transition_operation_card,
+        resolve_transition_for_target,
+        save_operation,
+        build_confirm_tool_response,
+    )
+
+    if not is_jira_transition_write_request(user_text, intent_info.get("route", "")):
+        return
+
+    m = ISSUE_KEY_RE.search(user_text)
+    if not m:
+        return
+    issue_key = m.group(1).upper()
+    target = parse_jira_transition_target(user_text)
+    _pat = user_cfg.get("jira_pat", "")
+    tr_meta = {}
+    try:
+        transitions = jira.list_transitions(issue_key, user_pat=_pat or None)
+        tr_meta = resolve_transition_for_target(transitions, target)
+    except Exception as te:
+        logger.warning(f"[JiraWrite] list_transitions failed: {te}")
+
+    op = create_transition_operation_card(
+        issue_key=issue_key,
+        target_status=target,
+        transition_id=tr_meta.get("transition_id", ""),
+        transition_name=tr_meta.get("transition_name", ""),
+        to_status=tr_meta.get("to_status", ""),
+    )
+    save_operation(op)
+    preview = (
+        f"即将把 **{issue_key}** 流转到「{tr_meta.get('to_status') or target}」"
+        f"（操作: {tr_meta.get('transition_name') or '待确认'}）。\n"
+        f"请在确认卡上授权后执行，Alice 不会未经确认直接改 Jira。"
+    )
+    payload = build_confirm_tool_response(op, preview)
+    yield f"data: {json.dumps({'_event': 'confirm_card', 'op_id': op['id'], 'operation': payload.get('operation'), 'preview': preview}, ensure_ascii=False)}\n\n".encode("utf-8")
+    yield f"data: {json.dumps({'choices': [{'delta': {'content': preview}}]}, ensure_ascii=False)}\n\n".encode("utf-8")
+
+
 def execute_tool_call(tool_name: str, arguments_str, user_cfg=None, frontend_cfg=None) -> str:
     """Alice V2.0 工具调度器 — 支持 4 原子工具 + 向后兼容"""
     try:
@@ -1508,21 +1566,57 @@ def execute_tool_call(tool_name: str, arguments_str, user_cfg=None, frontend_cfg
                 return fn(args, user_pat=user_pat, frontend_cfg=frontend_cfg)
             return fn(args)
 
-        # 向后兼容: 确认卡工具
-        elif tool_name == "add_jira_comment":
+        # 向后兼容: Jira 写操作确认卡
+        elif tool_name in ("add_jira_comment", "create_jira_issues", "create_issue"):
             try:
-                from jira_operation_manager import create_operation_card
-                op = create_operation_card("add_comment", {
-                    "issue_key": args.get("issue_key",""),
-                    "body": args.get("body","")
-                })
-                return json.dumps({
-                    "status": "confirm_required",
-                    "operation_id": op["id"],
-                    "operation": {"kind": "add_comment", "issue_key": args.get("issue_key",""),
-                                  "body_preview": args.get("body","")[:100]},
-                    "result": f"即将为 {args.get('issue_key')} 添加评论:\n{args.get('body','')[:200]}"
-                })
+                from audit_gateway import audit
+                from jira_operation_manager import (
+                    create_comment_operation_card,
+                    create_operation_card,
+                    save_operation,
+                    build_confirm_tool_response,
+                )
+                user_pat = user_cfg.get("jira_pat", "") if isinstance(user_cfg, dict) else ""
+                if tool_name == "add_jira_comment":
+                    audit_action = "add_comment"
+                    audit_data = {
+                        "issue_key": args.get("issue_key", ""),
+                        "body": args.get("body", ""),
+                    }
+                    op = create_comment_operation_card(
+                        issue_key=args.get("issue_key", ""),
+                        body=args.get("body", ""),
+                        conversation_id=args.get("conversation_id", ""),
+                    )
+                    preview = f"即将为 {args.get('issue_key')} 添加评论:\n{(args.get('body') or '')[:200]}"
+                else:
+                    audit_action = "create"
+                    drafts = args.get("drafts") or [{
+                        "summary": args.get("summary", ""),
+                        "projectKey": args.get("projectKey") or args.get("project_key", ""),
+                        "issueType": args.get("issueType") or args.get("issue_type", "Task"),
+                        "description": args.get("description", ""),
+                        "priority": args.get("priority"),
+                        "labels": args.get("labels"),
+                        "assignee": args.get("assignee"),
+                    }]
+                    audit_data = {"drafts": drafts}
+                    op = create_operation_card(
+                        drafts=drafts,
+                        conversation_id=args.get("conversation_id", ""),
+                        kind="jira_bulk_create",
+                    )
+                    preview = f"即将创建 {len(drafts)} 个 Jira Issue，请在确认卡上授权。"
+
+                audit_result = audit("jira_write", audit_action, audit_data)
+                if audit_result.get("decision") == "deny":
+                    return json.dumps({
+                        "status": "error",
+                        "result": audit_result.get("reason", "审计拒绝"),
+                    })
+                save_operation(op)
+                payload = build_confirm_tool_response(op, preview)
+                return json.dumps(payload, ensure_ascii=False)
             except Exception as e:
                 return json.dumps({"status": "error", "result": f"创建确认卡失败: {str(e)[:200]}"})
 
@@ -1642,6 +1736,7 @@ def chat_completions():
     #  原理: LLM 不应在检索前做"有没有数据"的推理判断
     #  路由层根据意图模式预选工具子集, LLM 只负责"拿到数据后怎么回答"
     # ══════════════════════════════════════════════════
+    intent_label = "FULL_SET"
     try:
         from intent_router import route_intent, get_filtered_tools
         user_text = ""
@@ -1677,6 +1772,41 @@ def chat_completions():
             if msg.get("role") == "user":
                 user_text = msg.get("content", "")
                 break
+
+        intent_info = {"route": "ordinary_chat", "reason": ""}
+        # ── 意图分类（Baize 风格：危险拦截 / 写操作提示）────────
+        if user_text:
+            try:
+                intent_info = classify_intent(user_text)
+                if intent_info.get("route") == "dangerous":
+                    block_msg = (
+                        "【Alice】检测到高风险操作请求，已拦截。"
+                        f"（{intent_info.get('reason', 'dangerous')}）"
+                    )
+                    yield f"data: {json.dumps({'choices': [{'delta': {'content': block_msg}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                    yield b"data: [DONE]\n\n"
+                    return
+            except Exception as _ic_err:
+                logger.warning(f"[Intent] classify_intent failed: {_ic_err}")
+
+        # ══════════════════════════════════════════════════════════
+        #  Jira 写直通车（状态流转确认卡，须在 ReAct 之前）
+        # ══════════════════════════════════════════════════════════
+        if user_text and intent_info.get("route") == "jira_write":
+            try:
+                _write_emitted = False
+                for _chunk in _iter_jira_write_express_lane(user_text, user_cfg, intent_info):
+                    _write_emitted = True
+                    yield _chunk
+                if _write_emitted:
+                    yield b"data: [DONE]\n\n"
+                    return
+            except Exception as _jwe:
+                logger.warning(f"[JiraWrite] express lane error: {_jwe}")
+                _werr = f"【Alice】Jira 写操作处理失败：{str(_jwe)[:150]}"
+                yield f"data: {json.dumps({'choices': [{'delta': {'content': _werr}}]}, ensure_ascii=False)}\n\n".encode("utf-8")
+                yield b"data: [DONE]\n\n"
+                return
 
         # ── Issue Key 预检测 ────────────────────────
         issue_keys_found = set()
@@ -1843,6 +1973,107 @@ def chat_completions():
             yield from _vip_stream(_weekly_prompt, _weekly_table or "【无 Jira 数据】")
             yield b"data: [DONE]\n\n"
             return
+
+        # ══════════════════════════════════════════════════════════
+        #  VIP 单 Issue 详情 — 全字段预取（替代轻量 query_jira_metadata）
+        # ══════════════════════════════════════════════════════════
+        _issue_detail_intent = bool(issue_keys_found) and bool(re.search(
+            r"详情|内容|描述|评论|状态|什么情况|怎么样|是谁|什么问题|备注",
+            user_text or "",
+        )) and not bool(re.search(r"提交|commit|diff|代码变更|改了什么", user_text or "", re.I))
+        if _issue_detail_intent and len(issue_keys_found) == 1:
+            _ik = list(issue_keys_found)[0]
+            logger.info(f"[VIP] Issue detail express lane: {_ik}")
+            yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'query_jira_metadata', 'status': 'running'}}, ensure_ascii=False)}\n\n".encode('utf-8')
+            _detail_block = ""
+            try:
+                _pat = user_cfg.get("jira_pat", "")
+                _r = jira.jira_get(
+                    f"/issue/{_ik}",
+                    params={"fields": "summary,description,status,assignee,reporter,issuetype,priority,created,updated,duedate,labels,comment"},
+                    timeout=15,
+                    user_pat=_pat or None,
+                )
+                if _r.status_code == 200:
+                    _f = _r.json().get("fields", {})
+                    _comments = (_f.get("comment") or {}).get("comments") or []
+                    _clines = []
+                    for _c in _comments[-5:]:
+                        _clines.append(
+                            f"- {_c.get('author',{}).get('displayName','?')}: "
+                            f"{(str(_c.get('body','')) or '')[:200]}"
+                        )
+                    _detail_block = (
+                        f"【Issue {_ik}】\n"
+                        f"- 标题: {_f.get('summary','')}\n"
+                        f"- 类型: {_f.get('issuetype',{}).get('name','')}\n"
+                        f"- 状态: {_f.get('status',{}).get('name','')}\n"
+                        f"- 经办人: {(_f.get('assignee') or {}).get('displayName','未分配')}\n"
+                        f"- 优先级: {(_f.get('priority') or {}).get('name','')}\n"
+                        f"- 截止: {_f.get('duedate','无')}\n"
+                        f"- 标签: {_f.get('labels',[])}\n"
+                        f"- 描述摘要: {(str(_f.get('description','')) or '')[:800]}\n"
+                        f"- 最近评论:\n" + ("\n".join(_clines) if _clines else "（无）")
+                    )
+                else:
+                    _detail_block = f"Issue {_ik} 查询失败 HTTP {_r.status_code}"
+            except Exception as _de:
+                _detail_block = f"Issue 详情拉取异常: {str(_de)[:200]}"
+            yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'query_jira_metadata', 'status': 'done'}}, ensure_ascii=False)}\n\n".encode('utf-8')
+            _detail_prompt = (
+                "请根据下方【真实 Jira Issue 数据】回答用户，禁止编造字段或评论。\n\n"
+                f"{_detail_block}\n\n【用户问题】\n{user_text}"
+            )
+            yield from _vip_stream(_detail_prompt, _detail_block)
+            yield b"data: [DONE]\n\n"
+            return
+
+        # ══════════════════════════════════════════════════════════
+        #  Jira 结构化读直通车（对齐 Baize jira_search）
+        # ══════════════════════════════════════════════════════════
+        from jira_search_engine import should_force_jira_structured_read
+
+        if user_text and should_force_jira_structured_read(
+            user_text, intent_info.get("route", ""), intent_label,
+        ):
+            logger.info(f"[JiraLane] structured_search express (label={intent_label})")
+            try:
+                yield from _iter_jira_structured_read_lane(
+                    user_text, frontend_cfg, user_cfg, _vip_stream,
+                )
+                yield b"data: [DONE]\n\n"
+                return
+            except Exception as _lane_err:
+                logger.warning(f"[JiraLane] structured_search failed: {_lane_err}")
+                try:
+                    from jira_runtime_config import load_jira_runtime_config
+                    from jira_search_engine import (
+                        parse_query_from_natural_language,
+                        build_resolved_jql,
+                        format_search_result_for_llm,
+                    )
+                    _rt_cfg = load_jira_runtime_config(frontend_cfg)
+                    _q = parse_query_from_natural_language(user_text, _rt_cfg)
+                    _jql = build_resolved_jql(_q, _rt_cfg).get("jql", "")
+                    _fb = format_search_result_for_llm(
+                        {
+                            "jql": _jql,
+                            "issues": [],
+                            "total": 0,
+                            "analysis": {"summary": "结构化查询未完成，以下为 JQL 依据"},
+                        },
+                        user_text,
+                    )
+                    yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'jira_structured_search', 'status': 'error', 'error': str(_lane_err)[:200], 'jql': _jql}}, ensure_ascii=False)}\n\n".encode("utf-8")
+                    _err_intro = f"【Alice】Jira 结构化查询遇到问题：{str(_lane_err)[:120]}\n\n"
+                    yield from _vip_stream(_err_intro + _fb, _fb)
+                    yield b"data: [DONE]\n\n"
+                    return
+                except Exception as _fb_err:
+                    _plain = f"【Alice】Jira 查询失败：{str(_lane_err)[:200]}"
+                    yield f"data: {json.dumps({'choices': [{'delta': {'content': _plain}}]}, ensure_ascii=False)}\n\n".encode("utf-8")
+                    yield b"data: [DONE]\n\n"
+                    return
 
         # ══════════════════════════════════════════════════════════
         #  V2.0 LangGraph Plan-and-Execute 大脑 (优先)
@@ -2064,11 +2295,20 @@ def chat_completions():
                     yield f"data: {r['sse_running']}\n\n".encode('utf-8')
                     yield f"data: {r['sse_done']}\n\n".encode('utf-8')
 
-                    # 检查确认卡
+                    # 检查确认卡（统一 confirm_card 事件，兼容旧 custom_type）
                     try:
                         obj = json.loads(r['result'])
                         if obj.get("status") == "confirm_required":
-                            yield f"data: {json.dumps({'custom_type': 'confirm_required', 'operation': obj.get('operation'), 'operation_id': obj.get('operation_id'), 'message': obj.get('result','')})}\n\n".encode('utf-8')
+                            op_id = obj.get("operation_id", "")
+                            ui_op = obj.get("operation") or {}
+                            card_evt = {
+                                "_event": "confirm_card",
+                                "op_id": op_id,
+                                "operation": ui_op,
+                                "message": obj.get("result", ""),
+                            }
+                            yield f"data: {json.dumps(card_evt, ensure_ascii=False)}\n\n".encode('utf-8')
+                            yield f"data: {json.dumps({'custom_type': 'confirm_required', 'operation': ui_op, 'operation_id': op_id, 'message': obj.get('result', '')}, ensure_ascii=False)}\n\n".encode('utf-8')
                     except Exception:
                         pass
 
@@ -2421,7 +2661,55 @@ from jira_operation_manager import (
     create_operation_card, get_operation, save_operation,
     mark_running, mark_created, mark_failed, mark_rejected,
     supersede_older, get_pending_operations,
+    execute_confirmed_operation,
 )
+
+@app.route("/v1/jira/search", methods=["POST"])
+def v1_jira_search():
+    """结构化 Jira 搜索 API（调试 / MCP 复用）"""
+    data = request.get_json(silent=True) or {}
+    user_pat = ""
+    if isinstance(data.get("user_config"), dict):
+        user_pat = data["user_config"].get("jira_pat", "")
+    user_pat = data.get("jira_pat") or user_pat
+    frontend_cfg = data.get("config") or {}
+    try:
+        from jira_search_engine import (
+            JiraSearchQuery,
+            parse_query_from_natural_language,
+            search_and_analyze,
+            format_search_result_for_llm,
+        )
+        from jira_runtime_config import load_jira_runtime_config
+
+        rt_cfg = load_jira_runtime_config(frontend_cfg)
+        if data.get("query"):
+            q = parse_query_from_natural_language(str(data["query"]), rt_cfg)
+        else:
+            q = JiraSearchQuery(
+                project_key=data.get("project_key", ""),
+                assignees=normalize_list(data.get("assignees") or data.get("assignee") or []),
+                statuses=normalize_list(data.get("statuses") or data.get("status") or []),
+                issue_types=normalize_list(data.get("issue_types") or data.get("issue_type") or []),
+                text=data.get("text", "") or data.get("keyword", ""),
+                jql=data.get("jql", ""),
+                unresolved_only=bool(data.get("unresolved_only")),
+                max_results=int(data.get("max_results") or 50),
+            )
+        result = search_and_analyze(jira, q, config=rt_cfg, user_pat=user_pat, frontend_cfg=frontend_cfg)
+        return jsonify({
+            "ok": not result.get("not_recoverable"),
+            "result": result,
+            "llm_text": format_search_result_for_llm(result, data.get("query", "")),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:500]}), 500
+
+
+def normalize_list(value):
+    from jira_search_engine import normalize_list as _nl
+    return _nl(value)
+
 
 @app.route("/operations/<op_id>", methods=["GET"])
 def get_op(op_id):
@@ -2440,16 +2728,59 @@ def get_op(op_id):
 
 @app.route("/operations/<op_id>/confirm", methods=["POST"])
 def confirm_op(op_id):
-    """用户确认操作 — 标记 running，由后续流程执行"""
+    """用户确认操作 — 执行 Jira REST 写入（对齐 Baize confirmJiraOperation）"""
     op = get_operation(op_id)
     if not op:
         return jsonify({"ok": False, "error": "操作不存在"}), 404
-    if op["status"] != "awaiting_confirmation":
+    if op["status"] not in ("awaiting_confirmation", "recovery_required"):
         return jsonify({"ok": False, "error": f"当前状态 {op['status']} 不能确认"}), 409
-    op = mark_running(op)
-    save_operation(op)
-    logger.info(f"[OpCard] Confirmed: {op_id} | {len(op.get('drafts',[]))} drafts")
-    return jsonify({"ok": True, "operation": {"id": op["id"], "status": op["status"]}})
+
+    body = request.get_json(silent=True) or {}
+    user_pat = ""
+    if isinstance(body.get("user_config"), dict):
+        user_pat = body["user_config"].get("jira_pat", "")
+    user_pat = body.get("jira_pat") or user_pat
+
+    skip_labels = body.get("recovery_action") == "retry_without_labels"
+    if op.get("recovery") and op["recovery"].get("pending_action"):
+        skip_labels = skip_labels or op["recovery"]["pending_action"] == "retry_without_labels"
+
+    try:
+        op = mark_running(op)
+        save_operation(op)
+        result = execute_confirmed_operation(jira, op, user_pat=user_pat, skip_labels=skip_labels)
+        created = result.get("created_issues") or []
+        if created:
+            op = mark_created(op, created)
+        else:
+            op = mark_created(op, [])
+        op["last_result_message"] = result.get("message", "")
+        save_operation(op)
+        logger.info(f"[OpCard] Executed: {op_id} | kind={op.get('kind')} | created={len(created)}")
+        return jsonify({
+            "ok": True,
+            "message": result.get("message", "操作已完成"),
+            "operation": {
+                "id": op["id"],
+                "status": op["status"],
+                "kind": op.get("kind"),
+                "created_issues": op.get("created_issues", []),
+            },
+        })
+    except Exception as e:
+        err_msg = str(e)[:500]
+        op = mark_failed(op, err_msg)
+        save_operation(op)
+        logger.error(f"[OpCard] Execute failed: {op_id} | {err_msg}")
+        return jsonify({
+            "ok": False,
+            "error": err_msg,
+            "operation": {
+                "id": op["id"],
+                "status": op["status"],
+                "recovery": op.get("recovery"),
+            },
+        }), 500
 
 @app.route("/operations/<op_id>/reject", methods=["POST"])
 def reject_op(op_id):
@@ -2567,8 +2898,8 @@ def proxy_jira_comment():
 ---
 _WorkBuddy AI 自动分析_"""
     try:
-        r = jira.jira_post(f"{jira.api_url}/issue/{issue_key}/comment",
-            json={"body": comment_body}, timeout=15)
+        r = jira.jira_post(f"/issue/{issue_key}/comment",
+            json_data={"body": comment_body}, timeout=15)
         if r.status_code in (200, 201):
             return jsonify({"ok": True, "comment_id": r.json().get("id", "?")})
         return jsonify({"ok": False, "error": f"Jira HTTP {r.status_code}: {r.text[:200]}"})

@@ -1,0 +1,24 @@
+# Alice Jira 运行时配置契约（多项目，禁止单团队硬编码）
+# 可与 global_config.json / 请求 config / 环境变量合并
+
+defaults:
+  projectKeys: []          # 空则使用 JIRA_PROJECTS 环境变量
+  defaultIssueType: Task
+  maxSearchResults: 50
+  doneStatusKeywords:
+    - 完成
+    - 关闭
+    - 已解决
+    - Done
+    - Closed
+    - Resolved
+
+# 全局负责人字段候选（按优先级尝试 JQL OR）
+ownerFieldCandidates:
+  - 任务负责人
+
+# 按项目覆盖（projectKey 大写）
+projects: {}
+  # CT:
+  #   ownerFields: [customfield_10130, "任务负责人"]
+  #   deadlineField: "End date"

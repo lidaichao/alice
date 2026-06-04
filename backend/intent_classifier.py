@@ -35,6 +35,26 @@ DANGEROUS_PATTERNS = [
     re.compile(r'(\{\{.*\}\}|__import__|eval\(|exec\(|\.system\(|\.popen\(|os\.system)', re.I),
 ]
 
+# Jira Issue 状态流转 —— 优先于泛化「工程写」
+JIRA_ISSUE_STATUS_PATTERNS = [
+    re.compile(
+        r'(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9]).*'
+        r'(?:改成|改为|更新|修改|设置|流转|transition).*(?:完成|关闭|resolved|进行中|待办|done|closed)',
+        re.I,
+    ),
+    re.compile(
+        r'(?:把|将|帮).{0,20}(?:jira|任务|issue).{0,30}'
+        r'(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9]).{0,40}'
+        r'(?:改成|改为|完成|关闭|流转)',
+        re.I,
+    ),
+    re.compile(
+        r'(?:jira|任务|issue).{0,20}(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9]).{0,30}'
+        r'(?:状态|state).{0,12}(?:改成|改为|更新|设为|置为).{0,12}(?:完成|关闭|resolved|done)',
+        re.I,
+    ),
+]
+
 # Jira 写操作 —— 需要确认卡
 JIRA_WRITE_PATTERNS = [
     re.compile(r'(创建|新建|添加|增加).*(Jira|jira)?.*(任务|issue|bug|需求|story|子任务|subtask|缺陷)'),
@@ -45,6 +65,8 @@ JIRA_WRITE_PATTERNS = [
     re.compile(r'(批量|导入|批量创建|导入草稿).*(Jira|jira)'),
     re.compile(r'(分配|指派|转交).*(Jira|jira)?.*(任务|issue|bug)'),
 ]
+
+_ISSUE_KEY_IN_TEXT = re.compile(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])')
 
 # 工程写操作 —— 修改代码/文件，需要确认
 ENGINEERING_WRITE_PATTERNS = [
@@ -132,7 +154,16 @@ def classify_intent(text: str) -> dict:
                 "matched_pattern": p.pattern,
             }
 
-    # 3. Jira 写操作
+    # 3. Jira 状态流转 / 写操作（须在泛化 engineering_write 之前）
+    for p in JIRA_ISSUE_STATUS_PATTERNS:
+        if p.search(normalized):
+            return {
+                "route": "jira_write",
+                "reason": "jira_status_transition",
+                "requires_confirmation": True,
+                "matched_pattern": p.pattern,
+            }
+
     for p in JIRA_WRITE_PATTERNS:
         if p.search(normalized):
             return {
@@ -142,9 +173,18 @@ def classify_intent(text: str) -> dict:
                 "matched_pattern": p.pattern,
             }
 
-    # 4. 工程写操作
+    # 4. 工程写操作（含 Jira Issue Key 时改走 jira_write，避免误分类）
     for p in ENGINEERING_WRITE_PATTERNS:
         if p.search(normalized):
+            if _ISSUE_KEY_IN_TEXT.search(normalized) and re.search(
+                r'jira|issue|任务|工单', normalized, re.I
+            ):
+                return {
+                    "route": "jira_write",
+                    "reason": "jira_write_from_engineering_pattern",
+                    "requires_confirmation": True,
+                    "matched_pattern": p.pattern,
+                }
             return {
                 "route": "engineering_write",
                 "reason": "write_request",
@@ -233,6 +273,7 @@ _TEST_CASES = [
     ("统计本周所有人的任务数量", "jira_query", False),
     ("查一下 CT-12345 的详情", "jira_query", False),
     ("批量导入Jira需求", "jira_write", True),
+    ("请帮我把 Jira 任务 CT-10888 的状态直接改成完成", "jira_write", True),
     ("这个功能怎么实现", "engineering_readonly", False),
     ("delete from users where id=1", "dangerous", False),
     ("帮我分析一下代码结构", "engineering_readonly", False),
