@@ -509,7 +509,7 @@ def mark_rejected(operation: dict) -> dict:
 # ══════════════════════════════════════════════════════════════
 
 _store: dict = {}          # operation_id → operation
-_lock = threading.Lock()   # 线程安全
+_lock = threading.RLock()   # 可重入；save_operation → _persist 避免死锁（Q4 180s 根因）
 _DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 _OPS_FILE = os.path.join(_DATA_DIR, "operations.json")
 # 兼容旧路径

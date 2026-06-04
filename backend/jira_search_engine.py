@@ -554,7 +554,8 @@ def parse_jira_transition_target(user_text: str) -> str:
 
 
 def is_jira_transition_write_request(user_text: str, intent_route: str = "") -> bool:
-    if intent_route != "jira_write":
+    """写状态/流转请求（微型 Plugin-Gateway 入口）；dangerous 除外，不强制 intent_route=jira_write。"""
+    if intent_route == "dangerous":
         return False
     if not ISSUE_KEY_RE.search(user_text or ""):
         return False

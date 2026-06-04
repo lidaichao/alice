@@ -1,0 +1,32 @@
+---
+description: 杰尼龟标准工作流 SOP（测试、Git、记忆归档）
+alwaysApply: true
+---
+
+# 杰尼龟标准工作流 (SOP)
+
+## 动刀前：关联测试
+
+| 改动范围 | 建议运行 |
+|----------|----------|
+| `frontend/src/` | `npm run dev` 编译通过 |
+| `backend/ai_bridge.py` / `intent_router.py` | `py test/e2e_v2.py` |
+| `jira_mcp_server.py` / `jira_api.py` | `py research/Claw/test_all_mcp_tools.py` |
+| SVN diff 相关 | `py research/Claw/test_jira_diff.py` |
+
+Windows 终端：`$env:PYTHONIOENCODING='utf-8'` 后再跑 Python 脚本。
+
+## 完成后：Git（自动，无需用户再指示）
+
+任务完成且有应提交改动时，**自行 commit + push**（见 `.cursor/rules/auto-github-commit.mdc` 与 `.cursor/skills/auto-commit-github/SKILL.md`）。
+
+- type：`feat` / `fix` / `refactor` / `docs` / `style`
+- Windows 推荐：`git commit -F` 写入临时消息文件
+- 禁止 `--force`（除非用户明确要求）
+- 禁止提交：`global_config.json`、`.env`、`backend/runtime/`
+
+## 重大修改后：记忆归档
+
+直接编辑 `research/Claw/.workbuddy/memory/MEMORY.md`（不要只在聊天里发片段）。
+
+记录：日期、改动模块、文件路径、一句话说明、已知技术债。

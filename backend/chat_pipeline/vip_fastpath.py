@@ -11,6 +11,63 @@ from typing import Any, Callable, Iterator, Optional, Set
 
 logger = logging.getLogger(__name__)
 
+# Q8 单点穿透：仅 CT 项目 Issue Key（对齐 Baize 确定性检索）
+_CT_ISSUE_KEY_RE = re.compile(r"(CT-\d+)", re.I)
+
+
+def extract_ct_issue_key(text: str, fallback_keys: Optional[Set[str]] = None) -> str:
+    """从用户句或上下文严格提取 CT-xxxxx；失败时从 fallback_keys 取 CT 前缀 key。"""
+    m = _CT_ISSUE_KEY_RE.search(text or "")
+    if m:
+        return m.group(1).upper()
+    for k in sorted(fallback_keys or (), key=len, reverse=True):
+        ku = (k or "").upper()
+        if _CT_ISSUE_KEY_RE.fullmatch(ku) or ku.startswith("CT-"):
+            return ku
+    return ""
+
+
+def summarize_commit_block_deterministic(commit_block: str) -> str:
+    """Baize analyzeIssues 风格：提交表预聚合，降低 LLM 数数/归纳幻觉。"""
+    if not (commit_block or "").strip():
+        return ""
+    authors: dict[str, int] = {}
+    revs: list[str] = []
+    dates: list[str] = []
+    for line in (commit_block or "").splitlines():
+        if "|" not in line or "r" not in line.lower():
+            continue
+        parts = [p.strip() for p in line.split("|") if p.strip()]
+        if len(parts) < 4:
+            continue
+        rev_cell = parts[0]
+        if not re.match(r"r\d+", rev_cell, re.I):
+            continue
+        revs.append(rev_cell)
+        author = parts[1] if len(parts) > 1 else "未知"
+        authors[author] = authors.get(author, 0) + 1
+        if len(parts) > 2 and parts[2]:
+            dates.append(parts[2][:10])
+    if not revs:
+        m_total = re.search(r"共\s*(\d+)\s*条提交", commit_block)
+        if m_total:
+            return (
+                "【确定性统计 · 提交预聚合】\n"
+                f"- 提交条数（文本解析）: {m_total.group(1)}\n"
+            )
+        return ""
+    by_author = "; ".join(f"{k}×{v}" for k, v in sorted(authors.items(), key=lambda x: -x[1]))
+    date_span = ""
+    if dates:
+        date_span = f"- 时间跨度: {min(dates)} ~ {max(dates)}\n"
+    return (
+        "【确定性统计 · 提交预聚合】\n"
+        f"- 提交条数: {len(revs)}\n"
+        f"- 版本号: {', '.join(revs[:12])}\n"
+        f"- 按作者: {by_author}\n"
+        f"{date_span}".rstrip()
+    )
+
 
 @dataclass
 class VipFastpathContext:
@@ -434,34 +491,19 @@ def _run_issue_detail_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
 
 
 def _run_tech_doc_commit_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
-    """Q8: Notion 技术文档预取 + Issue 提交 → 设计意图 vs 代码对比"""
+    """Q8: Notion 技术文档预取 + Issue 提交 → 设计意图 vs 代码对比（单点穿透 CT Key）"""
     t = ctx.user_text or ""
-    if not ctx.issue_keys_found:
+    _ik = extract_ct_issue_key(t, ctx.issue_keys_found)
+    if not _ik:
         return
     if not re.search(r"技术文档|设计文档|PRD|notion", t, re.I):
         return
     if not re.search(r"提交|commit|代码|分析", t, re.I):
         return
 
-    _ik = sorted(ctx.issue_keys_found, key=len, reverse=True)[0]
-    _search_kw = f"技术文档 {_ik}"
-    try:
-        jira = ctx.jira_http
-        if jira:
-            _pat = ctx.user_cfg.get("jira_pat", "")
-            _jr = jira.jira_get(
-                f"/issue/{_ik}",
-                params={"fields": "summary"},
-                timeout=10,
-                user_pat=_pat or None,
-            )
-            if _jr.status_code == 200:
-                _sum = (_jr.json().get("fields") or {}).get("summary", "")
-                if _sum:
-                    _search_kw = f"{_sum} {_ik} 技术文档"
-    except Exception:
-        pass
-    logger.info(f"[VIP] Tech-doc + commit lane: {_ik} kw={_search_kw[:60]}")
+    # 单点穿透：仅用 Issue Key 检索知识库，禁止 summary 拼接噪声
+    _search_kw = _ik
+    logger.info(f"[VIP] Tech-doc + commit lane (pierce): {_ik} kw={_search_kw}")
 
     notion_block = ""
     yield _plugin_sse("search_docs_catalog", "running")
@@ -498,6 +540,10 @@ def _run_tech_doc_commit_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
     except Exception as e:
         commit_block = f"提交记录获取失败: {e}"
     yield _plugin_sse("get_issue_commits", "done")
+
+    _commit_stats = summarize_commit_block_deterministic(commit_block)
+    if _commit_stats:
+        commit_block = f"{_commit_stats}\n\n{commit_block}"
 
     _diff_block = ""
     _rev_m = re.search(r"(?:r|版本\s*)\s*(\d{4,6})", t, re.I)
@@ -559,10 +605,14 @@ def _run_commit_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
     except Exception as e:
         _commit_block = f"提交记录拉取异常: {str(e)[:200]}"
     yield _plugin_sse("get_issue_commits", "done")
+    _commit_stats = summarize_commit_block_deterministic(_commit_block)
+    if _commit_stats:
+        _commit_block = f"{_commit_stats}\n\n{_commit_block}"
     _commit_prompt = (
         f"你是 Alice。用户只关心【当前这一条消息】里 Issue {_ik} 的程序提交情况。\n"
-        "禁止引用本会话中其它轮次的 Jira 列表查询、JQL 或「50 条任务」等上下文。\n"
-        "若下方无提交数据，明确说明「未查到该任务的 SVN/FishEye 提交记录」，不要编造。\n\n"
+        "禁止引用本会话中其它轮次的 Jira 列表查询、JQL 或 「50 条任务」等上下文。\n"
+        "若下方无提交数据，明确说明「未查到该任务的 SVN/FishEye 提交记录」，不要编造。\n"
+        "须优先引用【确定性统计】中的条数与作者分布，勿自行重数表格行。\n\n"
         f"【{_ik} 提交数据】\n{_commit_block[:8000]}\n\n"
         f"【用户当前问题】\n{ctx.user_text}"
     )

@@ -1866,14 +1866,23 @@ def chat_completions():
                 logger.warning(f"[Intent] classify_intent failed: {_ic_err}")
 
         # ══════════════════════════════════════════════════════════
-        #  Jira 写直通车（状态流转确认卡，须在 ReAct 之前）
+        #  Jira 写直通车 / 微型 Plugin-Gateway（确认卡后立即 [DONE]）
         # ══════════════════════════════════════════════════════════
-        if user_text and intent_info.get("route") == "jira_write":
+        if user_text:
+            try:
+                from jira_search_engine import is_jira_transition_write_request as _is_jira_tr_write
+            except ImportError:
+                _is_jira_tr_write = lambda _t, _r="": False
+        if user_text and (
+            intent_info.get("route") == "jira_write"
+            or _is_jira_tr_write(user_text, intent_info.get("route", ""))
+        ):
             try:
                 _write_chunks = _collect_jira_write_sse_chunks(user_text, user_cfg, intent_info)
                 for _chunk in _write_chunks:
                     yield _chunk
                 if _write_chunks:
+                    logger.info("[Plugin-Gateway] Jira write express lane — confirm_card sent, stream terminated")
                     yield b"data: [DONE]\n\n"
                     return
             except Exception as _jwe:
@@ -2159,7 +2168,9 @@ def chat_completions():
                         except Exception as e:
                             logger.error(f"[ReAct] Tool thread failed: {e}")
 
-                # 按顺序发送 SSE 事件 + 追加 tool messages
+                # 按顺序发送 SSE 事件 + 追加 tool messages（写操作确认卡 → 网关终止）
+                _plugin_gateway_terminal = False
+                _confirm_preview = ""
                 for r in results:
                     yield f"data: {r['sse_running']}\n\n".encode('utf-8')
                     yield f"data: {r['sse_done']}\n\n".encode('utf-8')
@@ -2168,29 +2179,35 @@ def chat_completions():
                     try:
                         obj = json.loads(r['result'])
                         if obj.get("status") == "confirm_required":
+                            _plugin_gateway_terminal = True
                             op_id = obj.get("operation_id", "")
                             ui_op = obj.get("operation") or {}
+                            _confirm_preview = str(obj.get("result") or _confirm_preview)
                             card_evt = {
                                 "_event": "confirm_card",
                                 "op_id": op_id,
                                 "operation": ui_op,
-                                "message": obj.get("result", ""),
+                                "message": _confirm_preview,
+                                "preview": _confirm_preview,
                             }
                             yield f"data: {json.dumps(card_evt, ensure_ascii=False)}\n\n".encode('utf-8')
-                            yield f"data: {json.dumps({'custom_type': 'confirm_required', 'operation': ui_op, 'operation_id': op_id, 'message': obj.get('result', '')}, ensure_ascii=False)}\n\n".encode('utf-8')
+                            yield f"data: {json.dumps({'custom_type': 'confirm_required', 'operation': ui_op, 'operation_id': op_id, 'message': _confirm_preview}, ensure_ascii=False)}\n\n".encode('utf-8')
+                            if _confirm_preview:
+                                yield f"data: {json.dumps({'choices': [{'delta': {'content': _confirm_preview}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
                     except Exception:
                         pass
 
+                    if _plugin_gateway_terminal:
+                        continue
+
                     # Alice V2.0 fix: 剥离 JSON 外壳，LLM 只看到纯文本
-                    # 工具返回 {"status":"ok","llm_text":"..."} → 提取 llm_text
                     tool_content = r["result"]
                     try:
                         obj = json.loads(tool_content)
                         if isinstance(obj, dict):
-                            # 优先 llm_text，其次 result 字段
                             tool_content = obj.get("llm_text") or obj.get("result") or tool_content
                     except (json.JSONDecodeError, TypeError):
-                        pass  # 不是 JSON，直接使用原值
+                        pass
 
                     tool_messages.append({
                         "role": "tool",
@@ -2198,6 +2215,11 @@ def chat_completions():
                         "name": r["name"],
                         "content": str(tool_content)
                     })
+
+                if _plugin_gateway_terminal:
+                    logger.info("[Plugin-Gateway] confirm_card emitted — breaking ReAct loop, stream [DONE]")
+                    yield b"data: [DONE]\n\n"
+                    return
 
                 # ══ Rabbit 核选项: 工具执行后直接输出数据，跳过后续 ReAct 步骤 ══
                 # deepseek-v4-flash 在后续轮次中持续输出 tool_calls 文本而非事实回答
