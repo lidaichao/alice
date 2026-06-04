@@ -485,10 +485,18 @@ def should_force_jira_structured_read(
         user_text or "",
     ):
         return False
+    if re.search(
+        r"提交|commit|diff|代码|svn|fisheye|变更了哪些文件|改了什么代码|提交记录|提交内容",
+        user_text or "",
+        re.I,
+    ):
+        return False
+    if len(keys) == 1:
+        return False
     if is_jira_structured_read_query(user_text, intent_route):
         return True
     if intent_route == "jira_query":
-        return True
+        return is_jira_structured_read_query(user_text, intent_route)
     if intent_label in ("JIRA_STRUCTURED_SEARCH", "JIRA_KEYWORD_SEARCH"):
         return True
     if re.search(r"本周.*(?:任务|待办|需要完成)|需要完成.*任务|有哪些.*任务", user_text or "", re.I):

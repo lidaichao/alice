@@ -2065,6 +2065,42 @@ def chat_completions():
             return
 
         # ══════════════════════════════════════════════════════════
+        #  VIP 单 Issue 代码提交 — 仅针对当前句，不复用上一轮 Jira 列表查询
+        # ══════════════════════════════════════════════════════════
+        _commit_intent = bool(issue_keys_found) and bool(
+            re.search(
+                r"提交|commit|diff|代码变更|改了什么代码|变更了哪些|改了哪些文件|提交记录|提交内容|改了.*什么",
+                user_text or "",
+                re.I,
+            )
+        )
+        if _commit_intent:
+            _keys_in_msg = re.findall(
+                r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])",
+                user_text or "",
+            )
+            _ik = _keys_in_msg[0] if _keys_in_msg else sorted(issue_keys_found, key=len, reverse=True)[0]
+            logger.info(f"[VIP] Issue commit express lane: {_ik}")
+            yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'get_issue_commits', 'status': 'running'}}, ensure_ascii=False)}\n\n".encode("utf-8")
+            _commit_block = ""
+            try:
+                from knowledge_retriever import fetch_precise_commits_via_fisheye
+                _commit_block = fetch_precise_commits_via_fisheye(_ik) or ""
+            except Exception as _ce:
+                _commit_block = f"提交记录拉取异常: {str(_ce)[:200]}"
+            yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'get_issue_commits', 'status': 'done'}}, ensure_ascii=False)}\n\n".encode("utf-8")
+            _commit_prompt = (
+                f"你是 Alice。用户只关心【当前这一条消息】里 Issue {_ik} 的程序提交情况。\n"
+                "禁止引用本会话中其它轮次的 Jira 列表查询、JQL 或「50 条任务」等上下文。\n"
+                "若下方无提交数据，明确说明「未查到该任务的 SVN/FishEye 提交记录」，不要编造。\n\n"
+                f"【{_ik} 提交数据】\n{_commit_block[:8000]}\n\n"
+                f"【用户当前问题】\n{user_text}"
+            )
+            yield from _vip_stream(_commit_prompt, _commit_block or "（无提交数据）")
+            yield b"data: [DONE]\n\n"
+            return
+
+        # ══════════════════════════════════════════════════════════
         #  Jira 结构化读直通车（对齐 Baize jira_search）
         # ══════════════════════════════════════════════════════════
         from jira_search_engine import should_force_jira_structured_read

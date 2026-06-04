@@ -1,24 +1,5 @@
 <template>
   <div>
-    <div v-if="s.editLock.jiraPm" class="section-toolbar">
-      <el-button type="primary" size="small" :disabled="!s.editLock.jiraPm" @click="addRow">
-        添加含义说明
-      </el-button>
-      <div class="test-action-group">
-        <TestActionHint action-key="jiraFields" />
-        <el-button size="small" :disabled="!s.jiraCanUseFields" :loading="s.jiraFieldsLoading" @click="s.fetchJiraFieldOptions">
-          刷新字段列表
-        </el-button>
-      </div>
-      <el-input
-        v-model="s.jiraFieldFilter"
-        size="small"
-        placeholder="筛选字段名称"
-        clearable
-        style="width: 200px"
-      />
-    </div>
-
     <el-table
       v-if="displayRows.length"
       :data="displayRows"
@@ -137,7 +118,7 @@
           <span v-if="!s.normalizeAliasTags(row.aliases).length" class="text-muted">—</span>
         </template>
       </el-table-column>
-      <el-table-column v-if="s.editLock.jiraPm" label="操作" width="140" fixed="right">
+      <el-table-column label="操作" width="140" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="editRow(row._gidx)">编辑</el-button>
           <el-button link type="danger" size="small" @click="s.removeGlossaryRow(row._gidx)">删除</el-button>
@@ -146,13 +127,8 @@
     </el-table>
     <el-empty v-else description="暂无词典条目" :image-size="64" />
 
-    <el-button
-      v-if="s.editLock.jiraPm && displayRows.length"
-      class="add-more"
-      size="small"
-      @click="addRow"
-    >
-      + 继续添加
+    <el-button class="add-more" size="small" type="primary" plain @click="addRow">
+      {{ displayRows.length ? '+ 继续添加' : '+ 添加含义说明' }}
     </el-button>
   </div>
 </template>
@@ -160,17 +136,18 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { useAdminInject } from '../composables/useAdminInject.js';
-import TestActionHint from './TestActionHint.vue';
 
 const s = useAdminInject();
 const expandedKeys = ref([]);
+
+const rowKeyFor = (gidx) => `gl-${gidx}`;
 
 const displayRows = computed(() =>
   (s.jiraPmForm.glossaryRows || [])
     .map((r, gidx) => ({
       ...r,
       _gidx: gidx,
-      rowKey: `gl-${gidx}-${r.fieldId || r.fieldName || 'new'}`,
+      rowKey: rowKeyFor(gidx),
     }))
     .filter((r) => (r.fieldName || '').trim() || r.editing)
 );
@@ -182,34 +159,32 @@ function isRowEditing(row) {
 
 function editRow(gidx) {
   s.startEditGlossaryRow(gidx);
-  const key = displayRows.value.find((r) => r._gidx === gidx)?.rowKey;
-  if (key && !expandedKeys.value.includes(key)) {
+  const key = rowKeyFor(gidx);
+  if (!expandedKeys.value.includes(key)) {
     expandedKeys.value = [...expandedKeys.value, key];
   }
 }
 
 function addRow() {
   const gidx = s.addGlossaryRow();
-  const row = s.jiraPmForm.glossaryRows[gidx];
-  const key = `gl-${gidx}-new`;
-  row.rowKey = key;
-  expandedKeys.value = [key];
+  expandedKeys.value = [rowKeyFor(gidx)];
 }
 
 async function saveRow(gidx) {
   await s.saveGlossaryRow(gidx);
-  const row = s.jiraPmForm.glossaryRows[gidx];
-  const key = row?.fieldName ? `gl-${gidx}-${row.fieldId || row.fieldName}` : `gl-${gidx}-new`;
-  expandedKeys.value = expandedKeys.value.filter((k) => k !== key && !k.startsWith(`gl-${gidx}-`));
+  const key = rowKeyFor(gidx);
+  if (!expandedKeys.value.includes(key)) {
+    expandedKeys.value = [...expandedKeys.value, key];
+  }
 }
 
 function cancelRow(gidx) {
   s.cancelEditGlossaryRow(gidx);
-  expandedKeys.value = expandedKeys.value.filter((k) => !k.startsWith(`gl-${gidx}-`));
+  expandedKeys.value = expandedKeys.value.filter((k) => k !== rowKeyFor(gidx));
 }
 
 function onExpandChange(row, expandedRows) {
-  const key = row.rowKey;
+  const key = rowKeyFor(row._gidx);
   const isExpanded = expandedRows.some((r) => r.rowKey === key);
   if (isExpanded) {
     if (!expandedKeys.value.includes(key)) {
@@ -225,13 +200,6 @@ function onExpandChange(row, expandedRows) {
 </script>
 
 <style scoped>
-.section-toolbar {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-  align-items: center;
-}
 .expand-panel {
   padding: 4px 8px 8px;
 }

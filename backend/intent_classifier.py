@@ -201,6 +201,19 @@ def classify_intent(text: str) -> dict:
             "matched_pattern": None,
         }
 
+    # 5b. 单 Issue + 代码提交查询（勿走 Jira 列表/统计直通车）
+    if _ISSUE_KEY_IN_TEXT.search(normalized) and re.search(
+        r"提交|commit|diff|代码|svn|fisheye|改了什么|变更|提交记录|提交内容",
+        normalized,
+        re.I,
+    ):
+        return {
+            "route": "jira_commits",
+            "reason": "issue_commit_query",
+            "requires_confirmation": False,
+            "matched_pattern": "issue_key+commit",
+        }
+
     # 6. Jira 只读查询
     for p in JIRA_QUERY_PATTERNS:
         if p.search(normalized):

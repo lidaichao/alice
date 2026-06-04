@@ -86,17 +86,6 @@
             <TestActionHint action-key="jira" />
             <el-button class="card-btn" :loading="s.testing.jira" @click="s.testJiraSystem">测试连接</el-button>
           </div>
-          <div class="test-action-group">
-            <TestActionHint action-key="jiraFields" />
-            <el-button
-              class="card-btn"
-              :loading="s.jiraFieldsLoading"
-              :disabled="!s.jiraCanUseFields"
-              @click="s.fetchJiraFieldOptions"
-            >
-              刷新字段列表
-            </el-button>
-          </div>
           <el-button v-if="!s.editLock.jira" class="card-btn" type="primary" @click="s.startEdit('jira')">
             编辑连接
           </el-button>

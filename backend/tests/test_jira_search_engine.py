@@ -78,6 +78,16 @@ def test_is_structured_read():
     assert not is_jira_structured_read_query("CT-1 提交了什么代码", "jira_query")
 
 
+def test_should_not_force_structured_on_commit_or_single_key():
+    from jira_search_engine import should_force_jira_structured_read
+
+    assert not should_force_jira_structured_read(
+        "CT-10859 这个任务今天程序提交了什么", "jira_query", ""
+    )
+    assert not should_force_jira_structured_read("CT-10859 详情", "jira_query", "")
+    assert should_force_jira_structured_read("统计本周 CT 未完成任务", "jira_query", "")
+
+
 def test_empty_result_prompt():
     r = {"jql": "project=CT", "issues": [], "analysis": analyze_issues([])}
     text = format_search_result_for_llm(r)

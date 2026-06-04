@@ -7,8 +7,25 @@ import {
   setAdminToken,
 } from '../api/adminApi.js';
 
+const STORAGE_MENU = 'alice_admin_active_menu';
+const STORAGE_CONN = 'alice_admin_connection_ok';
+const STORAGE_HINTS = 'alice_admin_test_hints';
+const MENU_IDS = ['settings', 'jiraQuery', 'kb'];
+
+function readStoredMenu() {
+  try {
+    const id = sessionStorage.getItem(STORAGE_MENU);
+    if (MENU_IDS.includes(id)) return id;
+    const hash = (window.location.hash || '').replace(/^#\/?/, '');
+    if (MENU_IDS.includes(hash)) return hash;
+  } catch {
+    /* ignore */
+  }
+  return 'settings';
+}
+
 export function useAdminStore() {
-  const activeMenu = ref('settings');
+  const activeMenu = ref(readStoredMenu());
   const menus = [
     { id: 'settings', name: '系统集成配置', icon: 'Setting' },
     { id: 'jiraQuery', name: 'Alice-Jira查询配置', icon: 'Search' },
@@ -63,14 +80,24 @@ export function useAdminStore() {
     },
   });
 
+  const JIRA_PM_SECTIONS = ['jiraPmA', 'jiraPmB', 'jiraPmC'];
+
   const editLock = reactive({
     ai: false,
     jira: false,
-    jiraPm: false,
+    jiraPmA: false,
+    jiraPmB: false,
+    jiraPmC: false,
     svn: false,
     notion: false,
     gdrive: false,
   });
+
+  const isJiraPmSection = (cardId) => JIRA_PM_SECTIONS.includes(cardId);
+
+  const anyJiraPmEditing = () => JIRA_PM_SECTIONS.some((k) => editLock[k]);
+
+  const activeJiraPmSection = () => JIRA_PM_SECTIONS.find((k) => editLock[k]) || null;
   const draftBackup = {};
 
   const testing = reactive({
@@ -91,12 +118,45 @@ export function useAdminStore() {
     gdrive: { show: false, msg: '', isError: false },
   });
 
+  const persistTestHints = () => {
+    try {
+      const out = {};
+      for (const key of Object.keys(testResult)) {
+        const slot = testResult[key];
+        if (slot.show && slot.msg) {
+          out[key] = { show: true, msg: slot.msg, isError: slot.isError };
+        }
+      }
+      sessionStorage.setItem(STORAGE_HINTS, JSON.stringify(out));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const restoreTestHints = () => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_HINTS);
+      if (!raw) return;
+      const o = JSON.parse(raw);
+      for (const [key, val] of Object.entries(o)) {
+        if (testResult[key] && val && val.show) {
+          testResult[key].msg = val.msg;
+          testResult[key].isError = Boolean(val.isError);
+          testResult[key].show = true;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
   const setActionHint = (key, msg, isError = false) => {
     const slot = testResult[key];
     if (!slot) return;
     slot.msg = String(msg || '').replace(/^✅\s*|^❌\s*/, '');
     slot.isError = isError;
     slot.show = true;
+    persistTestHints();
   };
 
   const notionDatabases = ref([]);
@@ -115,6 +175,7 @@ export function useAdminStore() {
   const jiraProjectsLoading = ref(false);
   const jiraProjectFilter = ref('');
   const savingGlossaryIdx = ref(-1);
+  const savingGlossaryAll = ref(false);
   const jiraFieldsLoading = ref(false);
   const jiraConnectionOk = ref(false);
   const jiraPatOnServer = ref(false);
@@ -135,6 +196,71 @@ export function useAdminStore() {
     setTimeout(() => {
       statusPulse[key] = false;
     }, 1000);
+  };
+
+  const persistConnectionOk = () => {
+    try {
+      sessionStorage.setItem(
+        STORAGE_CONN,
+        JSON.stringify({
+          ai: aiConnectionOk.value,
+          jira: jiraConnectionOk.value,
+          svn: svnConnectionOk.value,
+          notion: notionConnectionOk.value,
+          gdrive: gdriveConnectionOk.value,
+        })
+      );
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const inferConnectionOkFromConfig = () => {
+    const aiKey = (state.ai.DEEPSEEK_KEY || '').trim();
+    const aiKeyConfigured = aiKey && aiKey !== '********';
+    aiConnectionOk.value = Boolean(
+      (state.ai.DEEPSEEK_URL || '').trim() &&
+        (aiKeyConfigured || availableModels.value.length > 0 || lastSavedModel.value)
+    );
+    jiraConnectionOk.value = Boolean(
+      (state.jira.JIRA_BASE_URL || '').trim() && jiraPatOnServer.value
+    );
+    svnConnectionOk.value = Boolean(
+      (state.svn.SVN_URL || '').trim() &&
+        (state.svn.SVN_USERNAME || '').trim() &&
+        (state.svn.SVN_PASSWORD || '').trim()
+    );
+    notionConnectionOk.value = Boolean((state.kb.NOTION_KEY || '').trim());
+    gdriveConnectionOk.value = Boolean(
+      (state.kb.GDRIVE_KEY || '').trim() && (state.kb.GDRIVE_FOLDERS || '').trim()
+    );
+  };
+
+  const restoreConnectionOk = () => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_CONN);
+      if (raw) {
+        const o = JSON.parse(raw);
+        if (o.ai) aiConnectionOk.value = true;
+        if (o.jira) jiraConnectionOk.value = true;
+        if (o.svn) svnConnectionOk.value = true;
+        if (o.notion) notionConnectionOk.value = true;
+        if (o.gdrive) gdriveConnectionOk.value = true;
+        return;
+      }
+    } catch {
+      /* fall through */
+    }
+    inferConnectionOkFromConfig();
+  };
+
+  const persistActiveMenu = () => {
+    try {
+      sessionStorage.setItem(STORAGE_MENU, activeMenu.value);
+      window.location.hash = activeMenu.value;
+    } catch {
+      /* ignore */
+    }
   };
 
   const connectionLabel = (ok, extra = '') => {
@@ -209,41 +335,45 @@ export function useAdminStore() {
     return list.filter((f) => (f.name || '').toLowerCase().includes(q));
   });
 
-  const jiraPmSummaryLines = computed(() => {
-    const lines = [];
-    const pk = projectKeysText.value || 'CT';
-    lines.push(`默认项目：${pk || '（未选择）'}`);
-    let dlMap = {};
-    try {
-      dlMap = JSON.parse(state.jira.JIRA_DEADLINE_FIELD_BY_PROJECT || '{}');
-    } catch {
-      /* ignore */
-    }
-    for (const row of jiraPmForm.deadlineRows || []) {
-      const k = (row.projectKey || '').trim().toUpperCase();
-      if (!k) continue;
-      const fn = row.fieldName || dlMap[k] || '（Alice 自动识别）';
-      lines.push(`${k} 项目：周报 / 待办按「${fn}」筛选`);
-    }
-    const extra = (jiraPmForm.extraPersonField || '').trim();
-    lines.push(
-      extra ? `人名查询：经办人 + 额外字段「${extra}」` : '人名查询：仅经办人'
-    );
-    const gloss = (jiraPmForm.glossaryRows || []).filter((r) =>
-      (r.fieldName || '').trim()
-    );
-    if (gloss.length) {
-      lines.push(`字段含义词典：已标注 ${gloss.length} 个字段`);
-      gloss.slice(0, 3).forEach((r) => {
-        const m = (r.meaning || '').trim();
-        const als = normalizeAliasTags(r.aliases).join('、');
-        let line = `  ·「${r.fieldName}」${m ? '：' + (m.length > 40 ? m.slice(0, 40) + '…' : m) : ''}`;
-        if (als) line += `（别名：${als}）`;
-        lines.push(line);
+  const jiraPmSummaryMarkdown = computed(() => {
+    const keys = (jiraPmForm.selectedProjectKeys || []).filter(Boolean);
+    const pkLabel = keys.length ? keys.map((k) => `\`${k}\``).join('、') : '（未选择）';
+    const parts = ['## 当前生效规则\n', `**参与项目** · ${pkLabel}\n`, '### 截止时间字段\n'];
+
+    const dlRows = (jiraPmForm.deadlineRows || []).filter((r) => (r.projectKey || '').trim());
+    if (dlRows.length) {
+      dlRows.forEach((row) => {
+        const k = (row.projectKey || '').trim().toUpperCase();
+        const fn = (row.fieldName || '').trim() || '（Alice 自动识别）';
+        parts.push(`- **${k}** · 周报 / 待办按 **${fn}** 筛选`);
       });
-      if (gloss.length > 3) lines.push(`  ·… 另有 ${gloss.length - 3} 条`);
+    } else {
+      parts.push('- （未配置）');
     }
-    return lines;
+
+    const extra = (jiraPmForm.extraPersonField || '').trim();
+    parts.push('\n### 人名查询\n');
+    parts.push(
+      extra
+        ? '- 始终查询 **经办人**，额外字段 **' + extra + '**'
+        : '- 仅查询 **经办人**（无额外人物字段）'
+    );
+
+    const gloss = (jiraPmForm.glossaryRows || []).filter((r) => (r.fieldName || '').trim());
+    parts.push('\n### 字段含义词典\n');
+    if (gloss.length) {
+      parts.push(`已标注 **${gloss.length}** 个字段：\n`);
+      gloss.forEach((r) => {
+        const m = (r.meaning || '').trim() || '（无说明）';
+        const als = normalizeAliasTags(r.aliases).join('、');
+        let line = `- **${r.fieldName}** — ${m}`;
+        if (als) line += ` · 别名：${als}`;
+        parts.push(line);
+      });
+    } else {
+      parts.push('- （暂无词条）');
+    }
+    return parts.join('\n');
   });
 
   const glossaryTableRows = computed(() =>
@@ -531,7 +661,6 @@ export function useAdminStore() {
 
   const removeGlossaryRow = async (idx) => {
     jiraPmForm.glossaryRows.splice(idx, 1);
-    if (!editLock.jiraPm) return;
     try {
       syncJsonFromPmForm();
       const glossary = JSON.parse(state.jira.JIRA_FIELD_GLOSSARY || '[]');
@@ -634,24 +763,41 @@ export function useAdminStore() {
         state.jira.JIRA_PAT = '';
       }
     }
-    if (cardId === 'jiraPm') {
-      draftBackup.jiraPmForm = structuredClone(toRaw(jiraPmForm));
-      draftBackup.jiraPmJson = {
-        JIRA_DEADLINE_FIELD_BY_PROJECT: state.jira.JIRA_DEADLINE_FIELD_BY_PROJECT,
-        JIRA_FIELD_MAPPINGS: state.jira.JIRA_FIELD_MAPPINGS,
-        JIRA_PROJECT_CONFIG: state.jira.JIRA_PROJECT_CONFIG,
-        JIRA_FIELD_GLOSSARY: state.jira.JIRA_FIELD_GLOSSARY,
-      };
-      syncPmFormFromJson();
+    if (isJiraPmSection(cardId)) {
+      const busy = activeJiraPmSection();
+      if (busy && busy !== cardId) {
+        showToast('请先保存或取消其它配置块的编辑', 'warning');
+        return;
+      }
+      if (!draftBackup.jiraPmForm) {
+        draftBackup.jiraPmForm = structuredClone(toRaw(jiraPmForm));
+        draftBackup.jiraPmJson = {
+          JIRA_DEADLINE_FIELD_BY_PROJECT: state.jira.JIRA_DEADLINE_FIELD_BY_PROJECT,
+          JIRA_FIELD_MAPPINGS: state.jira.JIRA_FIELD_MAPPINGS,
+          JIRA_PROJECT_CONFIG: state.jira.JIRA_PROJECT_CONFIG,
+          JIRA_FIELD_GLOSSARY: state.jira.JIRA_FIELD_GLOSSARY,
+        };
+        syncPmFormFromJson();
+      }
+      editLock[cardId] = true;
+      return;
     }
     editLock[cardId] = true;
   };
 
+  const clearJiraPmEdit = () => {
+    JIRA_PM_SECTIONS.forEach((k) => {
+      editLock[k] = false;
+    });
+    delete draftBackup.jiraPmForm;
+    delete draftBackup.jiraPmJson;
+  };
+
   const cancelEdit = (cardId) => {
-    if (cardId === 'jiraPm') {
+    if (isJiraPmSection(cardId)) {
       if (draftBackup.jiraPmForm) Object.assign(jiraPmForm, draftBackup.jiraPmForm);
       if (draftBackup.jiraPmJson) Object.assign(state.jira, draftBackup.jiraPmJson);
-      editLock.jiraPm = false;
+      clearJiraPmEdit();
       return;
     }
     if (draftBackup[cardId]) {
@@ -691,18 +837,23 @@ export function useAdminStore() {
           FISHEYE_URL: state.jira.FISHEYE_URL,
         };
         if (!jiraPatForApi()) delete payload.JIRA_PAT;
-      } else if (cardId === 'jiraPm') {
-        const keys = parseProjectKeys();
-        if (!keys.length) return showToast('请至少勾选一个 Jira 项目', 'error');
-        for (const row of jiraPmForm.deadlineRows) {
-          if (
-            (row.projectKey || '').trim() &&
-            !(row.projectKey || '').match(/^[A-Z][A-Z0-9]*$/i)
-          ) {
-            return showToast(`项目代号「${row.projectKey}」格式不正确，请使用如 CT`, 'error');
+      } else if (isJiraPmSection(cardId)) {
+        if (cardId === 'jiraPmA') {
+          const keys = parseProjectKeys();
+          if (!keys.length) return showToast('请至少勾选一个 Jira 项目', 'error');
+        }
+        if (cardId === 'jiraPmB') {
+          for (const row of jiraPmForm.deadlineRows) {
+            if (
+              (row.projectKey || '').trim() &&
+              !(row.projectKey || '').match(/^[A-Z][A-Z0-9]*$/i)
+            ) {
+              return showToast(`项目代号「${row.projectKey}」格式不正确，请使用如 CT`, 'error');
+            }
           }
         }
         syncJsonFromPmForm();
+        const keys = parseProjectKeys();
         payload = {
           JIRA_PROJECTS: keys.join(', '),
           JIRA_DEADLINE_FIELD_BY_PROJECT: state.jira.JIRA_DEADLINE_FIELD_BY_PROJECT,
@@ -736,11 +887,12 @@ export function useAdminStore() {
             ? '✅ API 配置已保存'
             : cardId === 'jira'
               ? '✅ Jira 连接已保存'
-              : cardId === 'jiraPm'
-                ? '✅ 任务查询规则已保存'
+              : isJiraPmSection(cardId)
+                ? '✅ 该配置块已保存'
                 : '✅ 模块配置已保存至后端';
         showToast(saveMsg);
-        editLock[cardId] = false;
+        if (isJiraPmSection(cardId)) clearJiraPmEdit();
+        else editLock[cardId] = false;
         if (cardId === 'ai') await loadConfig({ aiApiOnly: true });
         else await loadConfig();
       } else {
@@ -856,6 +1008,8 @@ export function useAdminStore() {
             GDRIVE_PROXY_IP: data.GDRIVE_PROXY_IP || '',
             GDRIVE_PROXY_PORT: data.GDRIVE_PROXY_PORT || '',
           };
+          restoreConnectionOk();
+          restoreTestHints();
         }
       }
     } catch {
@@ -881,11 +1035,15 @@ export function useAdminStore() {
       }
       if (!silent) {
         aiConnectionOk.value = true;
+        persistConnectionOk();
         pulseStatus('ai');
         setActionHint(hintKey, `已加载 ${availableModels.value.length} 个模型`);
+      } else if (availableModels.value.length) {
+        inferConnectionOkFromConfig();
       }
     } catch (e) {
       aiConnectionOk.value = false;
+      persistConnectionOk();
       if (!silent) setActionHint(hintKey, e.message || '模型列表失败', true);
     } finally {
       fetchingModels.value = false;
@@ -898,11 +1056,13 @@ export function useAdminStore() {
     try {
       await fetchAiModels(true);
       aiConnectionOk.value = true;
+      persistConnectionOk();
       pulseStatus('ai');
       const n = availableModels.value.length;
       setActionHint('ai', n ? `API 可达 · 已加载 ${n} 个模型` : 'API 可达');
     } catch (e) {
       aiConnectionOk.value = false;
+      persistConnectionOk();
       setActionHint('ai', e.message || '测试失败', true);
     } finally {
       testing.ai = false;
@@ -926,11 +1086,13 @@ export function useAdminStore() {
       const data = await parseAdminJson(res);
       if (!data.success) throw new Error(data.error || '连接失败');
       jiraConnectionOk.value = true;
+      persistConnectionOk();
       pulseStatus('jira');
       setActionHint('jira', `Jira 已连通（${data.latency_ms || '?'}ms）`);
       await fetchJiraFieldOptions();
     } catch (e) {
       jiraConnectionOk.value = false;
+      persistConnectionOk();
       setActionHint('jira', e.message || '测试失败', true);
     } finally {
       testing.jira = false;
@@ -945,10 +1107,12 @@ export function useAdminStore() {
     try {
       await new Promise((r) => setTimeout(r, 1500));
       svnConnectionOk.value = true;
+      persistConnectionOk();
       pulseStatus('svn');
       setActionHint('svn', 'Checkout 校验通过');
     } catch {
       svnConnectionOk.value = false;
+      persistConnectionOk();
       setActionHint('svn', '校验失败', true);
     } finally {
       testing.svn = false;
@@ -973,6 +1137,7 @@ export function useAdminStore() {
       const data = await res.json();
       if (data.ok) {
         notionConnectionOk.value = true;
+        persistConnectionOk();
         pulseStatus('notion');
         setActionHint('notion', `联通成功，找到 ${data.databases} 个数据库`);
         notionDatabases.value = data.items || [];
@@ -1011,6 +1176,7 @@ export function useAdminStore() {
       const data = await res.json();
       if (data.ok) {
         gdriveConnectionOk.value = true;
+        persistConnectionOk();
         pulseStatus('gdrive');
         setActionHint('gdrive', '连通成功');
         gdriveFiles.value = data.items || [];
@@ -1063,16 +1229,52 @@ export function useAdminStore() {
     state.kb.GDRIVE_FOLDERS = currentFolders.join(',');
   };
 
-  const onMenuSelect = (menuId) => {
-    if (menuId === activeMenu.value) return;
-    if (hasUnsavedGlossaryDraft() && editLock.jiraPm) {
+  const saveJiraPmGlossary = async () => {
+    if (hasUnsavedGlossaryDraft()) {
       showToast('词典有未保存的编辑行，请先保存或取消', 'warning');
       return;
     }
-    activeMenu.value = menuId;
+    savingGlossaryAll.value = true;
+    try {
+      syncJsonFromPmForm();
+      const payload = { JIRA_FIELD_GLOSSARY: state.jira.JIRA_FIELD_GLOSSARY };
+      parseJsonField(payload, 'JIRA_FIELD_GLOSSARY', '字段含义词典');
+      const res = await fetch('/v1/admin/config', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${adminToken.value}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('保存失败');
+      showToast('✅ 字段含义词典已保存');
+      await loadConfig();
+    } catch (e) {
+      showToast(e.message || '词典保存失败', 'error');
+    } finally {
+      savingGlossaryAll.value = false;
+    }
   };
 
-  onMounted(loadConfig);
+  const onMenuSelect = (menuId) => {
+    if (menuId === activeMenu.value) return;
+    if (hasUnsavedGlossaryDraft()) {
+      showToast('词典有未保存的编辑行，请先保存或取消', 'warning');
+      return;
+    }
+    if (anyJiraPmEditing()) {
+      showToast('有未保存的 Jira 查询配置，请先保存或取消', 'warning');
+      return;
+    }
+    activeMenu.value = menuId;
+    persistActiveMenu();
+  };
+
+  onMounted(() => {
+    persistActiveMenu();
+    loadConfig();
+  });
 
   return {
     activeMenu,
@@ -1122,7 +1324,9 @@ export function useAdminStore() {
     jiraCanUseFields,
     jiraPatOnServer,
     jiraPatDisplayLabel,
-    jiraPmSummaryLines,
+    jiraPmSummaryMarkdown,
+    JIRA_PM_SECTIONS,
+    anyJiraPmEditing,
     glossaryTableRows,
     extraPersonFieldOptions,
     jiraProjectOptions,
@@ -1140,7 +1344,9 @@ export function useAdminStore() {
     removeGlossaryRow,
     onGlossaryFieldPick,
     saveGlossaryRow,
+    saveJiraPmGlossary,
     savingGlossaryIdx,
+    savingGlossaryAll,
     startEditGlossaryRow,
     cancelEditGlossaryRow,
     addAliasTag,
