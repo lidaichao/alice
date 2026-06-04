@@ -8,7 +8,7 @@
         <span>{{ title }}</span>
         <slot name="status" />
       </div>
-      <div class="config-card__actions">
+      <div class="config-card__actions card-actions">
         <slot name="actions" />
       </div>
     </div>

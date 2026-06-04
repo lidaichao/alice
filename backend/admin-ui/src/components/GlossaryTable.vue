@@ -1,14 +1,16 @@
 <template>
   <div>
-    <div class="section-toolbar">
+    <div v-if="s.editLock.jiraPm" class="section-toolbar">
       <el-button type="primary" size="small" :disabled="!s.editLock.jiraPm" @click="addRow">
         添加含义说明
       </el-button>
-      <el-button size="small" :disabled="!s.jiraCanUseFields" :loading="s.jiraFieldsLoading" @click="s.fetchJiraFieldOptions">
-        刷新字段列表
-      </el-button>
+      <div class="test-action-group">
+        <el-button size="small" :disabled="!s.jiraCanUseFields" :loading="s.jiraFieldsLoading" @click="s.fetchJiraFieldOptions">
+          刷新字段列表
+        </el-button>
+        <TestActionHint action-key="jiraFields" />
+      </div>
       <el-input
-        v-if="s.editLock.jiraPm"
         v-model="s.jiraFieldFilter"
         size="small"
         placeholder="筛选字段名称"
@@ -25,68 +27,98 @@
       :expand-row-keys="expandedKeys"
       @expand-change="onExpandChange"
     >
-      <el-table-column v-if="s.editLock.jiraPm" type="expand">
+      <el-table-column type="expand">
         <template #default="{ row }">
-          <div v-if="row._gidx >= 0" class="expand-form">
-            <el-form label-position="top">
-              <el-form-item label="Jira 字段" required>
-                <el-select
-                  v-model="s.jiraPmForm.glossaryRows[row._gidx].fieldName"
-                  filterable
-                  allow-create
-                  default-first-option
-                  placeholder="选择或输入字段名"
-                  style="width: 100%"
-                  @change="s.onGlossaryFieldPick(s.jiraPmForm.glossaryRows[row._gidx])"
-                >
-                  <el-option
-                    v-for="f in s.filteredJiraFieldOptions"
-                    :key="f.id"
-                    :label="f.name"
-                    :value="f.name"
-                  />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="Alice 应如何理解这个字段">
-                <el-input
-                  v-model="s.jiraPmForm.glossaryRows[row._gidx].meaning"
-                  type="textarea"
-                  :rows="3"
-                  placeholder="例如：策划排期的业务完成日"
-                />
-              </el-form-item>
-              <el-form-item label="口语别名（回车添加）">
-                <div class="alias-wrap">
-                  <el-tag
-                    v-for="(a, i) in s.jiraPmForm.glossaryRows[row._gidx].aliases"
-                    :key="i"
-                    closable
-                    size="small"
-                    @close="s.removeAliasTag(s.jiraPmForm.glossaryRows[row._gidx], i)"
-                  >
-                    {{ a }}
-                  </el-tag>
-                  <el-input
-                    v-model="s.jiraPmForm.glossaryRows[row._gidx].aliasDraft"
-                    size="small"
-                    class="alias-input"
-                    placeholder="输入后回车"
-                    @keyup.enter="s.commitAliasDraft(s.jiraPmForm.glossaryRows[row._gidx])"
-                  />
-                </div>
-              </el-form-item>
-              <div class="expand-actions">
-                <el-button size="small" @click="cancelRow(row._gidx)">取消</el-button>
-                <el-button
-                  type="primary"
-                  size="small"
-                  :loading="s.savingGlossaryIdx === row._gidx"
-                  @click="saveRow(row._gidx)"
-                >
-                  保存本条
-                </el-button>
+          <div v-if="row._gidx >= 0" class="expand-panel">
+            <template v-if="isRowEditing(row)">
+              <div class="expand-form">
+                <el-form label-position="top">
+                  <el-form-item label="Jira 字段" required>
+                    <el-select
+                      v-model="s.jiraPmForm.glossaryRows[row._gidx].fieldName"
+                      filterable
+                      allow-create
+                      default-first-option
+                      placeholder="选择或输入字段名"
+                      style="width: 100%"
+                      @change="s.onGlossaryFieldPick(s.jiraPmForm.glossaryRows[row._gidx])"
+                    >
+                      <el-option
+                        v-for="f in s.filteredJiraFieldOptions"
+                        :key="f.id"
+                        :label="f.name"
+                        :value="f.name"
+                      />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item label="Alice 应如何理解这个字段">
+                    <el-input
+                      v-model="s.jiraPmForm.glossaryRows[row._gidx].meaning"
+                      type="textarea"
+                      :rows="3"
+                      placeholder="例如：策划排期的业务完成日"
+                    />
+                  </el-form-item>
+                  <el-form-item label="口语别名（回车添加）">
+                    <div class="alias-wrap">
+                      <el-tag
+                        v-for="(a, i) in s.jiraPmForm.glossaryRows[row._gidx].aliases"
+                        :key="i"
+                        closable
+                        size="small"
+                        @close="s.removeAliasTag(s.jiraPmForm.glossaryRows[row._gidx], i)"
+                      >
+                        {{ a }}
+                      </el-tag>
+                      <el-input
+                        v-model="s.jiraPmForm.glossaryRows[row._gidx].aliasDraft"
+                        size="small"
+                        class="alias-input"
+                        placeholder="输入后回车"
+                        @keyup.enter="s.commitAliasDraft(s.jiraPmForm.glossaryRows[row._gidx])"
+                      />
+                    </div>
+                  </el-form-item>
+                  <div class="expand-actions">
+                    <el-button size="small" @click="cancelRow(row._gidx)">取消</el-button>
+                    <el-button
+                      type="primary"
+                      size="small"
+                      :loading="s.savingGlossaryIdx === row._gidx"
+                      @click="saveRow(row._gidx)"
+                    >
+                      保存本条
+                    </el-button>
+                  </div>
+                </el-form>
               </div>
-            </el-form>
+            </template>
+            <template v-else>
+              <div class="expand-view">
+                <div class="expand-view__block">
+                  <div class="expand-view__label">Jira 字段</div>
+                  <div class="expand-view__text">{{ row.fieldName || '—' }}</div>
+                </div>
+                <div class="expand-view__block">
+                  <div class="expand-view__label">Alice 应如何理解这个字段</div>
+                  <div class="expand-view__text expand-view__text--multiline">{{ row.meaning || '—' }}</div>
+                </div>
+                <div class="expand-view__block">
+                  <div class="expand-view__label">口语别名</div>
+                  <div class="expand-view__aliases">
+                    <el-tag
+                      v-for="(a, i) in s.normalizeAliasTags(row.aliases)"
+                      :key="i"
+                      size="small"
+                      class="alias-tag"
+                    >
+                      {{ a }}
+                    </el-tag>
+                    <span v-if="!s.normalizeAliasTags(row.aliases).length" class="text-muted">—</span>
+                  </div>
+                </div>
+              </div>
+            </template>
           </div>
         </template>
       </el-table-column>
@@ -128,6 +160,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { useAdminInject } from '../composables/useAdminInject.js';
+import TestActionHint from './TestActionHint.vue';
 
 const s = useAdminInject();
 const expandedKeys = ref([]);
@@ -141,6 +174,11 @@ const displayRows = computed(() =>
     }))
     .filter((r) => (r.fieldName || '').trim() || r.editing)
 );
+
+function isRowEditing(row) {
+  const live = s.jiraPmForm.glossaryRows[row._gidx];
+  return Boolean(live?.editing);
+}
 
 function editRow(gidx) {
   s.startEditGlossaryRow(gidx);
@@ -160,21 +198,28 @@ function addRow() {
 
 async function saveRow(gidx) {
   await s.saveGlossaryRow(gidx);
-  expandedKeys.value = expandedKeys.value.filter((k) => k !== `gl-${gidx}-new` && !k.startsWith(`gl-${gidx}-`));
   const row = s.jiraPmForm.glossaryRows[gidx];
-  if (row?.fieldName) {
-    expandedKeys.value = expandedKeys.value.filter((k) => k !== `gl-${gidx}-${row.fieldId || row.fieldName}`);
-  }
+  const key = row?.fieldName ? `gl-${gidx}-${row.fieldId || row.fieldName}` : `gl-${gidx}-new`;
+  expandedKeys.value = expandedKeys.value.filter((k) => k !== key && !k.startsWith(`gl-${gidx}-`));
 }
 
 function cancelRow(gidx) {
   s.cancelEditGlossaryRow(gidx);
-  expandedKeys.value = [];
+  expandedKeys.value = expandedKeys.value.filter((k) => !k.startsWith(`gl-${gidx}-`));
 }
 
-function onExpandChange(row, expanded) {
-  if (!expanded && row._gidx >= 0 && s.jiraPmForm.glossaryRows[row._gidx]?.editing) {
-    s.cancelEditGlossaryRow(row._gidx);
+function onExpandChange(row, expandedRows) {
+  const key = row.rowKey;
+  const isExpanded = expandedRows.some((r) => r.rowKey === key);
+  if (isExpanded) {
+    if (!expandedKeys.value.includes(key)) {
+      expandedKeys.value = [...expandedKeys.value, key];
+    }
+  } else {
+    expandedKeys.value = expandedKeys.value.filter((k) => k !== key);
+    if (row._gidx >= 0 && isRowEditing(row)) {
+      s.cancelEditGlossaryRow(row._gidx);
+    }
   }
 }
 </script>
@@ -187,9 +232,41 @@ function onExpandChange(row, expanded) {
   flex-wrap: wrap;
   align-items: center;
 }
+.expand-panel {
+  padding: 4px 8px 8px;
+}
+.expand-view {
+  padding: 12px 16px;
+  background: var(--admin-bg-readonly);
+  border-radius: var(--admin-radius-control);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.expand-view__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--admin-text-secondary);
+  margin-bottom: 6px;
+}
+.expand-view__text {
+  font-size: 14px;
+  color: #0f172a;
+  line-height: 1.6;
+}
+.expand-view__text--multiline {
+  white-space: pre-wrap;
+}
+.expand-view__aliases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
 .expand-form {
   padding: 12px 16px 8px;
-  background: var(--admin-bg-readonly);
+  background: #fff;
+  border: 1px solid var(--admin-border);
   border-radius: var(--admin-radius-control);
 }
 .expand-actions {

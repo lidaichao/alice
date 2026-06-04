@@ -109,6 +109,31 @@
   background: var(--admin-bg-readonly) !important;
 }
 
+.card-actions .card-btn {
+  border-radius: 10px;
+  padding: 10px 20px;
+  min-height: 40px;
+  font-size: 14px;
+}
+
+.card-actions .card-btn.el-button--primary {
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.28);
+}
+
+.card-actions-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+
+.test-action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .section-title {
   margin: 16px 0 8px;
   font-size: 14px;

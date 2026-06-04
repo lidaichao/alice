@@ -82,11 +82,22 @@ export function useAdminStore() {
   });
   const testResult = reactive({
     ai: { show: false, msg: '', isError: false },
+    aiModels: { show: false, msg: '', isError: false },
     jira: { show: false, msg: '', isError: false },
+    jiraFields: { show: false, msg: '', isError: false },
+    jiraProjects: { show: false, msg: '', isError: false },
     svn: { show: false, msg: '', isError: false },
     notion: { show: false, msg: '', isError: false },
     gdrive: { show: false, msg: '', isError: false },
   });
+
+  const setActionHint = (key, msg, isError = false) => {
+    const slot = testResult[key];
+    if (!slot) return;
+    slot.msg = String(msg || '').replace(/^✅\s*|^❌\s*/, '');
+    slot.isError = isError;
+    slot.show = true;
+  };
 
   const notionDatabases = ref([]);
   const gdriveFiles = ref([]);
@@ -538,9 +549,9 @@ export function useAdminStore() {
   };
 
   const fetchJiraProjects = async () => {
-    if (!state.jira.JIRA_BASE_URL) return showToast('请先填写 Jira 地址', 'error');
+    if (!state.jira.JIRA_BASE_URL) return setActionHint('jiraProjects', '请先填写 Jira 地址', true);
     if (isMaskedPat(state.jira.JIRA_PAT) && !jiraPatOnServer.value) {
-      return showToast('请先填写 PAT，或保存后再加载', 'error');
+      return setActionHint('jiraProjects', '请先填写 PAT，或保存后再加载', true);
     }
     jiraProjectsLoading.value = true;
     try {
@@ -552,18 +563,18 @@ export function useAdminStore() {
       jiraPmForm.selectedProjectKeys = jiraPmForm.selectedProjectKeys.filter((k) =>
         known.has(k)
       );
-      showToast(`已加载 ${jiraProjectOptions.value.length} 个项目，请勾选`);
+      setActionHint('jiraProjects', `已加载 ${jiraProjectOptions.value.length} 个项目，请勾选`);
     } catch (e) {
-      showToast(e.message || '项目列表加载失败', 'error');
+      setActionHint('jiraProjects', e.message || '项目列表加载失败', true);
     } finally {
       jiraProjectsLoading.value = false;
     }
   };
 
   const fetchJiraFieldOptions = async () => {
-    if (!state.jira.JIRA_BASE_URL) return showToast('请先填写 Jira 地址', 'error');
+    if (!state.jira.JIRA_BASE_URL) return setActionHint('jiraFields', '请先填写 Jira 地址', true);
     if (isMaskedPat(state.jira.JIRA_PAT) && !jiraPatOnServer.value) {
-      return showToast('请先填写 PAT，或保存后再测试', 'error');
+      return setActionHint('jiraFields', '请先填写 PAT，或保存后再测试', true);
     }
     jiraFieldsLoading.value = true;
     try {
@@ -571,9 +582,9 @@ export function useAdminStore() {
       const data = await parseAdminJson(res);
       if (!res.ok || !data.success) throw new Error(data.error || '加载失败');
       jiraFieldOptions.value = data.fields || [];
-      showToast(`已加载 ${jiraFieldOptions.value.length} 个 Jira 字段`);
+      setActionHint('jiraFields', `已加载 ${jiraFieldOptions.value.length} 个 Jira 字段`);
     } catch (e) {
-      showToast(e.message || '字段列表加载失败', 'error');
+      setActionHint('jiraFields', e.message || '字段列表加载失败', true);
     } finally {
       jiraFieldsLoading.value = false;
     }
@@ -759,11 +770,11 @@ export function useAdminStore() {
       if (!res.ok) throw new Error('模型保存失败');
       if (seq !== modelSaveSeq) return;
       lastSavedModel.value = model;
-      showToast(`已切换默认模型：${model}`);
+      setActionHint('aiModels', `已切换默认模型：${model}`);
     } catch (e) {
       if (seq === modelSaveSeq) {
         state.ai.DEEPSEEK_MODEL = prev;
-        showToast(e.message || '模型保存失败', 'error');
+        setActionHint('aiModels', e.message || '模型保存失败', true);
       }
     } finally {
       if (seq === modelSaveSeq) savingModel.value = false;
@@ -854,18 +865,7 @@ export function useAdminStore() {
     }
   };
 
-  const showTooltip = (type, msg, isError = false) => {
-    testResult[type].msg = msg;
-    testResult[type].isError = isError;
-    testResult[type].show = true;
-    setTimeout(() => {
-      testResult[type].show = false;
-    }, 3000);
-    if (isError) ElMessage.error(msg);
-    else ElMessage.success(msg);
-  };
-
-  const fetchAiModels = async (silent = false) => {
+  const fetchAiModels = async (silent = false, hintKey = 'aiModels') => {
     fetchingModels.value = true;
     try {
       const res = await fetch('/v1/admin/models', {
@@ -882,11 +882,11 @@ export function useAdminStore() {
       if (!silent) {
         aiConnectionOk.value = true;
         pulseStatus('ai');
-        showTooltip('ai', `✅ 已加载 ${availableModels.value.length} 个模型`);
+        setActionHint(hintKey, `已加载 ${availableModels.value.length} 个模型`);
       }
     } catch (e) {
       aiConnectionOk.value = false;
-      if (!silent) showTooltip('ai', '❌ ' + (e.message || '模型列表失败'), true);
+      if (!silent) setActionHint(hintKey, e.message || '模型列表失败', true);
     } finally {
       fetchingModels.value = false;
     }
@@ -894,27 +894,25 @@ export function useAdminStore() {
 
   const testAiSystem = async () => {
     testing.ai = true;
+    setActionHint('ai', '测试中…');
     try {
-      await fetchAiModels();
+      await fetchAiModels(true);
       aiConnectionOk.value = true;
       pulseStatus('ai');
-      showTooltip('ai', '✅ 模型 API 可达');
-    } catch {
+      const n = availableModels.value.length;
+      setActionHint('ai', n ? `API 可达 · 已加载 ${n} 个模型` : 'API 可达');
+    } catch (e) {
       aiConnectionOk.value = false;
-      showTooltip('ai', '❌ 测试失败', true);
+      setActionHint('ai', e.message || '测试失败', true);
     } finally {
       testing.ai = false;
     }
   };
 
   const testJiraSystem = async () => {
-    if (!state.jira.JIRA_BASE_URL) return showTooltip('jira', '请先填写 Jira 地址', true);
+    if (!state.jira.JIRA_BASE_URL) return setActionHint('jira', '请先填写 Jira 地址', true);
     if (isMaskedPat(state.jira.JIRA_PAT) && !jiraPatOnServer.value) {
-      return showTooltip(
-        'jira',
-        '请先填写 PAT 并保存，或在编辑时粘贴 PAT 后测试',
-        true
-      );
+      return setActionHint('jira', '请先填写 PAT 并保存，或在编辑时粘贴 PAT 后测试', true);
     }
     testing.jira = true;
     jiraConnectionOk.value = false;
@@ -929,11 +927,11 @@ export function useAdminStore() {
       if (!data.success) throw new Error(data.error || '连接失败');
       jiraConnectionOk.value = true;
       pulseStatus('jira');
-      showTooltip('jira', `✅ Jira 已连通（${data.latency_ms || '?'}ms）`);
+      setActionHint('jira', `Jira 已连通（${data.latency_ms || '?'}ms）`);
       await fetchJiraFieldOptions();
     } catch (e) {
       jiraConnectionOk.value = false;
-      showTooltip('jira', '❌ ' + (e.message || '测试失败'), true);
+      setActionHint('jira', e.message || '测试失败', true);
     } finally {
       testing.jira = false;
     }
@@ -941,24 +939,24 @@ export function useAdminStore() {
 
   const testSvnSystem = async () => {
     if (!state.svn.SVN_URL || !state.svn.SVN_USERNAME || !state.svn.SVN_PASSWORD) {
-      return showTooltip('svn', '请先填写完整', true);
+      return setActionHint('svn', '请先填写完整', true);
     }
     testing.svn = true;
     try {
       await new Promise((r) => setTimeout(r, 1500));
       svnConnectionOk.value = true;
       pulseStatus('svn');
-      showTooltip('svn', '✅ Checkout 校验通过');
+      setActionHint('svn', 'Checkout 校验通过');
     } catch {
       svnConnectionOk.value = false;
-      showTooltip('svn', '❌ 校验失败', true);
+      setActionHint('svn', '校验失败', true);
     } finally {
       testing.svn = false;
     }
   };
 
   const testNotionSystem = async () => {
-    if (!state.kb.NOTION_KEY) return showTooltip('notion', '缺少 Notion Token', true);
+    if (!state.kb.NOTION_KEY) return setActionHint('notion', '缺少 Notion Token', true);
     testing.notion = true;
     try {
       const res = await fetch('/v1/admin/test/notion-db', {
@@ -976,24 +974,24 @@ export function useAdminStore() {
       if (data.ok) {
         notionConnectionOk.value = true;
         pulseStatus('notion');
-        showTooltip('notion', `✅ 联通成功，找到 ${data.databases} 个数据库`);
+        setActionHint('notion', `联通成功，找到 ${data.databases} 个数据库`);
         notionDatabases.value = data.items || [];
       } else throw new Error(data.error);
     } catch (e) {
-      showTooltip('notion', `❌ ${e.message}`, true);
+      setActionHint('notion', e.message || '测试失败', true);
     } finally {
       testing.notion = false;
     }
   };
 
   const testGDriveSystem = async () => {
-    if (!state.kb.GDRIVE_KEY) return showTooltip('gdrive', '缺少 GDrive Key', true);
+    if (!state.kb.GDRIVE_KEY) return setActionHint('gdrive', '缺少 GDrive Key', true);
     const folders = state.kb.GDRIVE_FOLDERS
       ? state.kb.GDRIVE_FOLDERS.split(',').filter(Boolean)
       : [];
     const firstFolderId = folders.length > 0 ? folders[0] : '';
     if (!firstFolderId) {
-      return showTooltip('gdrive', '请先在下方输入框回车录入至少一个文件夹链接', true);
+      return setActionHint('gdrive', '请先在下方输入框回车录入至少一个文件夹链接', true);
     }
     testing.gdrive = true;
     try {
@@ -1014,11 +1012,11 @@ export function useAdminStore() {
       if (data.ok) {
         gdriveConnectionOk.value = true;
         pulseStatus('gdrive');
-        showTooltip('gdrive', '✅ 连通成功');
+        setActionHint('gdrive', '连通成功');
         gdriveFiles.value = data.items || [];
       } else throw new Error(data.error);
     } catch (e) {
-      showTooltip('gdrive', `❌ ${e.message}`, true);
+      setActionHint('gdrive', e.message || '测试失败', true);
     } finally {
       testing.gdrive = false;
     }
@@ -1088,6 +1086,7 @@ export function useAdminStore() {
     saveEdit,
     testing,
     testResult,
+    setActionHint,
     testAiSystem,
     testJiraSystem,
     testSvnSystem,

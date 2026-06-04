@@ -19,18 +19,22 @@
     <ConfigCard title="Alice-Jira 查询配置" :editing="s.editLock.jiraPm">
       <template #icon><el-icon><Search /></el-icon></template>
       <template #actions>
-        <el-button
-          v-if="s.editLock.jiraPm"
-          size="small"
-          :loading="s.jiraFieldsLoading"
-          :disabled="!s.jiraCanUseFields"
-          @click="s.fetchJiraFieldOptions"
-        >
-          刷新 Jira 字段列表
-        </el-button>
-        <el-button v-if="!s.editLock.jiraPm" size="small" type="primary" plain @click="s.startEdit('jiraPm')">
-          编辑配置
-        </el-button>
+        <div class="card-actions-inner">
+          <div v-if="s.editLock.jiraPm" class="test-action-group">
+            <el-button
+              size="small"
+              :loading="s.jiraFieldsLoading"
+              :disabled="!s.jiraCanUseFields"
+              @click="s.fetchJiraFieldOptions"
+            >
+              刷新 Jira 字段列表
+            </el-button>
+            <TestActionHint action-key="jiraFields" />
+          </div>
+          <el-button v-if="!s.editLock.jiraPm" class="card-btn" type="primary" @click="s.startEdit('jiraPm')">
+            编辑配置
+          </el-button>
+        </div>
       </template>
 
       <template v-if="!s.editLock.jiraPm">
@@ -73,9 +77,12 @@
         <p class="section-hint">勾选后自动同步到下方截止时间配置。</p>
         <div class="section-toolbar">
           <el-input v-model="s.jiraProjectFilter" placeholder="筛选项目" size="small" style="width: 200px" clearable />
-          <el-button size="small" :loading="s.jiraProjectsLoading" :disabled="!s.jiraCanUseFields" @click="s.fetchJiraProjects">
-            从 Jira 加载项目列表
-          </el-button>
+          <div class="test-action-group">
+            <el-button size="small" :loading="s.jiraProjectsLoading" :disabled="!s.jiraCanUseFields" @click="s.fetchJiraProjects">
+              从 Jira 加载项目列表
+            </el-button>
+            <TestActionHint action-key="jiraProjects" />
+          </div>
         </div>
         <div v-if="s.jiraPmForm.selectedProjectKeys.length" class="selected-tags mb-2">
           <span class="text-muted">已选：</span>
@@ -176,6 +183,7 @@ import { Search } from '@element-plus/icons-vue';
 import { useAdminInject } from '../composables/useAdminInject.js';
 import ConfigCard from '../components/ConfigCard.vue';
 import GlossaryTable from '../components/GlossaryTable.vue';
+import TestActionHint from '../components/TestActionHint.vue';
 
 const s = useAdminInject();
 const advancedOpen = ref([]);
