@@ -1,0 +1,50 @@
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.page-fade-enter-active,
+.page-fade-leave-active {
+  transition:
+    opacity var(--duration-normal) var(--ease-standard),
+    transform var(--duration-normal) var(--ease-standard);
+}
+
+.page-fade-enter-from,
+.page-fade-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.footer-slide-enter-active,
+.footer-slide-leave-active {
+  transition:
+    opacity var(--duration-normal) var(--ease-standard),
+    transform var(--duration-normal) var(--ease-standard);
+}
+
+.footer-slide-enter-from,
+.footer-slide-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+@keyframes status-pulse-once {
+  0% {
+    box-shadow: 0 0 0 0 rgb(22 163 74 / 45%);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgb(22 163 74 / 0%);
+  }
+  100% {
+    box-shadow: none;
+  }
+}
+
+.status-pill__dot.is-pulse {
+  animation: status-pulse-once 0.9s ease-out 1;
+}

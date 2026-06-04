@@ -107,6 +107,29 @@ export function useAdminStore() {
   const jiraFieldsLoading = ref(false);
   const jiraConnectionOk = ref(false);
   const jiraPatOnServer = ref(false);
+  const aiConnectionOk = ref(false);
+  const notionConnectionOk = ref(false);
+  const gdriveConnectionOk = ref(false);
+  const svnConnectionOk = ref(false);
+  const statusPulse = reactive({
+    ai: false,
+    jira: false,
+    notion: false,
+    gdrive: false,
+    svn: false,
+  });
+
+  const pulseStatus = (key) => {
+    statusPulse[key] = true;
+    setTimeout(() => {
+      statusPulse[key] = false;
+    }, 1000);
+  };
+
+  const connectionLabel = (ok, extra = '') => {
+    if (ok) return extra ? `已连通 · ${extra}` : '已连通';
+    return '未测试';
+  };
   const jiraCanUseFields = computed(() => {
     const url = (state.jira.JIRA_BASE_URL || '').trim();
     return !!url && (jiraConnectionOk.value || jiraPatOnServer.value);
@@ -856,8 +879,13 @@ export function useAdminStore() {
         state.ai.DEEPSEEK_MODEL = savedFromServer;
         lastSavedModel.value = savedFromServer;
       }
-      if (!silent) showTooltip('ai', `✅ 已加载 ${availableModels.value.length} 个模型`);
+      if (!silent) {
+        aiConnectionOk.value = true;
+        pulseStatus('ai');
+        showTooltip('ai', `✅ 已加载 ${availableModels.value.length} 个模型`);
+      }
     } catch (e) {
+      aiConnectionOk.value = false;
       if (!silent) showTooltip('ai', '❌ ' + (e.message || '模型列表失败'), true);
     } finally {
       fetchingModels.value = false;
@@ -868,8 +896,11 @@ export function useAdminStore() {
     testing.ai = true;
     try {
       await fetchAiModels();
+      aiConnectionOk.value = true;
+      pulseStatus('ai');
       showTooltip('ai', '✅ 模型 API 可达');
     } catch {
+      aiConnectionOk.value = false;
       showTooltip('ai', '❌ 测试失败', true);
     } finally {
       testing.ai = false;
@@ -897,9 +928,11 @@ export function useAdminStore() {
       const data = await parseAdminJson(res);
       if (!data.success) throw new Error(data.error || '连接失败');
       jiraConnectionOk.value = true;
+      pulseStatus('jira');
       showTooltip('jira', `✅ Jira 已连通（${data.latency_ms || '?'}ms）`);
       await fetchJiraFieldOptions();
     } catch (e) {
+      jiraConnectionOk.value = false;
       showTooltip('jira', '❌ ' + (e.message || '测试失败'), true);
     } finally {
       testing.jira = false;
@@ -913,8 +946,11 @@ export function useAdminStore() {
     testing.svn = true;
     try {
       await new Promise((r) => setTimeout(r, 1500));
+      svnConnectionOk.value = true;
+      pulseStatus('svn');
       showTooltip('svn', '✅ Checkout 校验通过');
     } catch {
+      svnConnectionOk.value = false;
       showTooltip('svn', '❌ 校验失败', true);
     } finally {
       testing.svn = false;
@@ -938,6 +974,8 @@ export function useAdminStore() {
       });
       const data = await res.json();
       if (data.ok) {
+        notionConnectionOk.value = true;
+        pulseStatus('notion');
         showTooltip('notion', `✅ 联通成功，找到 ${data.databases} 个数据库`);
         notionDatabases.value = data.items || [];
       } else throw new Error(data.error);
@@ -974,6 +1012,8 @@ export function useAdminStore() {
       });
       const data = await res.json();
       if (data.ok) {
+        gdriveConnectionOk.value = true;
+        pulseStatus('gdrive');
         showTooltip('gdrive', '✅ 连通成功');
         gdriveFiles.value = data.items || [];
       } else throw new Error(data.error);
@@ -1074,6 +1114,12 @@ export function useAdminStore() {
     filteredJiraFieldOptions,
     jiraFieldsLoading,
     jiraConnectionOk,
+    aiConnectionOk,
+    notionConnectionOk,
+    gdriveConnectionOk,
+    svnConnectionOk,
+    statusPulse,
+    connectionLabel,
     jiraCanUseFields,
     jiraPatOnServer,
     jiraPatDisplayLabel,
