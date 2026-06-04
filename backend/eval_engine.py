@@ -1,8 +1,8 @@
 """
 Agent 评估引擎 — Benchmark + Dataset + Eval
-类似 LobeHub 的 agentEval 系统：运行测试用例，自动评分，产出报告
+类似 LobeHub 的 agentEval 系统：运行测试用例，LLM-as-a-Judge 评分，产出报告
 """
-import os, re, json, time, yaml, logging, requests, sys
+import os, json, time, yaml, logging, requests, sys
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +18,9 @@ try:
     _HAS_SSE_LIB = True
 except ImportError:
     _HAS_SSE_LIB = False
+
+from eval_llm_judge import judge_eval_case
+
 
 class EvalEngine:
     def __init__(self, base_url="http://127.0.0.1:9099"):
@@ -68,13 +71,14 @@ class EvalEngine:
             "rubric": rubric,
             "results": results,
             "timestamp": time.time(),
+            "judge_mode": "llm",
         }
         
         self.results_store[run_id] = report
         return report
     
     def _evaluate_case(self, tc, rubric, user_config):
-        """评估单个测试用例"""
+        """评估单个测试用例 — LLM-as-a-Judge（插件约束仍为结构化 oracle）"""
         question = tc.get("input", "")
         expected = tc.get("expected_keywords", [])
         min_score = tc.get("min_score", 50)
@@ -108,6 +112,7 @@ class EvalEngine:
                         "error": stream["error"],
                         "latency_ms": latency,
                         "category": category,
+                        "judge_reason": stream["error"],
                     }
             else:
                 r = requests.post(f"{self.base_url}/v1/chat/completions", json={
@@ -132,8 +137,16 @@ class EvalEngine:
                         break
                 latency = round((time.time() - start) * 1000)
         except Exception as e:
-            return {"id": tc.get("id"), "passed": False, "score": 0, "answer": "",
-                    "error": str(e), "latency_ms": 0, "category": category}
+            return {
+                "id": tc.get("id"),
+                "passed": False,
+                "score": 0,
+                "answer": "",
+                "error": str(e),
+                "latency_ms": 0,
+                "category": category,
+                "judge_reason": str(e),
+            }
 
         plugin_ok = True
         plugin_note = ""
@@ -147,10 +160,14 @@ class EvalEngine:
                 plugin_ok = False
                 plugin_note = f"expected one of {expected_plugins}, got {plugins_seen}"
 
-        match_count = sum(1 for kw in expected if kw and kw.lower() in answer.lower())
-        keyword_score = int(match_count / max(len(expected), 1) * 100) if expected else 70
-        length_bonus = min(len(answer.split()) / 20 * 10, 10) if len(answer) > 10 else 0
-        score = min(int(keyword_score + length_bonus), 100)
+        verdict = judge_eval_case(
+            question,
+            expected if isinstance(expected, list) else [expected],
+            answer,
+            user_config=user_config,
+            category=category,
+        )
+        score = int(verdict.get("score", 0))
         if not plugin_ok:
             score = min(score, 40)
         passed = score >= min_score and plugin_ok
@@ -162,12 +179,14 @@ class EvalEngine:
             "min_score": min_score,
             "answer": answer[:500],
             "answer_length": len(answer),
-            "matched_keywords": [kw for kw in expected if kw and kw.lower() in answer.lower()],
+            "judge_reason": verdict.get("reason", ""),
+            "expected_keywords": expected,
             "plugins_seen": plugins_seen,
             "plugin_ok": plugin_ok,
             "plugin_note": plugin_note,
             "latency_ms": latency,
             "category": category,
+            "judge_mode": "llm",
         }
 
 _engine = EvalEngine()

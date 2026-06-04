@@ -42,6 +42,7 @@ backend/rabbit_test.py
 backend/rabbit_test2.py
 backend/test_simple.py
 backend/logs/
+backend/data/operations.json
 
 # Frontend specific
 frontend/node_modules/

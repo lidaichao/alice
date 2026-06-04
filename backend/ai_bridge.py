@@ -41,6 +41,12 @@ from jira_field_glossary import (
     resolve_glossary_entry_by_text,
     glossary_suggests_deadline,
 )
+from chat_pipeline.dsml_cleaner import (
+    clean_dsml_leak,
+    filter_content_lines,
+    sse_line_has_dsml_leak,
+)
+from chat_pipeline.vip_fastpath import VipFastpathContext, iter_vip_fastpath
 from knowledge_retriever import (
     BoundedCache, _CONTEXT_CACHE, _SEMANTIC_CACHE, _SVN_COMMIT_CACHE,
     CACHE_TTL, make_source_summary, classify_file_changes,
@@ -1868,7 +1874,7 @@ def chat_completions():
                 for raw_line in vip_resp.iter_lines():
                     if raw_line:
                         decoded = raw_line.decode('utf-8', errors='replace')
-                        if any(tag in decoded for tag in ('<|tool_calls|>', '<|DSML|>', '<|invoke|>', '<|parameter|>')):
+                        if sse_line_has_dsml_leak(decoded):
                             continue
                         _yielded = True
                         yield raw_line + b"\n"
@@ -1879,335 +1885,36 @@ def chat_completions():
                 yield f"data: {json.dumps({'choices':[{'delta':{'content':'⚠️ 系统底层数据服务暂不可用（SVN或知识库异常），请联系管理员或稍后重试。'}}]})}\n\n".encode('utf-8')
 
         # ══════════════════════════════════════════════════════════
-        #  VIP 知识库 / 文档 — catalog → read → 总结（须在 ReAct 之前）
+        #  VIP 快车道 Pipeline（知识库 / Diff RAG / 周报 / Issue / Jira 结构化）
         # ══════════════════════════════════════════════════════════
         try:
-            from knowledge_express_lane import (
-                should_use_knowledge_express_lane,
-                extract_catalog_query,
+            _vip_ctx = VipFastpathContext(
+                user_text=user_text or "",
+                issue_keys_found=issue_keys_found,
+                intent_label=intent_label,
+                intent_route=intent_info.get("route", ""),
+                user_cfg=user_cfg,
+                frontend_cfg=frontend_cfg,
+                vip_stream=_vip_stream,
+                exec_search_docs_catalog=_exec_search_docs_catalog,
+                exec_read_specific_doc=_exec_read_specific_doc,
+                build_weekly_jira_snapshot=_build_weekly_jira_snapshot,
+                iter_jira_structured_read_lane=_iter_jira_structured_read_lane,
+                jira_http=jira,
             )
-            _early_commit_signal = bool(issue_keys_found) and bool(
-                re.search(
-                    r"提交|commit|diff|代码变更|改了什么代码|变更了哪些|改了哪些文件|提交记录|提交内容|改了.*什么",
-                    user_text or "",
-                    re.I,
-                )
-            )
-            if should_use_knowledge_express_lane(
-                user_text or "", intent_label, has_commit_intent=_early_commit_signal,
-            ):
-                _kq = extract_catalog_query(user_text or "")
-                logger.info(f"[VIP] Knowledge express lane (early): '{_kq[:80]}'")
-                yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'search_docs_catalog', 'status': 'running'}}, ensure_ascii=False)}\n\n".encode("utf-8")
-                _catalog_raw = _exec_search_docs_catalog({"query": _kq, "source": "all"})
-                yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'search_docs_catalog', 'status': 'done'}}, ensure_ascii=False)}\n\n".encode("utf-8")
-                _catalog_items = []
+            _vip_gen = iter_vip_fastpath(_vip_ctx)
+            _vip_handled = False
+            while True:
                 try:
-                    _cat_j = json.loads(_catalog_raw)
-                    _catalog_items = _cat_j.get("result") or []
-                except Exception:
-                    pass
-                _doc_block = ""
-                if _catalog_items:
-                    _pick = _catalog_items[0]
-                    _doc_id = _pick.get("doc_id", "")
-                    _doc_src = _pick.get("source", "notion")
-                    _doc_title = _pick.get("title", "")
-                    yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'read_specific_doc', 'status': 'running'}}, ensure_ascii=False)}\n\n".encode("utf-8")
-                    _read_raw = _exec_read_specific_doc({"doc_id": _doc_id, "source": _doc_src})
-                    yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'read_specific_doc', 'status': 'done'}}, ensure_ascii=False)}\n\n".encode("utf-8")
-                    try:
-                        _read_j = json.loads(_read_raw)
-                        _doc_block = _read_j.get("llm_text") or str(_read_j.get("result", ""))[:12000]
-                    except Exception:
-                        _doc_block = str(_read_raw)[:12000]
-                    if _doc_title:
-                        _doc_block = f"【{_doc_src}】{_doc_title}\n\n{_doc_block}"
-                else:
-                    _doc_block = (
-                        f"知识库目录检索「{_kq}」在 Notion / Google 云盘中未找到匹配文档。\n"
-                        "请用户确认文档标题或是否已完成同步。"
-                    )
-                _know_prompt = (
-                    "你是 Alice。请仅根据下方【真实文档数据】回答用户当前问题。\n"
-                    "禁止编造文档中不存在的人名、字段或规则；无数据时必须明确说明未找到。\n\n"
-                    f"【文档数据】\n{_doc_block[:12000]}\n\n"
-                    f"【用户问题】\n{user_text}"
-                )
-                yield from _vip_stream(_know_prompt, _doc_block or "（无文档数据）")
+                    yield next(_vip_gen)
+                except StopIteration as _vip_stop:
+                    _vip_handled = bool(_vip_stop.value)
+                    break
+            if _vip_handled:
                 yield b"data: [DONE]\n\n"
                 return
-        except Exception as _know_lane_err:
-            logger.warning(f"[VIP] Knowledge express lane skipped: {_know_lane_err}")
-
-        # ══════════════════════════════════════════════════════════
-        #  VIP 直通车: Pre-flight RAG — Python 层完成所有检索
-        # ══════════════════════════════════════════════════════════
-        _diff_rev = re.search(r'(?:r|版本\s*)\s*(\d{4,6})', user_text or "")
-        _diff_intent = bool(re.search(r'diff|分析.*代码|代码.*分析|代码.*审查|变更|改了.*什么', user_text or ""))
-        if _diff_rev and _diff_intent:
-            _rev_id = _diff_rev.group(1)
-            logger.info(f"[VIP] Pre-flight RAG for r{_rev_id}")
-            
-            # ── Hop 1: Python 查 Diff ──
-            raw_diff = ""
-            try:
-                from knowledge_retriever import get_single_commit_diff
-                _d = get_single_commit_diff(_rev_id)
-                raw_diff = str(_d)[:3000] if _d and len(str(_d)) > 20 else ""
-            except Exception as _e1:
-                logger.error(f"[VIP] Diff fetch failed: {_e1}")
-                raw_diff = f"[Diff r{_rev_id} 获取失败]"
-            
-            # ── Hop 2: Python 查关键字 ──
-            _ik_str = list(issue_keys_found)[:1]
-            _ik_str = _ik_str[0] if _ik_str else ""
-            try:
-                from knowledge_retriever import extract_dynamic_keywords
-                _search_kw = extract_dynamic_keywords(user_text or "", _ik_str)
-            except Exception:
-                _search_kw = _ik_str or user_text[:30]
-            logger.info(f"[VIP] Search keyword: '{_search_kw}'")
-            
-            # ── Hop 3: Python 查知识库 ──
-            doc_content = ""
-            _doc_title = ""
-            _doc_source_label = "知识库"
-            try:
-                _search_result = _exec_search_docs_catalog({"query": _search_kw, "source": "all"})
-                _sr_obj = json.loads(_search_result)
-                if _sr_obj.get("status") == "ok":
-                    catalog = _sr_obj.get("result", [])
-                    if isinstance(catalog, list) and catalog:
-                        _first = catalog[0]
-                        _doc_id = _first.get("doc_id", "")
-                        _doc_source = _first.get("source", "notion")
-                        _doc_title = _first.get("title", "未知文档")
-                        _doc_source_label = _doc_source.upper()
-                        if _doc_id:
-                            logger.info(f"[VIP] Reading doc: 《{_doc_title}》 from {_doc_source_label}")
-                            _read_result = _exec_read_specific_doc({"doc_id": _doc_id, "source": _doc_source})
-                            _rr_obj = json.loads(_read_result)
-                            doc_content = str(_rr_obj.get("llm_text", _rr_obj.get("result", "")))[:2000]
-            except Exception as _e2:
-                logger.error(f"[VIP] Knowledge fetch failed: {_e2}")
-            
-            # ── Hop 4: 组装"开卷考试" Prompt (含文档溯源元数据) ──
-            _anti_hallucination = (
-                f"【强制指令】：如果用户后续追问业务逻辑来源于哪里，或者有哪些相关文档，"
-                f"你必须如实回答来源于{_doc_source_label}真实文档《{_doc_title}》。"
-                f"绝对禁止编造任何不存在的文档名称！"
-            ) if _doc_title else ""
-            
-            if doc_content:
-                final_prompt = (
-                    f"请作为一个资深主程，对以下 SVN 代码变更进行 Code Review。\n\n"
-                    f"【业务背景参考】（来自系统自动检索的 {_doc_source_label} 真实文档：《{_doc_title}》）：\n{doc_content}\n\n"
-                    f"【代码 Diff】：\n{raw_diff}\n\n"
-                    f"请结合背景，指出代码核心修改意图和潜在风险。不要罗列代码，直接输出分析。\n\n"
-                    f"{_anti_hallucination}\n\n"
-                    f"【用户的真实特定诉求】：{user_text}\n"
-                    f"（请在审查或输出时特别关注用户的上述诉求）"
-                )
-            else:
-                final_prompt = (
-                    f"请作为一个资深主程，对以下 SVN 代码变更进行 Code Review。\n\n"
-                    f"（未能自动检索到相关业务文档，请基于代码本身进行分析）\n\n"
-                    f"【代码 Diff】：\n{raw_diff}\n\n"
-                    f"请指出代码核心修改意图和潜在风险。不要罗列代码，直接输出分析。\n\n"
-                    f"【用户的真实特定诉求】：{user_text}\n"
-                    f"（请在审查或输出时特别关注用户的上述诉求）"
-                )
-            
-            # ── Hop 5: 执行 VIP 流式 ──
-            yield from _vip_stream(final_prompt, '【VIP 直通车】LLM 未能生成分析，以下是原始 Diff：\\n\\n' + raw_diff[:4000])
-            yield b"data: [DONE]\n\n"
-            return  # 完全跳过后续所有逻辑
-
-        # ══════════════════════════════════════════════════════════
-        #  VIP 周报直通车 — Python 层 JQL 汇总 → LLM 写 PM 周报
-        #  避免 ReAct 误查单 Issue + 话痨后无 Final Stream 输出
-        # ══════════════════════════════════════════════════════════
-        _weekly_intent = bool(re.search(
-            r'周报|日报|月报|本周.{0,10}(?:总结|汇总|进度|情况|报告)|写.{0,8}(?:周报|月报|日报)',
-            user_text or ""))
-        if _weekly_intent:
-            logger.info("[VIP] Weekly report express lane")
-            yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'search_jira_issues', 'status': 'running'}}, ensure_ascii=False)}\n\n".encode('utf-8')
-            _weekly_table = ""
-            _weekly_jql = ""
-            _dl_meta = {"display_name": "截止时间", "source": "?"}
-            _range_label = ""
-            try:
-                _weekly_table, _weekly_jql, _dl_meta, _date_range = _build_weekly_jira_snapshot(
-                    user_text, frontend_cfg, user_cfg.get("jira_pat", ""))
-                _range_label = _date_range[2]
-            except Exception as _we:
-                logger.error(f"[VIP] Weekly Jira fetch failed: {_we}")
-                _weekly_table = f"Jira 周报数据拉取失败: {str(_we)[:200]}"
-            yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'search_jira_issues', 'status': 'done'}}, ensure_ascii=False)}\n\n".encode('utf-8')
-            _disp_field = _dl_meta.get("display_name", "截止时间")
-            _weekly_prompt = (
-                "你是一名游戏研发项目的 PM 助理。请基于下方【真实 Jira 数据】撰写一份结构化的项目周报。\n\n"
-                "【数据筛选依据 — 必须在周报开头第一段写明，禁止省略】\n"
-                f"- 筛选字段: Jira「{_disp_field}」\n"
-                f"- 时间范围: {_range_label}\n"
-                f"- 查询 JQL: {_weekly_jql}\n"
-                "- 禁止根据任务状态猜测「本周」；只能使用表格中的任务\n\n"
-                "【输出结构 — 必须包含】\n"
-                "1. 数据依据说明（字段 + 时间范围 + JQL，见上）\n"
-                "2. 本周概览（1-2 句）\n"
-                "3. 任务列表（表格，须含编号、标题、经办人、状态、截止时间列）\n"
-                "4. 本周更新/完成亮点\n"
-                "5. 风险与阻塞（若无则写「暂无」）\n"
-                "6. 下周建议关注\n\n"
-                "【铁律】\n"
-                "- 只能使用下方表格中的 Issue，禁止编造 Issue Key 或人员\n"
-                "- 禁止输出「让我先读取文档」「第一步」等过程话术\n"
-                "- 若数据为空，如实写「该时间范围内 Jira 未返回匹配任务」\n\n"
-                f"【真实 Jira 数据】\n{_weekly_table}\n\n"
-                f"【用户原始需求】\n{user_text}"
-            )
-            yield from _vip_stream(_weekly_prompt, _weekly_table or "【无 Jira 数据】")
-            yield b"data: [DONE]\n\n"
-            return
-
-        # ══════════════════════════════════════════════════════════
-        #  VIP 单 Issue 详情 — 全字段预取（替代轻量 query_jira_metadata）
-        # ══════════════════════════════════════════════════════════
-        _issue_detail_intent = bool(issue_keys_found) and bool(re.search(
-            r"详情|内容|描述|评论|状态|什么情况|怎么样|是谁|什么问题|备注",
-            user_text or "",
-        )) and not bool(re.search(r"提交|commit|diff|代码变更|改了什么", user_text or "", re.I))
-        if _issue_detail_intent and len(issue_keys_found) == 1:
-            _ik = list(issue_keys_found)[0]
-            logger.info(f"[VIP] Issue detail express lane: {_ik}")
-            yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'query_jira_metadata', 'status': 'running'}}, ensure_ascii=False)}\n\n".encode('utf-8')
-            _detail_block = ""
-            try:
-                _pat = user_cfg.get("jira_pat", "")
-                _r = jira.jira_get(
-                    f"/issue/{_ik}",
-                    params={"fields": "summary,description,status,assignee,reporter,issuetype,priority,created,updated,duedate,labels,comment"},
-                    timeout=15,
-                    user_pat=_pat or None,
-                )
-                if _r.status_code == 200:
-                    _f = _r.json().get("fields", {})
-                    _comments = (_f.get("comment") or {}).get("comments") or []
-                    _clines = []
-                    for _c in _comments[-5:]:
-                        _clines.append(
-                            f"- {_c.get('author',{}).get('displayName','?')}: "
-                            f"{(str(_c.get('body','')) or '')[:200]}"
-                        )
-                    _detail_block = (
-                        f"【Issue {_ik}】\n"
-                        f"- 标题: {_f.get('summary','')}\n"
-                        f"- 类型: {_f.get('issuetype',{}).get('name','')}\n"
-                        f"- 状态: {_f.get('status',{}).get('name','')}\n"
-                        f"- 经办人: {(_f.get('assignee') or {}).get('displayName','未分配')}\n"
-                        f"- 优先级: {(_f.get('priority') or {}).get('name','')}\n"
-                        f"- 截止: {_f.get('duedate','无')}\n"
-                        f"- 标签: {_f.get('labels',[])}\n"
-                        f"- 描述摘要: {(str(_f.get('description','')) or '')[:800]}\n"
-                        f"- 最近评论:\n" + ("\n".join(_clines) if _clines else "（无）")
-                    )
-                else:
-                    _detail_block = f"Issue {_ik} 查询失败 HTTP {_r.status_code}"
-            except Exception as _de:
-                _detail_block = f"Issue 详情拉取异常: {str(_de)[:200]}"
-            yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'query_jira_metadata', 'status': 'done'}}, ensure_ascii=False)}\n\n".encode('utf-8')
-            _detail_prompt = (
-                "请根据下方【真实 Jira Issue 数据】回答用户，禁止编造字段或评论。\n\n"
-                f"{_detail_block}\n\n【用户问题】\n{user_text}"
-            )
-            yield from _vip_stream(_detail_prompt, _detail_block)
-            yield b"data: [DONE]\n\n"
-            return
-
-        # ══════════════════════════════════════════════════════════
-        #  VIP 单 Issue 代码提交 — 仅针对当前句，不复用上一轮 Jira 列表查询
-        # ══════════════════════════════════════════════════════════
-        _commit_intent = bool(issue_keys_found) and bool(
-            re.search(
-                r"提交|commit|diff|代码变更|改了什么代码|变更了哪些|改了哪些文件|提交记录|提交内容|改了.*什么",
-                user_text or "",
-                re.I,
-            )
-        )
-        if _commit_intent:
-            _keys_in_msg = re.findall(
-                r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])",
-                user_text or "",
-            )
-            _ik = _keys_in_msg[0] if _keys_in_msg else sorted(issue_keys_found, key=len, reverse=True)[0]
-            logger.info(f"[VIP] Issue commit express lane: {_ik}")
-            yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'get_issue_commits', 'status': 'running'}}, ensure_ascii=False)}\n\n".encode("utf-8")
-            _commit_block = ""
-            try:
-                from knowledge_retriever import fetch_precise_commits_via_fisheye
-                _commit_block = fetch_precise_commits_via_fisheye(_ik) or ""
-            except Exception as _ce:
-                _commit_block = f"提交记录拉取异常: {str(_ce)[:200]}"
-            yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'get_issue_commits', 'status': 'done'}}, ensure_ascii=False)}\n\n".encode("utf-8")
-            _commit_prompt = (
-                f"你是 Alice。用户只关心【当前这一条消息】里 Issue {_ik} 的程序提交情况。\n"
-                "禁止引用本会话中其它轮次的 Jira 列表查询、JQL 或「50 条任务」等上下文。\n"
-                "若下方无提交数据，明确说明「未查到该任务的 SVN/FishEye 提交记录」，不要编造。\n\n"
-                f"【{_ik} 提交数据】\n{_commit_block[:8000]}\n\n"
-                f"【用户当前问题】\n{user_text}"
-            )
-            yield from _vip_stream(_commit_prompt, _commit_block or "（无提交数据）")
-            yield b"data: [DONE]\n\n"
-            return
-
-        # ══════════════════════════════════════════════════════════
-        #  Jira 结构化读直通车（对齐 Baize jira_search）
-        # ══════════════════════════════════════════════════════════
-        from jira_search_engine import should_force_jira_structured_read
-
-        if user_text and should_force_jira_structured_read(
-            user_text, intent_info.get("route", ""), intent_label,
-        ):
-            logger.info(f"[JiraLane] structured_search express (label={intent_label})")
-            try:
-                yield from _iter_jira_structured_read_lane(
-                    user_text, frontend_cfg, user_cfg, _vip_stream,
-                )
-                yield b"data: [DONE]\n\n"
-                return
-            except Exception as _lane_err:
-                logger.warning(f"[JiraLane] structured_search failed: {_lane_err}")
-                try:
-                    from jira_runtime_config import load_jira_runtime_config
-                    from jira_search_engine import (
-                        parse_query_from_natural_language,
-                        build_resolved_jql,
-                        format_search_result_for_llm,
-                    )
-                    _rt_cfg = load_jira_runtime_config(frontend_cfg)
-                    _q = parse_query_from_natural_language(user_text, _rt_cfg)
-                    _jql = build_resolved_jql(_q, _rt_cfg).get("jql", "")
-                    _fb = format_search_result_for_llm(
-                        {
-                            "jql": _jql,
-                            "issues": [],
-                            "total": 0,
-                            "analysis": {"summary": "结构化查询未完成，以下为 JQL 依据"},
-                        },
-                        user_text,
-                    )
-                    yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'jira_structured_search', 'status': 'error', 'error': str(_lane_err)[:200], 'jql': _jql}}, ensure_ascii=False)}\n\n".encode("utf-8")
-                    _err_intro = f"【Alice】Jira 结构化查询遇到问题：{str(_lane_err)[:120]}\n\n"
-                    yield from _vip_stream(_err_intro + _fb, _fb)
-                    yield b"data: [DONE]\n\n"
-                    return
-                except Exception as _fb_err:
-                    _plain = f"【Alice】Jira 查询失败：{str(_lane_err)[:200]}"
-                    yield f"data: {json.dumps({'choices': [{'delta': {'content': _plain}}]}, ensure_ascii=False)}\n\n".encode("utf-8")
-                    yield b"data: [DONE]\n\n"
-                    return
+        except Exception as _vip_err:
+            logger.warning(f"[VIP] Fastpath pipeline skipped: {_vip_err}")
 
         # ══════════════════════════════════════════════════════════
         #  V2.0 LangGraph Plan-and-Execute 大脑 (优先)
@@ -2365,12 +2072,7 @@ def chat_completions():
                     # 清洗 retry 响应中的 DSML 标签
                     _retry_content = str(msg.get("content", "")).strip()
                     if finish_reason == "stop" and _retry_content:
-                        import re as _re_clean
-                        _retry_content = _re_clean.sub(r'<\|tool_calls\|>.*?</\|tool_calls\|>', '', _retry_content, flags=_re_clean.DOTALL)
-                        _retry_content = _re_clean.sub(r'<\|invoke\|.*?</\|invoke\|>', '', _retry_content, flags=_re_clean.DOTALL)
-                        _retry_content = _re_clean.sub(r'<\|parameter\|.*?</\|parameter\|>', '', _retry_content, flags=_re_clean.DOTALL)
-                        _retry_content = _re_clean.sub(r'<\|DSML\|>.*?</\|DSML\|>', '', _retry_content, flags=_re_clean.DOTALL)
-                        _retry_content = _re_clean.sub(r'</?\|DSML\|>', '', _retry_content).strip()
+                        _retry_content = clean_dsml_leak(_retry_content)
                         if _retry_content:
                             logger.info(f"[ReAct] DSML retry success, direct-output {len(_retry_content)} chars")
                             yield f"data: {json.dumps({'choices':[{'delta':{'content':_retry_content}}]})}\n\n".encode('utf-8')
@@ -2553,13 +2255,7 @@ def chat_completions():
             else:
                 if msg.get("content"):
                     # 同样清理可能的 tool_calls 文本 (含 DSML 变体)
-                    import re as _re2
-                    c2 = str(msg["content"])
-                    c2 = _re2.sub(r'<\|tool_calls\|>.*?</\|tool_calls\|>', '', c2, flags=_re2.DOTALL)
-                    c2 = _re2.sub(r'<\|invoke\|.*?</\|invoke\|>', '', c2, flags=_re2.DOTALL)
-                    c2 = _re2.sub(r'<\|parameter\|.*?</\|parameter\|>', '', c2, flags=_re2.DOTALL)
-                    c2 = _re2.sub(r'<\|DSML\|>.*?</\|DSML\|>', '', c2, flags=_re2.DOTALL)
-                    c2 = _re2.sub(r'</?\|DSML\|>', '', c2)
+                    c2 = clean_dsml_leak(str(msg["content"]))
                     if c2.strip():
                         msg["content"] = c2.strip()
                 tool_messages.append(msg)
@@ -2739,13 +2435,7 @@ def chat_completions():
                 if raw_line:
                     decoded = raw_line.decode('utf-8', errors='replace')
                     # ── 过滤 DSML/tool_calls 文本, 保留自然语言 ──
-                    import re as _re_stream
-                    cleaned = decoded
-                    cleaned = _re_stream.sub(r'<\|tool_calls\|>.*?</\|tool_calls\|>', '', cleaned, flags=_re_stream.DOTALL)
-                    cleaned = _re_stream.sub(r'<\|invoke\|.*?</\|invoke\|>', '', cleaned, flags=_re_stream.DOTALL)
-                    cleaned = _re_stream.sub(r'<\|parameter\|.*?</\|parameter\|>', '', cleaned, flags=_re_stream.DOTALL)
-                    cleaned = _re_stream.sub(r'<\|DSML\|>.*?</\|DSML\|>', '', cleaned, flags=_re_stream.DOTALL)
-                    cleaned = _re_stream.sub(r'</?\|DSML\|>', '', cleaned)
+                    cleaned = clean_dsml_leak(decoded)
                     # 只有当整行都被清空时才跳过
                     if not cleaned.strip():
                         consecutive_filtered += 1

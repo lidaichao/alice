@@ -1,0 +1,17 @@
+# Alice 工程铁律
+
+## Flask 路由与业务分层
+
+绝对禁止在 Flask 的 Route 处理函数中平铺超过 100 行的业务代码。必须向下委托给 Service 层、Pipeline 模块（如 `backend/chat_pipeline/`）或专用迭代器/类处理。
+
+`@app.route` 处理函数只允许：解析请求、鉴权、调用服务、返回 Response。
+
+## 评测
+
+- 禁止用 `keyword in answer.lower()` 作为唯一评分依据。
+- 数据集评测默认走 `eval_llm_judge.judge_eval_case`（LLM-as-a-Judge，temperature 0.0）。
+
+## 提交前
+
+- 改动 `backend/ai_bridge.py` 后需重启 `python ai_bridge.py`（9099）。
+- 不提交 `global_config.json`、`.env` 及含密钥文件。

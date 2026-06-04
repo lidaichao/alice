@@ -509,30 +509,43 @@ def mark_rejected(operation: dict) -> dict:
 
 _store: dict = {}          # operation_id → operation
 _lock = threading.Lock()   # 线程安全
-_OPS_DIR = os.path.join(os.path.dirname(__file__), "runtime", "jira-operations")
-_OPS_INDEX = os.path.join(_OPS_DIR, "index.json")
+_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+_OPS_FILE = os.path.join(_DATA_DIR, "operations.json")
+# 兼容旧路径
+_LEGACY_OPS_INDEX = os.path.join(
+    os.path.dirname(__file__), "runtime", "jira-operations", "index.json",
+)
 
 
 def _persist_operations_index():
     try:
-        os.makedirs(_OPS_DIR, exist_ok=True)
-        with open(_OPS_INDEX, "w", encoding="utf-8") as f:
-            json.dump({"operations": list(_store.values())}, f, ensure_ascii=False, indent=2)
+        os.makedirs(_DATA_DIR, exist_ok=True)
+        with _lock:
+            payload = {"operations": list(_store.values()), "updated_at": time.time()}
+        with open(_OPS_FILE, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.warning(f"[OpCard] persist failed: {e}")
 
 
 def _load_operations_index():
-    try:
-        if not os.path.isfile(_OPS_INDEX):
-            return
-        with open(_OPS_INDEX, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        for op in data.get("operations") or []:
-            if op.get("id"):
-                _store[op["id"]] = op
-    except Exception as e:
-        logger.warning(f"[OpCard] load index failed: {e}")
+    paths = [_OPS_FILE, _LEGACY_OPS_INDEX]
+    for path in paths:
+        try:
+            if not os.path.isfile(path):
+                continue
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            for op in data.get("operations") or []:
+                if op.get("id"):
+                    _store[op["id"]] = op
+            if _store:
+                logger.info(f"[OpCard] loaded {len(_store)} operations from {path}")
+                if path == _LEGACY_OPS_INDEX and not os.path.isfile(_OPS_FILE):
+                    _persist_operations_index()
+                return
+        except Exception as e:
+            logger.warning(f"[OpCard] load from {path} failed: {e}")
 
 
 _load_operations_index()
@@ -642,6 +655,7 @@ def supersede_older(conversation_id: str, new_op_id: str):
                 op["status"] = "superseded"
                 op["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
                 logger.info(f"[OpCard] Superseded: {op_id}")
+        _persist_operations_index()
 
 
 # ══════════════════════════════════════════════════════════════
