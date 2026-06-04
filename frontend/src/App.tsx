@@ -222,7 +222,8 @@ export const App: React.FC = () => {
         <Sidebar />
         <main className="flex-1 flex flex-col min-w-0 bg-muted/10 relative border-r border-border">
           <Header />
-          <div ref={chatContainerRef} onScroll={handleChatScroll} className="flex-1 overflow-y-auto p-4 md:p-6">
+          <div ref={chatContainerRef} onScroll={handleChatScroll} className="flex-1 overflow-y-auto p-4 md:p-6 text-gray-900 dark:text-gray-100">
+            <div className="[&_*]:!text-gray-900 dark:[&_*]:!text-gray-100">
             <ChatList
               data={messages.map(m => ({
                 id: String(m.id || Date.now()),
@@ -236,6 +237,7 @@ export const App: React.FC = () => {
             />
             {isGenerating && <span className="blinking-cursor" />}
             <div ref={messagesEndRef} className="h-1" />
+            </div>
           </div>
 
           {/* ── LobeUI 恢复：UI 状态与引擎已解耦，绑定到 myInput ── */}
