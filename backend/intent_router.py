@@ -27,6 +27,13 @@ logger = logging.getLogger('intent_router')
 
 INTENT_PATTERNS = [
 
+    # P0: 周报/日报/月报 — 项目级汇总，禁止走单 Issue 元数据
+    (
+        r"周报|日报|月报|本周.{0,10}(?:总结|汇总|进度|情况|报告)|写.{0,8}(?:周报|月报|日报)",
+        ["search_jira_issues", "query_jira_metadata"],
+        "WEEKLY_REPORT"
+    ),
+
     # P0: 代码提交列表查询 — 用户问"有哪些提交"、"提交了什么"
     # 分配 get_issue_commits (列表) + query_jira_metadata (元数据)
     (

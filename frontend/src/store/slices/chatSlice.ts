@@ -272,12 +272,34 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
                     await new Promise(r => requestAnimationFrame(r));
                   }
                 }
-              } catch (e) {}
+              } catch (e) {
+                if (line.startsWith('data: ') && !line.includes('[DONE]')) {
+                  console.warn('[SSE] JSON parse failed:', line.slice(0, 120), e);
+                }
+              }
             }
           }
         }
       }
       const finalSession = get().sessions.find(s => s.id === activeSessionId);
+      const lastAi = finalSession?.messages.filter(m => m.role === 'assistant').pop();
+      if (lastAi && lastAi.id === aiMsgId) {
+        const planningOnly = /先读取|我来拉取|第一步|让我先/.test(lastAi.content) && lastAi.content.length < 400;
+        if (planningOnly && !lastAi.content.includes('##')) {
+          const hint = '\n\n---\n⚠️ 回复在规划阶段中断，未生成完整结果。请重试；若仍失败请确认后端 :9099 已启动。';
+          set((state) => ({
+            sessions: state.sessions.map(s => {
+              if (s.id !== activeSessionId) return s;
+              const msgs = s.messages.map(m =>
+                m.id === aiMsgId && !m.content.includes('回复在规划阶段中断')
+                  ? { ...m, content: m.content + hint }
+                  : m
+              );
+              return { ...s, messages: msgs };
+            })
+          }));
+        }
+      }
       if (finalSession) {
         await db.sessions.put(finalSession);
         // 5层记忆自动提取 (后端 API 未就绪, 暂时禁用)

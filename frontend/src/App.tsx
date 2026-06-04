@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { CommandPanel } from '@/components/CommandPanel';
 import ConfirmCard from '@/components/ConfirmCard';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
+import { PluginToolCard } from '@/components/MarkdownRenderer';
 import { ThemeProvider } from '@lobehub/ui';
 import { Square } from 'lucide-react';
 
@@ -43,12 +44,35 @@ export const App: React.FC = () => {
   const [userScrolledUp, setUserScrolledUp] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const isInitialMount = useRef(true);
 
-  // ── 自动滚动 ──
+  // ── 滚动到底部（isInstant: 瞬间闪现；否则平滑动画）──
+  const scrollToBottom = useCallback((isInstant?: boolean) => {
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({
+        behavior: isInstant ? 'auto' : 'smooth',
+      });
+    });
+  }, []);
+
+  // ── 首次加载：瞬间闪现到底部（不走平滑动画）──
   useEffect(() => {
+    if (isInitialMount.current && messages.length > 0) {
+      scrollToBottom(true);
+      isInitialMount.current = false;
+      return;
+    }
+    // 流式输出 + 非手动上滚：平滑跟底
     if (isGenerating && userScrolledUp) return;
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isGenerating, userScrolledUp]);
+    scrollToBottom();
+  }, [messages, isGenerating, userScrolledUp, scrollToBottom]);
+
+  // ── 会话切换：瞬间闪现到底部 ──
+  useEffect(() => {
+    if (!activeSessionId) return;
+    scrollToBottom(true);
+  }, [activeSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChatScroll = () => {
     if (!chatContainerRef.current) return;
@@ -62,7 +86,12 @@ export const App: React.FC = () => {
     const text = myInput;
     setMyInput('');
     sendMessage(text);
-  }, [myInput, isGenerating, activeSessionId, sendMessage]);
+    // 发送后平滑滚到底部 + 保持输入框焦点
+    scrollToBottom();
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  }, [myInput, isGenerating, activeSessionId, sendMessage, scrollToBottom]);
 
   // ── Jira 确认卡回调 ──
   const handleConfirm = useCallback(async (opId: string) => {
@@ -115,14 +144,19 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // 命令面板导航
     if (showCommands && filteredCmds.length > 0) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedCmdIndex(p => (p + 1) % filteredCmds.length); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedCmdIndex(p => (p - 1 + filteredCmds.length) % filteredCmds.length); return; }
-      if (e.key === 'Enter') { e.preventDefault(); handleSelectCommand(filteredCmds[selectedCmdIndex]); return; }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSelectCommand(filteredCmds[selectedCmdIndex]); return; }
       if (e.key === 'Escape') { e.preventDefault(); setShowCommands(false); return; }
     }
+    // Shift+Enter → 正常换行，不做任何拦截
+    if (e.key === 'Enter' && e.shiftKey) return;
+    // Enter 发送（排除 IME 组合态，避免中文输入时误触）
     if (e.key === 'Enter' && !e.shiftKey && !showCommands) {
+      if (e.nativeEvent.isComposing) return;
       e.preventDefault();
       handleSend();
     }
@@ -181,7 +215,12 @@ export const App: React.FC = () => {
                       : 'bg-muted text-foreground rounded-tl-none'
                   }`}>
                     {m.role === 'assistant' && m.content ? (
-                      <MarkdownRenderer content={m.content} citations={m.citations} />
+                      <MarkdownRenderer content={m.content} citations={m.citations} plugin={m.plugin} />
+                    ) : m.role === 'assistant' && m.plugin ? (
+                      <div className="space-y-2">
+                        <PluginToolCard plugin={m.plugin} />
+                        <span className="text-muted-foreground italic text-sm">正在思考...</span>
+                      </div>
                     ) : m.content ? (
                       <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">{m.content}</div>
                     ) : (
@@ -219,6 +258,7 @@ export const App: React.FC = () => {
             <div className="flex items-end gap-3 max-w-4xl mx-auto w-full relative">
               {showCommands && <CommandPanel filterText={commandFilter} selectedIndex={selectedCmdIndex} onSelect={handleSelectCommand} />}
               <textarea
+                ref={inputRef}
                 value={myInput}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}

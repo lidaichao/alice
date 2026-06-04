@@ -47,7 +47,7 @@
                                 </div>
                             </div>
                         </div>
-                        <button v-if="!editLock.ai" @click="startEdit('ai')" class="text-sm text-blue-600 hover:text-blue-800 font-medium px-3 py-1 bg-blue-50 hover:bg-blue-100 rounded transition">✏️ 编辑配置</button>
+                        <button v-if="!editLock.ai" @click="startEdit('ai')" class="text-sm text-blue-600 hover:text-blue-800 font-medium px-3 py-1 bg-blue-50 hover:bg-blue-100 rounded transition">✏️ 编辑 API 配置</button>
                     </div>
                     <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div class="space-y-1">
@@ -58,10 +58,27 @@
                             <label class="text-sm font-semibold text-gray-600">API Key</label>
                             <input v-model="state.ai.DEEPSEEK_KEY" :readonly="!editLock.ai" :class="inputClass(editLock.ai)" type="password">
                         </div>
+                        <div class="space-y-1 md:col-span-2">
+                            <label class="text-sm font-semibold text-gray-600">默认对话模型</label>
+                            <div class="flex gap-2 items-center">
+                                <select v-model="state.ai.DEEPSEEK_MODEL" @change="onModelChange" :disabled="savingModel"
+                                    class="flex-1 px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-100 disabled:opacity-60">
+                                    <option v-for="m in modelSelectOptions" :key="m" :value="m">{{ m }}</option>
+                                </select>
+                                <button type="button" @click="fetchAiModels" :disabled="fetchingModels || savingModel"
+                                    class="shrink-0 text-sm text-blue-600 hover:text-blue-800 font-medium px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition disabled:opacity-50">
+                                    {{ fetchingModels ? '拉取中...' : '刷新模型列表' }}
+                                </button>
+                            </div>
+                            <p class="text-xs text-gray-500">
+                                从 API /models 自动获取；切换即保存，Alice 全局默认使用该模型。
+                                <span v-if="savingModel" class="text-blue-600">保存中…</span>
+                            </p>
+                        </div>
                     </div>
                     <div v-if="editLock.ai" class="px-6 py-3 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
                         <button @click="cancelEdit('ai')" class="px-4 py-1.5 text-gray-600 hover:text-gray-800 text-sm font-medium transition">取消</button>
-                        <button @click="saveEdit('ai')" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded shadow-sm transition">💾 保存模块</button>
+                        <button @click="saveEdit('ai')" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded shadow-sm transition">💾 保存 API 配置</button>
                     </div>
                 </div>
 
@@ -93,6 +110,13 @@
                         <div class="space-y-1 md:col-span-2">
                             <label class="text-sm font-semibold text-gray-600">FishEye 地址</label>
                             <input v-model="state.jira.FISHEYE_URL" :readonly="!editLock.jira" :class="inputClass(editLock.jira)" type="text">
+                        </div>
+                        <div class="space-y-1 md:col-span-2">
+                            <label class="text-sm font-semibold text-gray-600">项目 → 截止时间字段（JSON 覆盖，可选）</label>
+                            <textarea v-model="state.jira.JIRA_DEADLINE_FIELD_BY_PROJECT" :readonly="!editLock.jira"
+                                rows="3" placeholder='{"CT":"End date","OTHER":"结束时间"}'
+                                :class="editLock.jira ? 'w-full px-3 py-2 border border-blue-300 rounded text-sm font-mono focus:ring-2 focus:ring-blue-100' : 'w-full px-3 py-2 border border-transparent rounded bg-transparent text-gray-600 text-sm font-mono'"></textarea>
+                            <p class="text-xs text-gray-500">周报按此字段筛任务；未配置时自动发现（End date / 结束时间 / duedate）。</p>
                         </div>
                     </div>
                     <div v-if="editLock.jira" class="px-6 py-3 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
@@ -273,9 +297,28 @@
             const adminToken = ref(localStorage.getItem('wb_admin_token') || 'admin-admin');
 
             // --- 模块化 State ---
+            const availableModels = ref([]);
+            const fetchingModels = ref(false);
+            const savingModel = ref(false);
+            const hydratingModel = ref(true);
+            const lastSavedModel = ref('');
+            let modelSaveSeq = 0;
+
+            const modelSelectOptions = computed(() => {
+                const saved = (state.ai.DEEPSEEK_MODEL || '').trim();
+                const opts = [...availableModels.value];
+                if (saved && !opts.includes(saved)) {
+                    opts.unshift(saved);
+                }
+                if (!opts.length) {
+                    opts.push(saved || 'deepseek-chat');
+                }
+                return opts;
+            });
+
             const state = reactive({
-                ai: { DEEPSEEK_URL: '', DEEPSEEK_KEY: '' },
-                jira: { JIRA_BASE_URL: '', JIRA_PAT: '', FISHEYE_URL: '' },
+                ai: { DEEPSEEK_URL: '', DEEPSEEK_KEY: '', DEEPSEEK_MODEL: 'deepseek-chat' },
+                jira: { JIRA_BASE_URL: '', JIRA_PAT: '', FISHEYE_URL: '', JIRA_DEADLINE_FIELD_BY_PROJECT: '{\n  "CT": "End date"\n}' },
                 svn: { SVN_URL: '', SVN_USERNAME: '', SVN_PASSWORD: '' },
                 kb: { NOTION_KEY: '', NOTION_DATABASE_ID: '', GDRIVE_KEY: '', GDRIVE_FOLDERS: '', GDRIVE_PROXY_IP: '', GDRIVE_PROXY_PORT: '' }
             });
@@ -304,14 +347,26 @@
 
             const startEdit = (cardId) => {
                 const stateKey = (cardId === 'notion' || cardId === 'gdrive') ? 'kb' : cardId;
-                draftBackup[cardId] = structuredClone(toRaw(state[stateKey]));
+                if (cardId === 'ai') {
+                    draftBackup[cardId] = {
+                        DEEPSEEK_URL: state.ai.DEEPSEEK_URL,
+                        DEEPSEEK_KEY: state.ai.DEEPSEEK_KEY
+                    };
+                } else {
+                    draftBackup[cardId] = structuredClone(toRaw(state[stateKey]));
+                }
                 editLock[cardId] = true;
             };
 
             const cancelEdit = (cardId) => {
                 if (draftBackup[cardId]) {
-                    const stateKey = (cardId === 'notion' || cardId === 'gdrive') ? 'kb' : cardId;
-                    Object.assign(state[stateKey], draftBackup[cardId]);
+                    if (cardId === 'ai') {
+                        state.ai.DEEPSEEK_URL = draftBackup[cardId].DEEPSEEK_URL;
+                        state.ai.DEEPSEEK_KEY = draftBackup[cardId].DEEPSEEK_KEY;
+                    } else {
+                        const stateKey = (cardId === 'notion' || cardId === 'gdrive') ? 'kb' : cardId;
+                        Object.assign(state[stateKey], draftBackup[cardId]);
+                    }
                 }
                 editLock[cardId] = false;
             };
@@ -319,21 +374,69 @@
             const saveEdit = async (cardId) => {
                 try {
                     const stateKey = (cardId === 'notion' || cardId === 'gdrive') ? 'kb' : cardId;
-                    const payload = toRaw(state[stateKey]);
+                    let payload;
+                    if (cardId === 'ai') {
+                        payload = {
+                            DEEPSEEK_URL: state.ai.DEEPSEEK_URL,
+                            DEEPSEEK_KEY: state.ai.DEEPSEEK_KEY
+                        };
+                    } else {
+                        payload = { ...toRaw(state[stateKey]) };
+                    }
+                    if (cardId === 'jira' && payload.JIRA_DEADLINE_FIELD_BY_PROJECT) {
+                        try {
+                            payload.JIRA_DEADLINE_FIELD_BY_PROJECT = JSON.parse(payload.JIRA_DEADLINE_FIELD_BY_PROJECT);
+                        } catch (e) {
+                            return showToast('截止时间字段 JSON 格式无效', 'error');
+                        }
+                    }
                     const res = await fetch('/v1/admin/config', {
                         method: 'POST',
                         headers: { 'Authorization': `Bearer ${adminToken.value}`, 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
                     if (res.ok) {
-                        showToast('✅ 模块配置已保存至后端');
+                        showToast(cardId === 'ai' ? '✅ API 配置已保存' : '✅ 模块配置已保存至后端');
                         editLock[cardId] = false;
-                        loadConfig();
+                        if (cardId === 'ai') {
+                            await loadConfig({ aiApiOnly: true });
+                        } else {
+                            await loadConfig();
+                        }
                     } else { throw new Error('保存失败'); }
                 } catch (e) { showToast(e.message, 'error'); }
             };
 
-            const loadConfig = async () => {
+            const onModelChange = async () => {
+                if (hydratingModel.value) return;
+                const model = (state.ai.DEEPSEEK_MODEL || '').trim();
+                if (!model || model === lastSavedModel.value) return;
+                const prev = lastSavedModel.value;
+                const seq = ++modelSaveSeq;
+                savingModel.value = true;
+                try {
+                    const res = await fetch('/v1/admin/config', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${adminToken.value}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ DEEPSEEK_MODEL: model })
+                    });
+                    if (!res.ok) throw new Error('模型保存失败');
+                    if (seq !== modelSaveSeq) return;
+                    lastSavedModel.value = model;
+                    showToast(`已切换默认模型：${model}`);
+                } catch (e) {
+                    if (seq === modelSaveSeq) {
+                        state.ai.DEEPSEEK_MODEL = prev;
+                        showToast(e.message || '模型保存失败', 'error');
+                    }
+                } finally {
+                    if (seq === modelSaveSeq) savingModel.value = false;
+                }
+            };
+
+            const loadConfig = async (opts = {}) => {
+                const fullLoad = !opts.aiApiOnly;
+                if (fullLoad) hydratingModel.value = true;
                 try {
                     const res = await fetch('/v1/admin/config', {
                         headers: { 'Authorization': `Bearer ${adminToken.value}` }
@@ -343,21 +446,46 @@
                         if (token) {
                             localStorage.setItem('wb_admin_token', token);
                             adminToken.value = token;
-                            return loadConfig();
+                            return loadConfig(opts);
                         }
                     }
                     if (res.ok) {
                         const data = await res.json();
-                        state.ai = { DEEPSEEK_URL: data.DEEPSEEK_URL || '', DEEPSEEK_KEY: data.DEEPSEEK_KEY || '' };
-                        state.jira = { JIRA_BASE_URL: data.JIRA_BASE_URL || '', JIRA_PAT: data.JIRA_PAT || '', FISHEYE_URL: data.FISHEYE_URL || '' };
-                        state.svn = { SVN_URL: data.SVN_URL || '', SVN_USERNAME: data.SVN_USERNAME || '', SVN_PASSWORD: data.SVN_PASSWORD || '' };
-                        state.kb = {
-                            NOTION_KEY: data.NOTION_KEY || '', NOTION_DATABASE_ID: data.NOTION_DATABASE_ID || '',
-                            GDRIVE_KEY: data.GDRIVE_KEY || '', GDRIVE_FOLDERS: data.GDRIVE_FOLDERS || '',
-                            GDRIVE_PROXY_IP: data.GDRIVE_PROXY_IP || '', GDRIVE_PROXY_PORT: data.GDRIVE_PROXY_PORT || ''
-                        };
+                        const modelFromServer = (data.saved_model || data.DEEPSEEK_MODEL || '').trim() || 'deepseek-chat';
+                        if (opts.aiApiOnly) {
+                            state.ai.DEEPSEEK_URL = data.DEEPSEEK_URL || '';
+                            state.ai.DEEPSEEK_KEY = data.DEEPSEEK_KEY || '';
+                        } else {
+                            state.ai = {
+                                DEEPSEEK_URL: data.DEEPSEEK_URL || '',
+                                DEEPSEEK_KEY: data.DEEPSEEK_KEY || '',
+                                DEEPSEEK_MODEL: modelFromServer
+                            };
+                            lastSavedModel.value = modelFromServer;
+                            await fetchAiModels(true);
+                        }
+                        const dlMap = data.JIRA_DEADLINE_FIELD_BY_PROJECT;
+                        if (!opts.aiApiOnly) {
+                            state.jira = {
+                                JIRA_BASE_URL: data.JIRA_BASE_URL || '',
+                                JIRA_PAT: data.JIRA_PAT || '',
+                                FISHEYE_URL: data.FISHEYE_URL || '',
+                                JIRA_DEADLINE_FIELD_BY_PROJECT: typeof dlMap === 'object' && dlMap !== null
+                                    ? JSON.stringify(dlMap, null, 2)
+                                    : (dlMap || '{\n  "CT": "End date"\n}')
+                            };
+                            state.svn = { SVN_URL: data.SVN_URL || '', SVN_USERNAME: data.SVN_USERNAME || '', SVN_PASSWORD: data.SVN_PASSWORD || '' };
+                            state.kb = {
+                                NOTION_KEY: data.NOTION_KEY || '', NOTION_DATABASE_ID: data.NOTION_DATABASE_ID || '',
+                                GDRIVE_KEY: data.GDRIVE_KEY || '', GDRIVE_FOLDERS: data.GDRIVE_FOLDERS || '',
+                                GDRIVE_PROXY_IP: data.GDRIVE_PROXY_IP || '', GDRIVE_PROXY_PORT: data.GDRIVE_PROXY_PORT || ''
+                            };
+                        }
                     }
                 } catch (e) { showToast("配置加载失败", "error"); }
+                finally {
+                    if (fullLoad) hydratingModel.value = false;
+                }
             };
             onMounted(loadConfig);
 
@@ -372,10 +500,36 @@
                 setTimeout(() => { testResult[type].show = false; }, 3000);
             };
 
+            const fetchAiModels = async (silent = false) => {
+                fetchingModels.value = true;
+                try {
+                    const res = await fetch('/v1/admin/models', {
+                        headers: { 'Authorization': `Bearer ${adminToken.value}` }
+                    });
+                    const data = await res.json();
+                    if (!res.ok || !data.success) throw new Error(data.error || '拉取失败');
+                    availableModels.value = data.models || [];
+                    const savedFromServer = (data.saved_model || '').trim();
+                    if (savedFromServer) {
+                        state.ai.DEEPSEEK_MODEL = savedFromServer;
+                        lastSavedModel.value = savedFromServer;
+                    }
+                    if (!silent) {
+                        showTooltip('ai', `✅ 已加载 ${availableModels.value.length} 个模型`);
+                    }
+                } catch (e) {
+                    if (!silent) {
+                        showTooltip('ai', '❌ ' + (e.message || '模型列表失败'), true);
+                    }
+                } finally { fetchingModels.value = false; }
+            };
+
             const testAiSystem = async () => {
                 testing.ai = true;
-                try { await new Promise(r => setTimeout(r, 1000)); showTooltip('ai', '✅ 模型接口连通'); } 
-                catch(e) { showTooltip('ai', '❌ 测试失败', true); } finally { testing.ai = false; }
+                try {
+                    await fetchAiModels();
+                    showTooltip('ai', '✅ 模型 API 可达');
+                } catch(e) { showTooltip('ai', '❌ 测试失败', true); } finally { testing.ai = false; }
             };
 
             const testJiraSystem = async () => {
@@ -491,7 +645,9 @@
                 editLock, inputClass, startEdit, cancelEdit, saveEdit,
                 testing, testResult, testAiSystem, testJiraSystem, testSvnSystem, testNotionSystem, testGDriveSystem,
                 notionDatabases, gdriveFiles,
-                parseNotionUrl, gdriveInput, gdriveFoldersList, addGDriveFolder, removeFolder
+                parseNotionUrl, gdriveInput, gdriveFoldersList, addGDriveFolder, removeFolder,
+                availableModels, fetchingModels, fetchAiModels, modelSelectOptions,
+                savingModel, onModelChange, lastSavedModel
             };
         }
     }).mount('#app');

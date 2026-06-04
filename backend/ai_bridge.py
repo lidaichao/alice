@@ -32,6 +32,8 @@ from prompt_manager import (
     CONTEXT_TOTAL_LIMIT, JIRA_ISSUE_DETAIL_LIMIT,
     DECISION_PROMPT, build_decision_prompt,
     AVAILABLE_KNOWLEDGE_SOURCES, CORE_AGENT_SYSTEM_PROMPT,
+    resolve_deadline_field, parse_date_range_from_text,
+    build_weekly_report_jql, extract_deadline_display,
 )
 from knowledge_retriever import (
     BoundedCache, _CONTEXT_CACHE, _SEMANTIC_CACHE, _SVN_COMMIT_CACHE,
@@ -74,6 +76,15 @@ def load_global_config():
             return json.load(f)
     return {}
 
+
+def _resolved_deepseek_model(config: dict) -> str:
+    """文件 global_config 优先，其次环境变量，最后默认 deepseek-chat。"""
+    raw = config.get("DEEPSEEK_MODEL")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return (os.getenv("DEEPSEEK_MODEL") or "deepseek-chat").strip()
+
+
 def load_config():
     try:
         from dotenv import load_dotenv
@@ -112,13 +123,67 @@ def parse_user_config(data: dict) -> dict:
     返回: {deepseek_key, deepseek_model, jira_pat, jira_email}
     """
     uc = data.get("user_config", {}) or {}
+    frontend_cfg = data.get("config", {}) or {}
     global_cfg = load_global_config()
     return {
-        "deepseek_key": uc.get("ai_api_key") or config["deepseek_key"] or global_cfg.get("DEEPSEEK_KEY") or os.getenv("DEEPSEEK_KEY", ""),
-        "deepseek_model": uc.get("ai_model") or os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
-        "jira_pat": uc.get("user_jira_pat") or config["jira_pat"] or global_cfg.get("JIRA_PAT", ""),
+        "deepseek_key": uc.get("ai_api_key") or frontend_cfg.get("deepseek_key") or config["deepseek_key"] or global_cfg.get("DEEPSEEK_KEY") or os.getenv("DEEPSEEK_KEY", ""),
+        "deepseek_model": (
+            uc.get("ai_model")
+            or frontend_cfg.get("deepseek_model")
+            or global_cfg.get("DEEPSEEK_MODEL")
+            or os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        ),
+        "jira_pat": uc.get("user_jira_pat") or frontend_cfg.get("jira_pat") or config["jira_pat"] or global_cfg.get("JIRA_PAT", ""),
         "jira_email": uc.get("user_email") or os.getenv("JIRA_EMAIL", ""),
     }
+
+
+_JIRA_FIELDS_CACHE = {"ts": 0, "fields": []}
+_JIRA_FIELDS_CACHE_TTL = 3600
+_DEADLINE_FIELD_CACHE = {}
+
+
+def _load_deadline_config_map() -> dict:
+    """global_config JIRA_DEADLINE_FIELD_BY_PROJECT → dict"""
+    raw = load_global_config().get("JIRA_DEADLINE_FIELD_BY_PROJECT", {})
+    if isinstance(raw, dict):
+        return {str(k).upper(): str(v) for k, v in raw.items()}
+    if isinstance(raw, str) and raw.strip():
+        try:
+            obj = json.loads(raw)
+            if isinstance(obj, dict):
+                return {str(k).upper(): str(v) for k, v in obj.items()}
+        except json.JSONDecodeError:
+            pass
+    return {}
+
+
+def get_all_jira_fields_cached() -> list:
+    """GET /rest/api/2/field，进程内缓存 1h"""
+    now = time.time()
+    if _JIRA_FIELDS_CACHE["fields"] and now - _JIRA_FIELDS_CACHE["ts"] < _JIRA_FIELDS_CACHE_TTL:
+        return _JIRA_FIELDS_CACHE["fields"]
+    try:
+        r = jira.jira_get(f"{jira.api_url}/field", timeout=15)
+        if r.status_code == 200:
+            fields = r.json()
+            _JIRA_FIELDS_CACHE["fields"] = fields
+            _JIRA_FIELDS_CACHE["ts"] = now
+            return fields
+    except Exception as e:
+        logger.warning(f"[Fields] /field fetch failed: {e}")
+    return _JIRA_FIELDS_CACHE["fields"] or []
+
+
+def resolve_deadline_field_for_project(project_key: str) -> dict:
+    pk = (project_key or "CT").strip().upper()
+    cached = _DEADLINE_FIELD_CACHE.get(pk)
+    if cached and time.time() - cached[0] < _JIRA_FIELDS_CACHE_TTL:
+        return cached[1]
+    meta = resolve_deadline_field(pk, _load_deadline_config_map(), get_all_jira_fields_cached())
+    _DEADLINE_FIELD_CACHE[pk] = (time.time(), meta)
+    logger.info(f"[DeadlineField] {pk} → {meta.get('display_name')} (source={meta.get('source')})")
+    return meta
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -285,11 +350,13 @@ def llm_decide_jql(question: str, proj_keys: list) -> str:
             intent_data = json.loads(content)
             logger.info(f"[JQL-Intent] Parsed JSON: {intent_data}")
 
-            target_proj = proj_keys[0] if proj_keys else "DEFAULT"
-            schema = PROJECT_SCHEMA_MAP.get(target_proj, PROJECT_SCHEMA_MAP["DEFAULT"])
-            
+            target_proj = proj_keys[0] if proj_keys else "CT"
             target_field_logical = intent_data.get("target_field", "created")
-            field_physical = schema.get(target_field_logical, "created")
+            if target_field_logical == "deadline":
+                field_physical = resolve_deadline_field_for_project(target_proj)["jql_name"]
+            else:
+                schema = PROJECT_SCHEMA_MAP.get(target_proj, PROJECT_SCHEMA_MAP["DEFAULT"])
+                field_physical = schema.get(target_field_logical, "created")
 
             jql_parts = [proj_cond]
             
@@ -315,6 +382,76 @@ def llm_decide_jql(question: str, proj_keys: list) -> str:
         logger.warning(f"[JQL-Decide] Failed to parse or build JQL: {e}")
         
     return f"{proj_cond} AND statusCategory != Done ORDER BY updated DESC"
+
+
+def _extract_project_key_from_text(user_text: str, default: str = "CT") -> str:
+    m2 = re.search(r"([A-Z][A-Z0-9]*)\s*项目", user_text or "")
+    if m2:
+        return m2.group(1).upper()
+    skip = {"PM", "SVN", "API", "JIRA", "HTTP", "SSE"}
+    for key in re.findall(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]*)", user_text or ""):
+        if key not in skip and len(key) <= 10:
+            return key
+    proj_keys = (os.getenv("JIRA_PROJECTS", default) or default).split(",")[0].strip()
+    return proj_keys.upper() if proj_keys else default
+
+
+def _build_weekly_jira_snapshot(user_text: str, frontend_cfg: dict, user_pat: str = "") -> tuple:
+    """周报直通车：动态截止时间字段 + 日期区间 → (表格文本, JQL, 元信息)"""
+    proj_cfg = (frontend_cfg or {}).get("jira_projects", "") or os.getenv("JIRA_PROJECTS", "CT")
+    proj_list = [k.strip().upper() for k in re.split(r'[\s,，]+', proj_cfg) if k.strip()]
+    project_key = _extract_project_key_from_text(user_text, proj_list[0] if proj_list else "CT")
+    if project_key not in proj_list and proj_list:
+        project_key = proj_list[0]
+
+    deadline_meta = resolve_deadline_field_for_project(project_key)
+    date_range = parse_date_range_from_text(user_text)
+    jql = build_weekly_report_jql(project_key, deadline_meta, date_range)
+
+    rest_fields = "key,summary,status,assignee,issuetype,updated,priority"
+    rid = deadline_meta.get("rest_id")
+    if rid and rid != "duedate":
+        rest_fields += f",{rid}"
+
+    resp = jira.jira_get(
+        f"{jira.api_url}/search",
+        params={"jql": jql, "maxResults": 50, "fields": rest_fields},
+        timeout=15,
+        user_pat=user_pat or None,
+    )
+    if resp.status_code != 200:
+        return f"Jira 查询失败 (HTTP {resp.status_code})", jql, deadline_meta, date_range
+
+    data = resp.json()
+    total = data.get("total", 0)
+    issues = data.get("issues", [])
+    disp = deadline_meta.get("display_name", "截止时间")
+    start, end, range_label, _ = date_range
+
+    lines = [
+        f"【Jira 周报数据】",
+        f"- 项目: {project_key}",
+        f"- 筛选字段: {disp}（来源: {deadline_meta.get('source', '?')}）",
+        f"- 时间范围: {range_label}",
+        f"- JQL: {jql}",
+        f"- 命中: {total} 条",
+        "",
+    ]
+    lines.append(f"| 编号 | 状态 | 优先级 | 经办人 | {disp} | 标题 |")
+    lines.append("|------|------|--------|--------|----------|------|")
+    for issue in issues[:30]:
+        f = issue.get("fields", {})
+        key = issue.get("key", "")
+        status = (f.get("status") or {}).get("name", "")
+        priority = (f.get("priority") or {}).get("name", "")
+        assignee = (f.get("assignee") or {}).get("displayName", "未分配")
+        summary = (f.get("summary") or "")[:60]
+        dl_val = extract_deadline_display(f, deadline_meta)
+        lines.append(f"| {key} | {status} | {priority} | {assignee} | {dl_val} | {summary} |")
+    if not issues:
+        lines.append(f"| — | — | — | — | — | 该时间范围内无匹配任务 |")
+    return "\n".join(lines), jql, deadline_meta, date_range
+
 
 def collect_context(issue_key: str, user_question: str = "", frontend_cfg: dict = None, api_key: str = None, user_pat: str = None) -> str:
     """v2 Progressive Disclosure: L1 summary -> LLM judge -> L2 targeted fetch
@@ -1660,6 +1797,54 @@ def chat_completions():
             return  # 完全跳过后续所有逻辑
 
         # ══════════════════════════════════════════════════════════
+        #  VIP 周报直通车 — Python 层 JQL 汇总 → LLM 写 PM 周报
+        #  避免 ReAct 误查单 Issue + 话痨后无 Final Stream 输出
+        # ══════════════════════════════════════════════════════════
+        _weekly_intent = bool(re.search(
+            r'周报|日报|月报|本周.{0,10}(?:总结|汇总|进度|情况|报告)|写.{0,8}(?:周报|月报|日报)',
+            user_text or ""))
+        if _weekly_intent:
+            logger.info("[VIP] Weekly report express lane")
+            yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'search_jira_issues', 'status': 'running'}}, ensure_ascii=False)}\n\n".encode('utf-8')
+            _weekly_table = ""
+            _weekly_jql = ""
+            _dl_meta = {"display_name": "截止时间", "source": "?"}
+            _range_label = ""
+            try:
+                _weekly_table, _weekly_jql, _dl_meta, _date_range = _build_weekly_jira_snapshot(
+                    user_text, frontend_cfg, user_cfg.get("jira_pat", ""))
+                _range_label = _date_range[2]
+            except Exception as _we:
+                logger.error(f"[VIP] Weekly Jira fetch failed: {_we}")
+                _weekly_table = f"Jira 周报数据拉取失败: {str(_we)[:200]}"
+            yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'search_jira_issues', 'status': 'done'}}, ensure_ascii=False)}\n\n".encode('utf-8')
+            _disp_field = _dl_meta.get("display_name", "截止时间")
+            _weekly_prompt = (
+                "你是一名游戏研发项目的 PM 助理。请基于下方【真实 Jira 数据】撰写一份结构化的项目周报。\n\n"
+                "【数据筛选依据 — 必须在周报开头第一段写明，禁止省略】\n"
+                f"- 筛选字段: Jira「{_disp_field}」\n"
+                f"- 时间范围: {_range_label}\n"
+                f"- 查询 JQL: {_weekly_jql}\n"
+                "- 禁止根据任务状态猜测「本周」；只能使用表格中的任务\n\n"
+                "【输出结构 — 必须包含】\n"
+                "1. 数据依据说明（字段 + 时间范围 + JQL，见上）\n"
+                "2. 本周概览（1-2 句）\n"
+                "3. 任务列表（表格，须含编号、标题、经办人、状态、截止时间列）\n"
+                "4. 本周更新/完成亮点\n"
+                "5. 风险与阻塞（若无则写「暂无」）\n"
+                "6. 下周建议关注\n\n"
+                "【铁律】\n"
+                "- 只能使用下方表格中的 Issue，禁止编造 Issue Key 或人员\n"
+                "- 禁止输出「让我先读取文档」「第一步」等过程话术\n"
+                "- 若数据为空，如实写「该时间范围内 Jira 未返回匹配任务」\n\n"
+                f"【真实 Jira 数据】\n{_weekly_table}\n\n"
+                f"【用户原始需求】\n{user_text}"
+            )
+            yield from _vip_stream(_weekly_prompt, _weekly_table or "【无 Jira 数据】")
+            yield b"data: [DONE]\n\n"
+            return
+
+        # ══════════════════════════════════════════════════════════
         #  V2.0 LangGraph Plan-and-Execute 大脑 (优先)
         #  替换旧 ReAct while 循环
         # ══════════════════════════════════════════════════════════
@@ -1931,6 +2116,27 @@ def chat_completions():
             elif finish_reason == "stop":
                 # ══ Stop Interceptor: 第一轮话痨拦截 ══
                 # LLM 说"好的我来查"但不调工具 → 踹回循环
+                _weekly_in_query = bool(re.search(
+                    r'周报|日报|月报|本周.{0,10}(?:总结|汇总|进度|情况|报告)',
+                    user_text or ""))
+                _has_jira_search = any(
+                    m.get("role") == "tool" and m.get("name") == "search_jira_issues"
+                    for m in tool_messages
+                )
+                if step == 1 and _weekly_in_query and not _has_jira_search:
+                    _chatter = str(msg.get("content", ""))[:100]
+                    logger.warning(f"[ReAct] Stop Interceptor (weekly): no search_jira_issues, content='{_chatter}'")
+                    tool_messages.append(msg)
+                    tool_messages.append({
+                        "role": "user",
+                        "content": (
+                            "【系统强制指令】用户要的是项目周报/汇总，禁止只回复「我来读取文档」！"
+                            "必须立刻调用 search_jira_issues（keyword 可用「本周」或项目名 CT），"
+                            "拿到任务列表后再写周报。禁止编造 CT-xxxx Issue Key。"
+                        )
+                    })
+                    continue
+
                 if step == 1 and issue_keys_found and not any(
                     "tool_calls" in m for m in tool_messages if m.get("role") == "assistant"
                 ):
@@ -2181,16 +2387,27 @@ def chat_completions():
         except Exception as e:
             yield f"data: {json.dumps({'choices':[{'delta':{'content':f'[Error: {e}]'}}]})}\n\n".encode('utf-8')
 
-        # ══ Final Stream 安全网: 如果 LLM 全部输出被过滤 → 回退输出原始数据 ══
-        if not _final_content_yielded and _has_diff_tool:
-            logger.error(f"[FINAL-SAFETY] LLM output fully filtered! Fallback to raw diff data")
-            _raw_diff = []
-            for _tm in tool_messages:
-                if _tm.get("role") == "tool" and _tm.get("name") == "get_single_commit_diff":
-                    _raw_diff.append(str(_tm.get("content", ""))[:4000])
-            if _raw_diff:
-                _safe_text = "【Alice】LLM 分析未成功生成，以下是原始代码 Diff 数据：\n\n" + "\n\n---\n\n".join(_raw_diff)
+        # ══ Final Stream 安全网: LLM 无有效输出 → 回退已检索的工具数据 ══
+        if not _final_content_yielded:
+            if _has_diff_tool:
+                logger.error("[FINAL-SAFETY] LLM output filtered — fallback to raw diff")
+                _raw_diff = []
+                for _tm in tool_messages:
+                    if _tm.get("role") == "tool" and _tm.get("name") == "get_single_commit_diff":
+                        _raw_diff.append(str(_tm.get("content", ""))[:4000])
+                if _raw_diff:
+                    _safe_text = "【Alice】LLM 分析未成功生成，以下是原始代码 Diff 数据：\n\n" + "\n\n---\n\n".join(_raw_diff)
+                    yield f"data: {json.dumps({'choices':[{'delta':{'content':_safe_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+            elif _all_tool_results:
+                logger.error("[FINAL-SAFETY] LLM output empty — fallback to tool results (%d chunks)", len(_all_tool_results))
+                _safe_text = (
+                    "【Alice】模型未生成完整回答，以下是已检索到的数据摘要：\n\n"
+                    + "\n\n---\n\n".join(_all_tool_results)[:6000]
+                )
                 yield f"data: {json.dumps({'choices':[{'delta':{'content':_safe_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+            else:
+                _hint = "【Alice】未能生成回答。请重试，或检查后端日志；周报类问题建议包含项目名（如 CT）。"
+                yield f"data: {json.dumps({'choices':[{'delta':{'content':_hint}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
 
         yield b"data: [DONE]\n\n"
 
@@ -2573,7 +2790,8 @@ def get_admin_config():
     if request.method == 'OPTIONS':
         return Response(status=204)
     config = load_global_config()
-    
+    resolved_model = _resolved_deepseek_model(config)
+
     # 敏感字段脱敏：已配置返回统一掩码，未配置返回空
     def mask(val):
         return "********" if val else ""
@@ -2593,6 +2811,9 @@ def get_admin_config():
         "GDRIVE_PROXY_PORT": config.get("GDRIVE_PROXY_PORT", os.getenv("GDRIVE_PROXY_PORT", "")),
         "DEEPSEEK_URL": config.get("DEEPSEEK_URL", os.getenv("DEEPSEEK_URL", "")),
         "DEEPSEEK_KEY": mask(config.get("DEEPSEEK_KEY", os.getenv("DEEPSEEK_KEY", ""))),
+        "DEEPSEEK_MODEL": resolved_model,
+        "saved_model": resolved_model,
+        "JIRA_DEADLINE_FIELD_BY_PROJECT": config.get("JIRA_DEADLINE_FIELD_BY_PROJECT", {}),
     })
 
 @app.route('/v1/admin/config', methods=['POST', 'OPTIONS'])
@@ -2617,6 +2838,9 @@ def update_admin_config():
         
         for key, value in existing.items():
             os.environ[key] = str(value)
+
+        _DEADLINE_FIELD_CACHE.clear()
+        _JIRA_FIELDS_CACHE["ts"] = 0
             
         return jsonify({"success": True, "message": "全局配置已更新并热重载生效！"})
     except Exception as e:
@@ -2870,7 +3094,10 @@ def get_ai_models():
         if res.status_code == 200:
             data = res.json()
             models = [m.get("id") for m in data.get("data", []) if "id" in m]
-            return jsonify({"success": True, "models": models})
+            saved_model = _resolved_deepseek_model(config)
+            if saved_model and saved_model not in models:
+                models.insert(0, saved_model)
+            return jsonify({"success": True, "models": models, "saved_model": saved_model})
         else:
             return jsonify({"success": False, "error": f"上游节点拒绝访问: HTTP {res.status_code}"}), 401
     except http.exceptions.RequestException as e:

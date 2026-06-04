@@ -11,6 +11,192 @@ PROJECT_SCHEMA_MAP = {
     "DEFAULT": {"deadline": "duedate"}  # 其他项目的默认标准字段
 }
 
+# Jira /field 自动发现时的截止时间字段别名（按优先级）
+DEADLINE_FIELD_ALIASES = [
+    "end date",
+    "结束时间",
+    "截止日期",
+    "计划结束",
+    "due date",
+    "duedate",
+]
+
+
+def _normalize_field_name(name: str) -> str:
+    return re.sub(r"\s+", " ", (name or "").strip().lower())
+
+
+def _parse_schema_deadline(raw: str) -> tuple:
+    """PROJECT_SCHEMA_MAP 中的 deadline 值 → (display_name, jql_fragment)"""
+    raw = (raw or "duedate").strip()
+    if raw.startswith('"') and raw.endswith('"'):
+        inner = raw[1:-1]
+        return inner, f'"{inner}"'
+    return raw, raw
+
+
+def _meta_from_field(display_name: str, rest_id: str, source: str) -> dict:
+    disp = display_name or "duedate"
+    if _normalize_field_name(disp) == "duedate":
+        return {
+            "jql_name": "duedate",
+            "rest_id": "duedate",
+            "display_name": "duedate",
+            "source": source,
+        }
+    return {
+        "jql_name": f'"{disp}"',
+        "rest_id": rest_id or "duedate",
+        "display_name": disp,
+        "source": source,
+    }
+
+
+def discover_deadline_from_jira_fields(all_fields: list) -> dict | None:
+    """从 Jira /field 列表按别名匹配截止时间字段"""
+    if not all_fields:
+        return None
+    by_norm = {}
+    for f in all_fields:
+        name = f.get("name") or ""
+        if name:
+            by_norm[_normalize_field_name(name)] = f
+    for alias in DEADLINE_FIELD_ALIASES:
+        hit = by_norm.get(_normalize_field_name(alias))
+        if hit:
+            return _meta_from_field(hit.get("name", alias), hit.get("id", ""), "discovered")
+    return None
+
+
+def resolve_deadline_field(
+    project_key: str,
+    config_map: dict | None = None,
+    all_fields: list | None = None,
+) -> dict:
+    """
+    多项目截止时间字段解析（配置 > 静态表 > /field 发现 > duedate）
+    config_map: global_config JIRA_DEADLINE_FIELD_BY_PROJECT
+    all_fields: Jira GET /field 返回的数组
+    """
+    pk = (project_key or "DEFAULT").strip().upper()
+    cfg = config_map or {}
+
+    if pk in cfg and cfg[pk]:
+        name = str(cfg[pk]).strip()
+        rest_id = "duedate"
+        if all_fields:
+            for f in all_fields:
+                if (f.get("name") or "").strip() == name or _normalize_field_name(f.get("name")) == _normalize_field_name(name):
+                    rest_id = f.get("id") or rest_id
+                    name = f.get("name") or name
+                    break
+        return _meta_from_field(name, rest_id, "config")
+
+    schema = PROJECT_SCHEMA_MAP.get(pk) or PROJECT_SCHEMA_MAP.get("DEFAULT", {})
+    if schema.get("deadline"):
+        disp, jql = _parse_schema_deadline(schema["deadline"])
+        rest_id = "duedate"
+        if all_fields:
+            for f in all_fields:
+                if _normalize_field_name(f.get("name")) == _normalize_field_name(disp):
+                    rest_id = f.get("id") or rest_id
+                    disp = f.get("name") or disp
+                    break
+        meta = _meta_from_field(disp, rest_id, "schema")
+        meta["jql_name"] = jql
+        return meta
+
+    discovered = discover_deadline_from_jira_fields(all_fields or [])
+    if discovered:
+        return discovered
+
+    return _meta_from_field("duedate", "duedate", "duedate")
+
+
+def parse_date_range_from_text(text: str, anchor: _dt.datetime | None = None) -> tuple:
+    """
+    解析用户问题中的日期区间。
+    返回 (start_iso, end_iso, range_label, use_jql_functions)
+    use_jql_functions=True 时用 startOfWeek()/endOfWeek() 而非字面日期
+    """
+    anchor = anchor or _dt.datetime.now()
+    text = text or ""
+
+    m_iso = re.search(
+        r"(\d{4})-(\d{1,2})-(\d{1,2})\s*[-–—至到~]\s*(\d{4})-(\d{1,2})-(\d{1,2})",
+        text,
+    )
+    if m_iso:
+        s = f"{m_iso.group(1)}-{int(m_iso.group(2)):02d}-{int(m_iso.group(3)):02d}"
+        e = f"{m_iso.group(4)}-{int(m_iso.group(5)):02d}-{int(m_iso.group(6)):02d}"
+        return s, e, f"{s} 至 {e}", False
+
+    m_cn = re.search(
+        r"(\d{1,2})月(\d{1,2})日\s*[-–—至到~]\s*(\d{1,2})月(\d{1,2})日",
+        text,
+    )
+    if m_cn:
+        year = anchor.year
+        s = f"{year}-{int(m_cn.group(1)):02d}-{int(m_cn.group(2)):02d}"
+        e = f"{year}-{int(m_cn.group(3)):02d}-{int(m_cn.group(4)):02d}"
+        return s, e, f"{s} 至 {e}", False
+
+    if re.search(r"本周|这周|this\s*week", text, re.I):
+        monday = anchor - _dt.timedelta(days=anchor.weekday())
+        sunday = monday + _dt.timedelta(days=6)
+        s, e = monday.strftime("%Y-%m-%d"), sunday.strftime("%Y-%m-%d")
+        return s, e, f"日历本周（{s} 至 {e}）", True
+
+    if re.search(r"本月|这个月|this\s*month", text, re.I):
+        start = anchor.replace(day=1)
+        return start.strftime("%Y-%m-%d"), anchor.strftime("%Y-%m-%d"), "本月", True
+
+    # 周报/日报默认：日历本周
+    if re.search(r"周报|日报|月报", text):
+        monday = anchor - _dt.timedelta(days=anchor.weekday())
+        sunday = monday + _dt.timedelta(days=6)
+        s, e = monday.strftime("%Y-%m-%d"), sunday.strftime("%Y-%m-%d")
+        return s, e, f"日历本周（{s} 至 {e}）", True
+
+    monday = anchor - _dt.timedelta(days=anchor.weekday())
+    sunday = monday + _dt.timedelta(days=6)
+    s, e = monday.strftime("%Y-%m-%d"), sunday.strftime("%Y-%m-%d")
+    return s, e, f"日历本周（{s} 至 {e}）", True
+
+
+def build_weekly_report_jql(
+    project_key: str,
+    deadline_meta: dict,
+    date_range: tuple,
+) -> str:
+    """组装周报 JQL（项目 + 动态截止时间字段 + 日期区间）"""
+    pk = (project_key or "CT").strip().upper()
+    jql_field = deadline_meta.get("jql_name") or "duedate"
+    start, end, _label, use_fn = date_range
+    if use_fn:
+        if "本月" in (_label or ""):
+            time_clause = f"{jql_field} >= startOfMonth() AND {jql_field} <= endOfMonth()"
+        else:
+            time_clause = f"{jql_field} >= startOfWeek() AND {jql_field} <= endOfWeek()"
+    else:
+        time_clause = f'{jql_field} >= "{start}" AND {jql_field} <= "{end}"'
+    return f"project = {pk} AND {time_clause} ORDER BY {jql_field} ASC"
+
+
+def extract_deadline_display(fields: dict, deadline_meta: dict) -> str:
+    """从 issue fields 取出截止时间显示值"""
+    if not fields:
+        return "—"
+    rest_id = deadline_meta.get("rest_id") or "duedate"
+    if rest_id == "duedate":
+        return (fields.get("duedate") or "—")[:10]
+    val = fields.get(rest_id)
+    if val is None:
+        return "—"
+    if isinstance(val, str):
+        return val[:10] if val else "—"
+    return str(val)[:20]
+
 # ── JQL 中文状态名 → 英文映射 ─────────────────────────────
 CN_STATUS_MAP = {
     "待办": "To Do", "未开始": "To Do", "open": "To Do",

@@ -22,6 +22,27 @@ const ThinkingBlock = memo(({ content }: { content: string }) => {
   );
 });
 
+// ── 工具名 → 中文描述映射 ───────────────────
+const TOOL_LABELS: Record<string, string> = {
+  query_jira_metadata: '检索 Jira 任务元数据',
+  query_jira_issues: '搜索 Jira 任务',
+  search_jira_issues: '搜索 Jira 任务',
+  get_issue_commits: '拉取代码提交记录',
+  get_single_commit_diff: '解析代码变更差异',
+  search_docs_catalog: '检索知识库文档',
+  read_specific_doc: '细读关联文档',
+  jira_test_connection: '测试 Jira 连通性',
+  jira_list_projects: '列出 Jira 项目',
+  jira_search: 'JQL 高级搜索',
+  jira_my_open_issues: '查询我的未完成任务',
+  jira_this_week_issues: '查询本周未完成任务',
+  jira_get_issue: '获取任务详情',
+  jira_get_commits: '获取关联提交',
+  jira_get_svn_diff: '解析 SVN 代码差异',
+};
+
+const formatToolName = (raw: string): string => TOOL_LABELS[raw] || raw.replace(/_/g, ' ');
+
 // ─── Tool 调用渲染组件 ──────────────────────────
 const ToolCallBlock = memo(({ name, status, result }: { name: string; status: string; result?: string }) => {
   const isRunning = status === 'running';
@@ -35,6 +56,62 @@ const ToolCallBlock = memo(({ name, status, result }: { name: string; status: st
         </span>
       </div>
       {result && <div className="px-4 py-2 text-xs text-muted-foreground border-t border-blue-100/50 whitespace-pre-wrap leading-relaxed">{result}</div>}
+    </div>
+  );
+});
+
+// ─── SSE 插件状态卡片（极客化呼吸灯）────────────
+export const PluginToolCard = memo(({ plugin }: { plugin?: { name: string; status: 'running' | 'done' } }) => {
+  if (!plugin) return null;
+  const isRunning = plugin.status === 'running';
+  const label = formatToolName(plugin.name);
+
+  return (
+    <div className={`mb-4 rounded-xl border overflow-hidden transition-all duration-500 ${
+      isRunning
+        ? 'border-blue-400/40 bg-blue-50/40 dark:bg-blue-950/30 shadow-[0_0_16px_rgba(59,130,246,0.12)]'
+        : 'border-emerald-400/30 bg-emerald-50/30 dark:bg-emerald-950/20'
+    }`}>
+      <div className="flex items-center gap-3 px-4 py-3">
+        {/* 极客化旋转齿轮 / 完成标记 */}
+        <div className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${
+          isRunning ? 'bg-blue-100 dark:bg-blue-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50'
+        }`}>
+          {isRunning ? (
+            <Loader2 size={18} className="text-blue-600 dark:text-blue-400 animate-spin" />
+          ) : (
+            <Check size={18} className="text-emerald-600 dark:text-emerald-400" />
+          )}
+        </div>
+
+        {/* 文案 */}
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-medium leading-tight ${
+            isRunning ? 'text-blue-800 dark:text-blue-200' : 'text-emerald-800 dark:text-emerald-200'
+          }`}>
+            {isRunning ? `🔍 正在穿透检索：${label}...` : `✓ ${label} 完成`}
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+            {isRunning ? '后端 Agent 正在执行，预计耗时 5-15 秒' : '结果已纳入上方分析'}
+          </p>
+        </div>
+
+        {/* 状态胶囊 */}
+        <span className={`shrink-0 text-[10px] px-2.5 py-1 rounded-full font-medium animate-in fade-in ${
+          isRunning
+            ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+            : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+        }`}>
+          {isRunning ? '⌛ 执行中' : '✅ 已完成'}
+        </span>
+      </div>
+
+      {/* 呼吸灯进度条（仅 running 时显示） */}
+      {isRunning && (
+        <div className="h-0.5 bg-blue-100 dark:bg-blue-900/50">
+          <div className="h-full bg-gradient-to-r from-blue-400 via-blue-500 to-blue-400 animate-pulse w-2/3" />
+        </div>
+      )}
     </div>
   );
 });
@@ -129,7 +206,7 @@ const CodeBlock = ({ inline, className, children, ...props }: any) => {
 };
 
 // ─── 主渲染组件 (带三个插件) ────────────────────
-export const MarkdownRenderer = memo(({ content, citations }: { content: string; citations?: Citation[] }) => {
+export const MarkdownRenderer = memo(({ content, citations, plugin }: { content: string; citations?: Citation[]; plugin?: { name: string; status: 'running' | 'done' } }) => {
   const setActiveCitation = useChatStore((s) => s.setActiveCitation);
   const activeCitation = useChatStore((s) => s.activeCitation);
 
@@ -178,6 +255,8 @@ export const MarkdownRenderer = memo(({ content, citations }: { content: string;
       {thinkingBlocks.map((b, i) => <React.Fragment key={`think-${i}`}>{b.component}</React.Fragment>)}
       {toolBlocks.map((b, i) => <React.Fragment key={`tool-${i}`}>{b.component}</React.Fragment>)}
       {taskBlocks.map((b, i) => <React.Fragment key={`task-${i}`}>{b.component}</React.Fragment>)}
+
+      <PluginToolCard plugin={plugin} />
 
       <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:p-0">
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
