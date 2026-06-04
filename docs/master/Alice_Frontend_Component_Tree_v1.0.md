@@ -163,7 +163,7 @@ sequenceDiagram
 | 1 | **多模态图片上传** | `chatSlice.sendMessage()` 支持 `imageBase64` 参数，构造 `[{type:"image_url",...}]` | 后端 `parse_user_config` 未提取图片字段；DeepSeek V4 Flash 可能不支持多模态 | 🔴 高 — 前端有实现，后端未适配 |
 | 2 | **Agent 工具白名单** | `sendMessage` 传递 `tool_whitelist: currentAgent.allowedTools` | 后端未使用 `tool_whitelist` 过滤工具 | 🟡 中 — 前端传了，后端忽略 |
 | 3 | **extractMemories** | `chatSlice` 在对话完成后调用 `(get() as any).extractMemories?.(msgs)` | 无对应 API。`memorySlice` 定义了 `extractMemories` 但似乎在前端本地处理 | 🟡 中 — 可能是本地 LLM 调用，未验证 |
-| 4 | **admin.html 直接存在于 backend/** | 无 | `backend/admin.html` 是独立 HTML 文件，不走 React 前端路由 | 🟡 中 — 管理后台与前端脱钩 |
+| 4 | **admin.html 直接存在于 backend/** | 模型下拉即保存；API 分轨编辑 | `backend/admin.html`（Vue CDN），`GET/POST /v1/admin/config`、`GET /v1/admin/models` | 🟢 低 — 与 React 聊天端解耦，全局默认模型由 `global_config.json` 注入后端 |
 | 5 | **确认卡 SSE 事件** | 无专门的状态处理；前端可能依赖通用消息流 | 后端发送 `_event:"confirm_card"` 的 SSE 事件 | 🟡 中 — 前端 chatSlice 无确认卡状态机 |
 | 6 | **config 对象字段不一致** | 前端传 `config: {agentId?, tool_whitelist?, provider?}` | 后端期望 `config: {jira_url?, jira_pat?, deepseek_key?, deepseek_model?, max_steps?}` | 🔴 高 — 前端传的 config 结构不完整 |
 | 7 | **/health 响应未被前端使用** | 无健康检查轮询逻辑 | `/health` 返回 `{status:"ok"}` | 🟢 低 — 优化项 |

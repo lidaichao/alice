@@ -1,6 +1,6 @@
 # Alice AI Bridge — API 契约文档 (v1.0)
 
-> 版本：v1.0 | 日期：2026-06-03 | 作者：可达鸭 (Psyduck)
+> 版本：v1.1 | 日期：2026-06-04 | 作者：可达鸭 (Psyduck)
 >
 > 本文档通过逆向读取 `backend/ai_bridge.py` 中的 Flask 路由装饰器生成。
 > ⚠️ SSE 接口标记为 `stream: text/event-stream`。
@@ -165,11 +165,40 @@ GET /operations/pending
 
 | 端点 | 方法 | 用途 |
 |------|------|------|
-| `/v1/admin/config` | GET | 获取当前配置 |
-| `/v1/admin/config` | POST | 更新配置（热重载） |
+| `/v1/admin/config` | GET | 获取当前配置（敏感字段掩码 `********`） |
+| `/v1/admin/config` | POST | 部分更新配置（merge 到 `global_config.json` 并热重载） |
 | `/v1/admin/stats` | GET | 获取统计信息 |
 | `/v1/admin/verify` | POST | 验证用户权限 |
 | `/v1/admin/token` | POST | Token 管理 |
+
+**GET `/v1/admin/config` 响应字段（节选）**：
+
+```json
+{
+  "DEEPSEEK_URL": "https://api.deepseek.com/v1/chat/completions",
+  "DEEPSEEK_KEY": "********",
+  "DEEPSEEK_MODEL": "deepseek-v4-pro",
+  "saved_model": "deepseek-v4-pro",
+  "JIRA_DEADLINE_FIELD_BY_PROJECT": { "CT": "End date" }
+}
+```
+
+- `DEEPSEEK_MODEL` / `saved_model`：由 `_resolved_deepseek_model()` 解析，**文件优先**于环境变量。
+- 掩码字段 `********` 在 POST 时会被跳过（表示未修改）。
+
+**POST `/v1/admin/config` 请求体**：支持任意子集字段 merge，例如：
+
+```json
+{ "DEEPSEEK_MODEL": "deepseek-reasoner" }
+```
+
+或仅 API：
+
+```json
+{ "DEEPSEEK_URL": "...", "DEEPSEEK_KEY": "sk-..." }
+```
+
+**鉴权**：`Authorization: Bearer <admin-token>`（与 Admin 面板 `localStorage.wb_admin_token` 一致）。
 
 ### 4.2 测试与诊断
 
@@ -187,7 +216,7 @@ GET /operations/pending
 
 | 端点 | 方法 | 用途 |
 |------|------|------|
-| `/v1/admin/models` | GET | 获取模型配置列表 |
+| `/v1/admin/models` | GET | 从上游 API `/models` 拉取可用模型 id 列表 |
 | `/v1/admin/logic/reload` | POST | 热重载逻辑断言规则 |
 
 ### 4.4 评估
@@ -210,6 +239,18 @@ GET /operations/pending
 |------|------|------|
 | `/admin` | GET | Web 管理后台页面 |
 | `/` | GET | 根路由（API 信息） |
+
+**GET `/v1/admin/models` 成功响应**：
+
+```json
+{
+  "success": true,
+  "models": ["deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"],
+  "saved_model": "deepseek-v4-pro"
+}
+```
+
+已保存但不在上游列表的 `saved_model` 会插入 `models` 数组首位。
 
 ---
 

@@ -1,6 +1,6 @@
 # Alice AI Bridge — 技术架构文档 (V2.2)
 
-> 版本：v2.2 | 日期：2026-06-04 | 分支：master | 最新提交：1549a6f
+> 版本：v2.3 | 日期：2026-06-04 | 分支：master
 
 ---
 
@@ -34,6 +34,7 @@
 用户请求
   │
   ├─ diff意图 (r\d+) → VIP Diff 直通车 (Python全检索 → LLM纯分析)
+  ├─ 周报/日报意图 → VIP Weekly 直通车 (动态 End date JQL → 表格 → LLM)
   ├─ ALICE_ENGINE=v2 → LangGraph Plan-and-Execute
   │   ├─ Planner (意图分诊: doc_only / cross_domain / chat)
   │   ├─ Executor (工具路由: Jira / SVN / search_doc_chunks)
@@ -58,6 +59,24 @@
 | 意图路由 | `backend/intent_router.py` | 6 类意图 (含 KNOWLEDGE_QUERY) |
 | 知识检索 | `backend/knowledge_retriever.py` | SVN/Notion/动态关键词 |
 | 评测引擎 | `eval/` | ingest → generate → run_tests → benchmark |
+| 全局配置 | `backend/global_config.json` | Admin POST merge；`DEEPSEEK_MODEL` 驱动默认对话模型 |
+| Admin UI | `backend/admin.html` | Vue 3 CDN；模型即时保存 + API 分轨编辑 |
+
+---
+
+## Admin 配置流
+
+```
+Admin 下拉切换模型
+  → POST /v1/admin/config { DEEPSEEK_MODEL }
+  → global_config.json + os.environ 热重载
+  → 新对话 parse_user_config() 读取 global_cfg.DEEPSEEK_MODEL
+
+F5 刷新
+  → GET /v1/admin/config (saved_model)
+  → await GET /v1/admin/models
+  → hydratingModel 守卫，禁止加载期误 POST
+```
 
 ---
 

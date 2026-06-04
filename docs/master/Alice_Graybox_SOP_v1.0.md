@@ -1,6 +1,6 @@
 # Alice Jira AI — 灰度测试白皮书 (Graybox SOP)
 
-> 版本：v1.0 | 日期：2026-06-03 | 作者：可达鸭 (Psyduck)
+> 版本：v1.1 | 日期：2026-06-04 | 作者：可达鸭 (Psyduck)
 
 ---
 
@@ -54,6 +54,18 @@ Alice 是一款面向游戏研发团队的 AI 工作助手。
    - **DeepSeek Key**：联系管理员获取
 4. 点击 **Test Connection**，看到 ✅ 绿色即配置成功
 
+### 3.3 管理员：Web 后台（可选）
+
+浏览器打开 `http://<服务器>:9099/admin`（需管理员 Bearer Token）。
+
+| 操作 | 说明 |
+|------|------|
+| 默认对话模型 | 下拉选择后立即生效，写入 `global_config.json` |
+| 编辑 API 配置 | 仅修改 DeepSeek API 地址与 Key |
+| 周报字段映射 | Jira 区配置 `JIRA_DEADLINE_FIELD_BY_PROJECT`（如 CT → End date） |
+
+刷新页面后模型选择应保持不变；若变回 `deepseek-chat`，请确认后端已更新至含加载守卫的版本。
+
 ---
 
 ## 四、如何使用
@@ -65,6 +77,7 @@ Alice 是一款面向游戏研发团队的 AI 工作助手。
 | "CT-10888 最近提交了啥？" | SVN 提交列表（版本/作者/时间） |
 | "帮我分析一下 r40538 的 diff" | Code Review + 关联策划文档 |
 | "有哪些阵型相关的设计案？" | Notion 文档列表 |
+| "写一下本周 CT 项目周报（6/1-6/5）" | Jira 按截止时间字段汇总 + PM 周报 |
 
 ### 快捷键
 

@@ -1,6 +1,6 @@
 # Alice AI Bridge — 技术架构文档
 
-> 版本：v2.0 | 日期：2026-06-03 | 分支：master
+> 版本：v2.1 | 日期：2026-06-04 | 分支：master
 
 ---
 
@@ -28,10 +28,10 @@
 │              VIP 预检入口 (generate_stream)           │
 │                                                     │
 │  ┌──────────────┐  ┌──────────────┐                 │
-│  │ diff意图     │  │ doc意图      │                 │
-│  │ (r\d+ +diff) │  │ (notion/wiki) │                │
-│  │    ↓         │  │    ↓         │                 │
-│  │ VIP Diff     │  │ VIP Catalog  │                 │
+│  │ diff意图     │  │ doc意图      │  weekly意图    │
+│  │ (r\d+ +diff) │  │ (notion/wiki) │ (周报/日报)  │
+│  │    ↓         │  │    ↓         │    ↓          │
+│  │ VIP Diff     │  │ VIP Catalog  │ VIP Weekly   │
 │  │ 直通车       │  │ 直通车       │                 │
 │  │             │  │             │                 │
 │  │ Python层全检索:            │                     │
@@ -73,8 +73,19 @@
 | ReAct 循环 | 通用意图的 5 轮 max 工具调用循环 |
 | Nuclear V2 | ReAct 退出后的最终防线：列表查询强制输出表格 |
 | Final Stream 安全网 | LLM 输出全过滤时回退到工具数据 |
+| VIP 周报直通车 | 周报/日报意图 → 动态 End date 字段 + 日期区间 JQL → 表格 → LLM 写 PM 周报 |
+| `parse_user_config` | 默认模型：`user_config.ai_model` > 请求 config > `global_config.DEEPSEEK_MODEL` > 环境变量 |
 
-### 3.2 knowledge_retriever.py — 知识检索
+### 3.2 prompt_manager.py — 周报与截止时间字段
+
+| 组件 | 职责 |
+|------|------|
+| `resolve_deadline_field` | 项目 → 截止时间字段（配置映射 → schema → `/field` 发现 → `duedate`） |
+| `parse_date_range_from_text` | 从用户话术解析日期区间（如 6/1–6/5） |
+| `build_weekly_report_jql` | 按动态字段 + 区间生成 JQL |
+| `JIRA_DEADLINE_FIELD_BY_PROJECT` | Admin 可配置 JSON 覆盖（如 CT → End date） |
+
+### 3.3 knowledge_retriever.py — 知识检索
 
 | 函数 | 职责 |
 |------|------|
@@ -83,7 +94,7 @@
 | `fetch_precise_commits_via_fisheye(issue_key)` | FishEye 双跳精确检索提交列表 |
 | `safe_get_commits(issue_key)` | 带 TTL 缓存 + 超时熔断的提交获取 |
 
-### 3.3 intent_router.py — 意图路由
+### 3.4 intent_router.py — 意图路由
 
 | 意图 | 正则 | 分配工具 |
 |------|------|---------|
@@ -92,7 +103,7 @@
 | `JIRA_QUERY` | 查/看/状态/谁/负责人 | query_jira_metadata + search_jira_issues |
 | `KNOWLEDGE` | 文档/设计案/wiki | search_docs_catalog + read_specific_doc |
 
-### 3.4 tools/registry.yaml — 工具注册表（6 原子工具）
+### 3.5 tools/registry.yaml — 工具注册表（6 原子工具）
 
 | 工具 | 类型 | 说明 |
 |------|------|------|
@@ -105,7 +116,21 @@
 
 ---
 
-## 四、架构铁律 (2026-06-03)
+## 四、Admin 管理后台（`backend/admin.html`）
+
+| 能力 | 说明 |
+|------|------|
+| API 配置 | 「编辑 API 配置」仅改 `DEEPSEEK_URL` / `DEEPSEEK_KEY`，保存后热重载 |
+| 默认模型 | 下拉切换即 POST `{ DEEPSEEK_MODEL }`（Cursor 式），全局默认对话模型 |
+| 模型列表 | `GET /v1/admin/models` 从上游 `/models` 拉取；已保存但不在列表的 id 仍会显示 |
+| 加载守卫 | `hydratingModel` 防止 F5 刷新时 `<select @change>` 误把 `deepseek-chat` 写回磁盘 |
+| 读模型 | 后端 `_resolved_deepseek_model()`：`global_config.json` 优先于环境变量 |
+
+持久化文件：`backend/global_config.json`（含 `DEEPSEEK_MODEL`、`JIRA_DEADLINE_FIELD_BY_PROJECT` 等）。
+
+---
+
+## 五、架构铁律 (2026-06-04)
 
 1. **VIP 直通车 > ReAct 循环**：diff/文档查询走 Python Pre-flight RAG + LLM 纯流式 (无 tools, temp=0.1)
 2. **硬编码 = 死罪**：所有关键词必须通过 DynamicContextResolver 动态提取
@@ -115,7 +140,7 @@
 
 ---
 
-## 五、数据流（VIP Diff 直通车示例）
+## 六、数据流（VIP Diff 直通车示例）
 
 ```
 [用户] "帮我分析一下 r40538 的代码 diff"
@@ -143,39 +168,27 @@
 
 ---
 
-## 六、项目结构
+## 七、项目结构
 
 ```
 H:\workbuddy\alice\
-├── ai-bridge/                # Python AI 引擎
-│   ├── ai_bridge.py          # 核心服务 (VIP 入口 + ReAct 循环)
-│   ├── knowledge_retriever.py # 知识检索 (SVN/Notion/动态关键词)
-│   ├── intent_router.py      # 意图路由
-│   ├── jira_mcp_server.py    # MCP 工具服务
-│   ├── tools/
-│   │   └── registry.yaml     # 6 原子工具注册表
-│   ├── tests/
-│   │   └── test_vip_pipeline.py  # VIP 离线测试 (2/2 PASS)
-│   └── logs/
-│       └── alice_bridge.log   # 持久化日志 (10MB×5)
-│
-├── src/                      # React 前端
-│   ├── App.tsx               # 主界面 (含错误气泡)
-│   ├── MobileApp.tsx         # 移动端适配
-│   └── store/slices/chatSlice.ts  # SSE 流处理 + 异常兜底
-│
+├── backend/                  # Python AI 引擎
+│   ├── ai_bridge.py          # Flask 主服务 + Admin API
+│   ├── admin.html            # Web 管理后台（Vue CDN）
+│   ├── global_config.json    # 全局配置（模型、Jira、Key 等）
+│   ├── prompt_manager.py     # 周报 JQL / 截止时间字段解析
+│   ├── intent_router.py      # 意图路由（含周报）
+│   └── tools/registry.yaml   # 6 原子工具
+├── frontend/                 # React 19 + Vite
+│   └── src/store/slices/chatSlice.ts
 ├── desktop/                  # Electron 桌面壳
-│   ├── main.js               # 主进程
-│   ├── preload.js            # IPC 安全桥
-│   └── bridge-manager.js     # Python 子进程管理
-│
-├── docs/ → 兔子查看使用/     # 设计文档
-└── global_config.json.example  # 配置模板
+├── docs/master/              # 主文档（本目录）
+└── eval/                     # 评测流水线
 ```
 
 ---
 
-## 七、测试
+## 八、测试
 
 | 模块 | 用例 | 结果 |
 |------|------|------|
@@ -188,7 +201,7 @@ H:\workbuddy\alice\
 
 ---
 
-## 八、关键设计决策
+## 九、关键设计决策
 
 | 决策 | 原因 |
 |------|------|
