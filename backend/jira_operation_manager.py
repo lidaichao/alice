@@ -278,6 +278,8 @@ def operation_to_confirm_ui(operation: dict) -> dict:
     }
     if kind == "jira_bulk_create" and drafts:
         ui["drafts"] = draft_items_for_ui(drafts)
+    if operation.get("recovery"):
+        ui["recovery"] = operation["recovery"]
     return ui
 
 
@@ -556,6 +558,21 @@ def create_issues_draft(
 def get_draft(draft_id: str) -> Optional[dict]:
     with _lock:
         return _draft_box.get(draft_id)
+
+
+def list_pending_drafts(conversation_id: str = "", status: str = "awaiting_review") -> list:
+    """按会话列出待核对草稿（F5 恢复 / E2.3）。"""
+    _load_draft_box()
+    out = []
+    with _lock:
+        for d in _draft_box.values():
+            if status and d.get("status") != status:
+                continue
+            if conversation_id and d.get("conversation_id") != conversation_id:
+                continue
+            out.append(d)
+    out.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return out
 
 
 def build_draft_tool_response(draft: dict, message: str = "") -> dict:

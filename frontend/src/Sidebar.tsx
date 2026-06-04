@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useChatStore } from '@/store/useChatStore';
 import { Button } from '@/components/ui/button';
 import { useTheme } from 'next-themes';
-import { Sun, Moon, Monitor, Plus, Trash2, Edit2, Wifi, Bug } from 'lucide-react';
+import { Sun, Moon, Monitor, Plus, Trash2, Edit2, Wifi, Bug, ClipboardList } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { TeamMemoryPanel } from '@/components/TeamMemoryPanel';
 
@@ -13,7 +13,11 @@ export const Sidebar: React.FC = () => {
   const switchSession = useChatStore((s) => s.setActiveSession);
   const deleteSession = useChatStore((s) => s.deleteSession);
   const renameSession = useChatStore((s) => s.renameSession);
+  const pendingConfirmations = useChatStore((s) => s.pendingConfirmations);
+  const pendingDraftCards = useChatStore((s) => s.pendingDraftCards);
   const { theme, setTheme } = useTheme();
+
+  const pendingTotal = pendingConfirmations.length + pendingDraftCards.length;
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -44,6 +48,28 @@ export const Sidebar: React.FC = () => {
           <Plus size={16} />
         </Button>
       </div>
+
+      {pendingTotal > 0 && (
+        <div className="mx-2 mt-2 mb-1 p-2 rounded-lg border border-amber-400/40 bg-amber-50/50 dark:bg-amber-950/30">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-800 dark:text-amber-200 mb-1.5">
+            <ClipboardList size={14} />
+            待处理 ({pendingTotal})
+          </div>
+          <ul className="space-y-1 max-h-28 overflow-y-auto">
+            {pendingDraftCards.map((d) => (
+              <li key={d.draft_id} className="text-[11px] text-muted-foreground truncate">
+                草稿 · {d.items.length} 条
+              </li>
+            ))}
+            {pendingConfirmations.map((c) => (
+              <li key={c.op_id} className="text-[11px] text-muted-foreground truncate">
+                {c.operation_status === 'recovery_required' ? '恢复' : '确认'} · {c.operation.type}
+                {c.operation.issue_key ? ` ${c.operation.issue_key}` : ''}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Session list */}
       <div className="flex-1 overflow-y-auto py-1">

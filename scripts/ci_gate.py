@@ -34,6 +34,7 @@ def main() -> int:
     _run([py, os.path.join("backend", "intent_classifier.py")])
     _run([py, os.path.join("scripts", "validate_kb_matrix_yaml.py")])
     _run([py, os.path.join("backend", "tests", "test_chat_orchestrator.py")])
+    _run([py, os.path.join("backend", "tests", "test_hitl_sse.py")])
 
     if os.environ.get("ALICE_RUN_INTEGRATION", "").strip() in ("1", "true", "yes"):
         base = os.environ.get("ALICE_BASE_URL", "http://127.0.0.1:9099")

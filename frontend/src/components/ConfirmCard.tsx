@@ -1,23 +1,26 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { ShieldAlert, CheckCircle, XCircle } from 'lucide-react';
-import type { ConfirmCard as ConfirmCardType } from '@/store/slices/chatSlice';
+import { ShieldAlert, CheckCircle, XCircle, RotateCcw } from 'lucide-react';
 import IssueDraftList from '@/components/IssueDraftList';
+import type { ConfirmCard as ConfirmCardType } from '@/store/slices/chatSlice';
 
 interface Props {
   card: ConfirmCardType;
-  onConfirm: (opId: string) => Promise<void>;
+  progressMessage?: string;
+  onConfirm: (opId: string, opts?: { recoveryAction?: string }) => Promise<void>;
   onReject: (opId: string) => Promise<void>;
 }
 
-export default function ConfirmCard({ card, onConfirm, onReject }: Props) {
-  const [loading, setLoading] = useState<'confirm' | 'reject' | null>(null);
+export default function ConfirmCard({ card, progressMessage, onConfirm, onReject }: Props) {
+  const [loading, setLoading] = useState<'confirm' | 'reject' | string | null>(null);
 
-  const handleConfirm = async () => {
+  const isRecovery = card.operation_status === 'recovery_required' || !!card.recovery?.actions?.length;
+
+  const runConfirm = async (recoveryAction?: string) => {
     if (loading) return;
-    setLoading('confirm');
+    setLoading(recoveryAction || 'confirm');
     try {
-      await onConfirm(card.op_id);
+      await onConfirm(card.op_id, recoveryAction ? { recoveryAction } : undefined);
     } finally {
       setLoading(null);
     }
@@ -40,14 +43,27 @@ export default function ConfirmCard({ card, onConfirm, onReject }: Props) {
     : op.type === 'transition_issue' ? '状态流转'
     : op.type || '未知操作';
 
+  const recoveryActions = (card.recovery?.actions || []).filter((a) => a.id !== 'cancel');
+
   return (
     <div className="mt-3 border border-orange-400/50 bg-orange-50/30 dark:bg-orange-950/20 rounded-lg p-4 animate-in fade-in">
       <div className="flex items-start gap-3 mb-3">
         <ShieldAlert className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-orange-700 dark:text-orange-300">
-            🛡️ Jira 操作确认 — {typeLabel}
+            {isRecovery ? '⚠️ 需要恢复 — ' : '🛡️ Jira 操作确认 — '}
+            {typeLabel}
           </div>
+          {isRecovery && card.recovery?.summary && (
+            <div className="text-xs text-amber-800 dark:text-amber-200 mt-1">
+              {card.recovery.summary}
+            </div>
+          )}
+          {isRecovery && card.recovery?.reason && (
+            <div className="text-xs text-muted-foreground mt-0.5">
+              {card.recovery.reason}
+            </div>
+          )}
           {op.issue_key && (
             <div className="text-xs text-muted-foreground mt-1">
               目标: <span className="font-mono font-medium">{op.issue_key}</span>
@@ -84,7 +100,13 @@ export default function ConfirmCard({ card, onConfirm, onReject }: Props) {
         </ul>
       )}
 
-      <div className="flex gap-2 justify-end">
+      {progressMessage && (
+        <div className="mb-3 text-xs text-muted-foreground animate-pulse">
+          {progressMessage}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2 justify-end">
         <Button
           variant="destructive"
           size="sm"
@@ -95,16 +117,32 @@ export default function ConfirmCard({ card, onConfirm, onReject }: Props) {
           <XCircle size={14} />
           {loading === 'reject' ? '拒绝中...' : '拒绝拦截'}
         </Button>
-        <Button
-          variant="default"
-          size="sm"
-          onClick={handleConfirm}
-          disabled={loading !== null}
-          className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
-        >
-          <CheckCircle size={14} />
-          {loading === 'confirm' ? '放行中...' : '授权放行'}
-        </Button>
+        {isRecovery && recoveryActions.length > 0 ? (
+          recoveryActions.map((action) => (
+            <Button
+              key={action.id}
+              variant="default"
+              size="sm"
+              onClick={() => runConfirm(action.id)}
+              disabled={loading !== null}
+              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              <RotateCcw size={14} />
+              {loading === action.id ? '执行中...' : action.label}
+            </Button>
+          ))
+        ) : (
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => runConfirm()}
+            disabled={loading !== null}
+            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+          >
+            <CheckCircle size={14} />
+            {loading === 'confirm' ? '放行中...' : '授权放行'}
+          </Button>
+        )}
       </div>
     </div>
   );

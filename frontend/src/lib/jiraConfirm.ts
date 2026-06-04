@@ -1,11 +1,18 @@
-import type { ConfirmCard, DraftCardItem } from '@/store/slices/chatSlice';
+import type { ConfirmCard, DraftCardItem, RecoveryInfo } from '@/store/slices/chatSlice';
 
 export function buildConfirmCardFromApi(
   opId: string,
   operation: Record<string, unknown> | undefined,
+  extras?: {
+    recovery?: RecoveryInfo;
+    operation_status?: string;
+  },
 ): ConfirmCard {
   const raw = operation || {};
   const type = String(raw.type || 'unknown');
+  const recovery =
+    extras?.recovery ||
+    (raw.recovery as RecoveryInfo | undefined);
   return {
     op_id: opId,
     event: 'confirm_card',
@@ -19,6 +26,8 @@ export function buildConfirmCardFromApi(
       drafts: raw.drafts as DraftCardItem[] | undefined,
       warnings: (raw.warnings as string[]) || [],
     },
+    recovery,
+    operation_status: extras?.operation_status,
     status: 'pending',
   };
 }

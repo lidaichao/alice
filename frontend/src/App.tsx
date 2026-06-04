@@ -11,6 +11,7 @@ import JiraSearchSupplement from '@/components/JiraSearchSupplement';
 import type { DraftCardItem } from '@/store/slices/chatSlice';
 import { buildJiraWriteRequestBody } from '@/lib/runtimeConfig';
 import { buildConfirmCardFromApi, formatOperationResultMessage } from '@/lib/jiraConfirm';
+import { confirmOperationWithProgress } from '@/lib/operationConfirmStream';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { PluginToolCard } from '@/components/MarkdownRenderer';
 import { ThemeProvider } from '@lobehub/ui';
@@ -49,6 +50,7 @@ export const App: React.FC = () => {
   const [commandFilter, setCommandFilter] = useState('');
   const [selectedCmdIndex, setSelectedCmdIndex] = useState(0);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
+  const [confirmProgress, setConfirmProgress] = useState<Record<string, string>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -151,17 +153,23 @@ export const App: React.FC = () => {
   }, []);
 
   const handleConfirm = useCallback(
-    async (opId: string) => {
-      const res = await fetch(`/operations/${opId}/confirm`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildJiraWriteRequestBody()),
+    async (opId: string, opts?: { recoveryAction?: string }) => {
+      const body = buildJiraWriteRequestBody(
+        opts?.recoveryAction ? { recovery_action: opts.recoveryAction } : {},
+      );
+      setConfirmProgress((p) => ({ ...p, [opId]: '开始执行…' }));
+      const data = await confirmOperationWithProgress(opId, body, (ev) => {
+        setConfirmProgress((p) => ({ ...p, [opId]: ev.message || ev.phase }));
       });
-      const data = await res.json().catch(() => ({}));
+      setConfirmProgress((p) => {
+        const next = { ...p };
+        delete next[opId];
+        return next;
+      });
       const msg = formatOperationResultMessage(data);
       await appendAssistantMessage(msg);
-      if (!res.ok || data.ok === false) {
-        throw new Error(data.error || res.statusText);
+      if (data.ok === false) {
+        throw new Error(data.error || '操作失败');
       }
       useChatStore.setState((s) => ({
         pendingConfirmations: s.pendingConfirmations.filter((c) => c.op_id !== opId),
@@ -322,7 +330,12 @@ export const App: React.FC = () => {
               <div key={card.op_id} className="flex gap-4 flex-row">
                 <div className="w-10 h-10 shrink-0" />
                 <div className="max-w-[75%] flex-1">
-                  <ConfirmCard card={card} onConfirm={handleConfirm} onReject={handleReject} />
+                  <ConfirmCard
+                    card={card}
+                    progressMessage={confirmProgress[card.op_id]}
+                    onConfirm={handleConfirm}
+                    onReject={handleReject}
+                  />
                 </div>
               </div>
             ))}

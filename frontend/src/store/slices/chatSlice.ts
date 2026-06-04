@@ -21,7 +21,12 @@ async function restorePendingOperations(sessionId: string, set: (fn: (s: ChatSli
       for (const row of data.operations) {
         const opId = row.id as string;
         if (!opId || existing.has(opId)) continue;
-        merged.push(buildConfirmCardFromApi(opId, row.operation));
+        merged.push(
+          buildConfirmCardFromApi(opId, row.operation, {
+            recovery: row.recovery,
+            operation_status: row.status,
+          }),
+        );
         existing.add(opId);
       }
       return { pendingConfirmations: merged };
@@ -29,6 +34,47 @@ async function restorePendingOperations(sessionId: string, set: (fn: (s: ChatSli
   } catch {
     /* 后端未启动时静默 */
   }
+}
+
+async function restorePendingDrafts(sessionId: string, set: (fn: (s: ChatSlice) => Partial<ChatSlice>) => void) {
+  if (!sessionId) return;
+  try {
+    const res = await fetch(
+      `/drafts?conversation_id=${encodeURIComponent(sessionId)}&status=awaiting_review`,
+    );
+    const data = await res.json();
+    if (!data.ok || !Array.isArray(data.drafts)) return;
+    set((state) => {
+      const existing = new Set(state.pendingDraftCards.map((d) => d.draft_id));
+      const merged = [...state.pendingDraftCards];
+      for (const row of data.drafts) {
+        const draftId = row.id as string;
+        if (!draftId || existing.has(draftId)) continue;
+        merged.push({
+          draft_id: draftId,
+          event: 'draft_card',
+          items: Array.isArray(row.items) ? row.items : [],
+          preview: row.preview || '',
+          warnings: Array.isArray(row.warnings) ? row.warnings : [],
+          status: 'pending',
+        });
+        existing.add(draftId);
+      }
+      return { pendingDraftCards: merged };
+    });
+  } catch {
+    /* 后端未启动时静默 */
+  }
+}
+
+async function restoreHitlForSession(
+  sessionId: string,
+  set: (fn: (s: ChatSlice) => Partial<ChatSlice>) => void,
+) {
+  await Promise.all([
+    restorePendingOperations(sessionId, set),
+    restorePendingDrafts(sessionId, set),
+  ]);
 }
 
 // ── 确认卡类型定义 ───────────────────────────
@@ -50,6 +96,20 @@ export interface DraftCard {
   status?: 'pending' | 'submitted';
 }
 
+export interface RecoveryAction {
+  id: string;
+  label: string;
+  kind?: string;
+  description?: string;
+}
+
+export interface RecoveryInfo {
+  status?: string;
+  summary?: string;
+  reason?: string;
+  actions?: RecoveryAction[];
+}
+
 export interface ConfirmCard {
   op_id: string;
   event: 'confirm_card';
@@ -63,6 +123,8 @@ export interface ConfirmCard {
     drafts?: DraftCardItem[];
     warnings?: string[];
   };
+  recovery?: RecoveryInfo;
+  operation_status?: string;
   created_at?: string;
   status?: 'pending' | 'confirmed' | 'rejected';
 }
@@ -115,7 +177,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
         isDbLoaded: true,
       });
       if (activeId) {
-        await restorePendingOperations(activeId, set);
+        await restoreHitlForSession(activeId, set);
       }
     } catch (error) {
       set({ isDbLoaded: true });
@@ -123,7 +185,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
   },
 
   restorePendingForSession: async (sessionId: string) => {
-    await restorePendingOperations(sessionId, set);
+    await restoreHitlForSession(sessionId, set);
   },
 
   appendAssistantMessage: async (content: string) => {
@@ -189,7 +251,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
 
   setActiveSession: (id) => {
     set({ activeSessionId: id, pendingConfirmations: [], pendingDraftCards: [] });
-    void restorePendingOperations(id, set);
+    void restoreHitlForSession(id, set);
   },
   clearAllSessions: async () => {
     await db.sessions.clear();
