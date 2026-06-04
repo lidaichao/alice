@@ -75,7 +75,9 @@ def main():
         "",
         "- Baize: Claude Code 结构化 query + buildResolvedJql + analyzeIssues 再回答",
         "- Alice (本基线后): 规则 parse_query + build_resolved_jql + 读直通车",
-        "- 待 A/B: 同 PAT 下协调者 5–10 条历史问句对比",
+        "- A/B 脚本: `eval/jira_baize_ab_compare.py` → `eval/reports/jira_baize_ab_latest.md`",
+        "- LLM JQL recovery: `jira_search_recovery.py`（环境变量 JIRA_LLM_RECOVERY=1）",
+        "- 字段映射 Admin: `JIRA_FIELD_MAPPINGS` / `JIRA_PROJECT_CONFIG`",
         "",
     ])
     with open(REPORT_PATH, "w", encoding="utf-8") as f:

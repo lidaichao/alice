@@ -238,7 +238,7 @@ def main():
     if fail_items:
         lines.append(f"3. **建议优先修复**: 解析/JQL — {fail_items[0][:30]}…")
     if ok_h and chat_pass < len(chat_cases):
-        lines.append("4. **建议优先修复**: 部分问句未走「结构化 Jira 查询」车道，回答可能不如 Baize 稳。")
+        lines.append("4. **建议优先修复**: 部分问句未走「结构化 Jira 查询」车道，回答稳定性不足。")
 
     lines.append("")
     lines.append("## 五、是否建议现在修？")

@@ -305,9 +305,27 @@ JQL示例(通用):
 重要: 只要用户问题涉及Jira数据查询,即使L1元数据为空也必须生成jql。只输出JSON,不要解释。"""
 
 # ── 动态提示词引擎 ────────────────────────────────────────
-def build_decision_prompt(meta: dict) -> str:
+def _glossary_prompt_block(field_glossary: list | None) -> str:
+    try:
+        from jira_field_glossary import format_glossary_for_prompt
+        block = format_glossary_for_prompt(field_glossary or [], max_items=30)
+    except Exception:
+        block = ""
+    if not block:
+        return ""
+    return (
+        "\n- 团队字段词典（Jira 显示名 → 业务含义 / 口语别名，生成 JQL 时优先参考）:\n"
+        + block
+        + "\n"
+    )
+
+
+def build_decision_prompt(meta: dict, field_glossary: list | None = None) -> str:
     """用项目元数据动态组装 DECISION_PROMPT"""
+    glossary_block = _glossary_prompt_block(field_glossary)
     if not meta or not meta.get("issuetypes"):
+        if glossary_block:
+            return DECISION_PROMPT + glossary_block
         return DECISION_PROMPT
 
     types = "/".join(meta["issuetypes"][:15])
@@ -337,7 +355,7 @@ def build_decision_prompt(meta: dict) -> str:
 - 常用字段(中文名→JQL名): {fields_str}
 - **JQL字段映射**: 修复的版本→fixVersion, 影响版本→affectedVersion, 经办人→assignee, 报告人→reporter, 优先级→priority, 状态→status, 摘要→summary, 描述→description, 创建时间→created, 更新时间→updated, Sprint→Sprint
 - **注意**: JQL中必须使用英文字段名(fixVersion/affectedVersion), NOT中文显示名
-
+{glossary_block}
 JQL示例(注意: JQL不支持LIMIT, 数量由Python控制):
 - "XX版本的缺陷" → "project in ({{proj_keys}}) AND issuetype = \\"缺陷\\" AND affectedVersion = \\"XX\\" ORDER BY updated DESC"
 - "某人负责的未完成任务" → "project in ({{proj_keys}}) AND assignee = \\"ID\\" AND status not in (完成状态) ORDER BY updated DESC"

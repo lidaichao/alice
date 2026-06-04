@@ -32,6 +32,7 @@ class JiraRuntimeConfig:
     owner_field_candidates: list = field(default_factory=list)
     projects: dict = field(default_factory=dict)  # str -> ProjectJiraConfig
     field_mappings: dict = field(default_factory=dict)
+    field_glossary: list = field(default_factory=list)
 
     def get_project(self, project_key: str) -> ProjectJiraConfig:
         pk = (project_key or "").strip().upper()
@@ -72,13 +73,18 @@ def load_jira_runtime_config(
     if not proj_keys:
         proj_keys = [str(p).upper() for p in (defaults.get("projectKeys") or ["CT"])]
 
-    owner_candidates = list(schema.get("ownerFieldCandidates") or ["任务负责人"])
+    owner_candidates: list = []
     fm = global_cfg.get("JIRA_FIELD_MAPPINGS") or global_cfg.get("fieldMappings") or {}
     if isinstance(fm, dict):
-        if fm.get("taskOwner"):
-            owner_candidates.insert(0, fm["taskOwner"])
+        extras = fm.get("extraPersonFields")
+        if isinstance(extras, list):
+            owner_candidates.extend(str(x).strip() for x in extras if str(x).strip())
+        elif fm.get("taskOwner"):
+            owner_candidates.append(str(fm["taskOwner"]).strip())
         if fm.get("owner"):
-            owner_candidates.insert(0, fm["owner"])
+            owner_candidates.insert(0, str(fm["owner"]).strip())
+    if not owner_candidates:
+        owner_candidates = list(schema.get("ownerFieldCandidates") or [])
 
     projects: dict = {}
     schema_projects = schema.get("projects") or {}
@@ -95,6 +101,14 @@ def load_jira_runtime_config(
             deadline_field=str(pdata.get("deadlineField") or ""),
         )
 
+    glossary_raw = global_cfg.get("JIRA_FIELD_GLOSSARY") or []
+    field_glossary: list = []
+    try:
+        from jira_field_glossary import normalize_glossary
+        field_glossary = normalize_glossary(glossary_raw)
+    except Exception:
+        field_glossary = glossary_raw if isinstance(glossary_raw, list) else []
+
     return JiraRuntimeConfig(
         default_project_keys=proj_keys,
         default_issue_type=str(defaults.get("defaultIssueType") or "Task"),
@@ -103,4 +117,5 @@ def load_jira_runtime_config(
         owner_field_candidates=owner_candidates,
         projects=projects,
         field_mappings=fm if isinstance(fm, dict) else {},
+        field_glossary=field_glossary,
     )

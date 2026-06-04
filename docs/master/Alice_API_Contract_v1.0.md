@@ -167,6 +167,9 @@ GET /operations/pending
 |------|------|------|
 | `/v1/admin/config` | GET | 获取当前配置（敏感字段掩码 `********`） |
 | `/v1/admin/config` | POST | 部分更新配置（merge 到 `global_config.json` 并热重载） |
+| `/v1/admin/jira/fields` | GET | 拉取 Jira `/rest/api/2/field` 全站字段列表（query: `url`, `pat`） |
+| `/v1/admin/jira/deadline-suggest` | GET | 按项目推荐截止时间字段（query: `project`, `url`, `pat`） |
+| `/v1/admin/jira/projects` | GET | PAT 可访问的项目列表（query: `url`, `pat`）→ `{ projects: [{ key, name, id }] }` |
 | `/v1/admin/stats` | GET | 获取统计信息 |
 | `/v1/admin/verify` | POST | 验证用户权限 |
 | `/v1/admin/token` | POST | Token 管理 |
@@ -179,10 +182,24 @@ GET /operations/pending
   "DEEPSEEK_KEY": "********",
   "DEEPSEEK_MODEL": "deepseek-v4-pro",
   "saved_model": "deepseek-v4-pro",
-  "JIRA_DEADLINE_FIELD_BY_PROJECT": { "CT": "End date" }
+  "JIRA_PROJECTS": "CT, PROJ2",
+  "JIRA_DEADLINE_FIELD_BY_PROJECT": { "CT": "End date" },
+  "JIRA_FIELD_MAPPINGS": { "extraPersonFields": ["任务负责人"] },
+  "JIRA_PROJECT_CONFIG": {},
+  "JIRA_FIELD_GLOSSARY": [
+    {
+      "fieldId": "customfield_10042",
+      "fieldName": "End date",
+      "meaning": "策划排期的业务完成日；用户说「本周要交」时按此字段理解",
+      "aliases": ["截止时间", "ddl"]
+    }
+  ]
 }
 ```
 
+- `JIRA_FIELD_GLOSSARY`：PM 在 Admin「字段含义词典」中维护的业务语义；全 Jira 实例共享（非按项目）。运行时注入 JQL 决策与周报意图提示词。
+- `JIRA_FIELD_MAPPINGS.extraPersonFields`：按人名查任务时，在**经办人之外**额外 OR 的 Jira 人物字段；空数组表示仅查经办人。旧键 `taskOwner` 仍可读作单条兼容。
+- `JIRA_DEADLINE_FIELD_BY_PROJECT` / `JIRA_PROJECT_CONFIG`：按项目指定截止时间等**功能槽位**（与词典独立）。
 - `DEEPSEEK_MODEL` / `saved_model`：由 `_resolved_deepseek_model()` 解析，**文件优先**于环境变量。
 - 掩码字段 `********` 在 POST 时会被跳过（表示未修改）。
 

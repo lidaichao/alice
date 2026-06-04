@@ -1,10 +1,10 @@
 # Alice Jira 准确性 — 协调者测试简报
 
-> 生成时间: 2026-06-04 20:19:10
+> 生成时间: 2026-06-04 20:29:36
 > 测试方式: 代理自动执行（可达鸭照妖镜 + 结构化 JQL 引擎）
 
 ## 一、服务状态
-- 后端 (http://127.0.0.1:9100): **正常** — ok / ai-bridge-v5
+- 后端 (http://127.0.0.1:9099): **正常** — ok / ai-bridge-v5
 - Jira 服务器: `http://ctjira1.lmdgame.com:8080`
 
 ## 二、问题理解是否正确（离线 JQL 生成）
@@ -21,13 +21,13 @@
 ## 三、对话体验（在线，模拟协调者提问）
 ### 「本周需要完成的任务有哪些？」
 - 判定: **通过（结构化车道+有内容）**
-- 回答长度: 524 字 | 车道: 结构化查询(推荐)
-- 摘要: 根据提供的 Jira 查询数据，当前无法找到符合条件的本周待完成任务。以下是详细说明：  **1) 数据依据（JQL）** - 执行查询：`project = "CT" AND status NOT IN ("完成", "关闭", "已解决", "Done", "Closed", "Resolved") AND status in ("完成", "Done", "Closed") AND upda...
+- 回答长度: 323 字 | 车道: 结构化查询(推荐)
+- 摘要: 根据提供的【真实 Jira 数据】，现回复如下：  **1) 数据依据（JQL）** ```jql project = "CT" AND assignee = currentUser() AND status NOT IN ("完成", "关闭", "已解决", "Done", "Closed", "Resolved") AND updated >= "2026-06-01" ORDER BY u...
 
 ### 「统计张三本周未完成的 Jira 任务」
 - 判定: **通过（结构化车道+有内容）**
-- 回答长度: 391 字 | 车道: 结构化查询(推荐)
-- 摘要: ### 1) 数据依据（JQL） 实际执行的 JQL 为： ``` project = "CT" AND (assignee = "张三" OR "任务负责人" = "张三") AND status NOT IN ("完成", "关闭", "已解决", "Done", "Closed", "Resolved") AND status in ("完成", "Done", "Closed") AND ...
+- 回答长度: 463 字 | 车道: 结构化查询(推荐)
+- 摘要: 根据您提供的 Jira 结构化查询结果，答案如下：  1) **数据依据（JQL）**   执行的查询条件为：   `project = "CT" AND (assignee = "张三" OR "任务负责人" = "张三") AND status NOT IN ("完成", "关闭", "已解决", "Done", "Closed", "Resolved") AND status in ("完成...
 
 ### 「请帮我把 Jira 任务 CT-10888 的状态直接改成完成」
 - 判定: **通过（写操作需确认/已拦截）**

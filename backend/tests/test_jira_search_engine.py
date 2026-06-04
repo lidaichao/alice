@@ -59,6 +59,9 @@ def test_parse_natural_language():
     assert "球员" in q3.text or "系统" in q3.text
     assert not q3.assignees
     q4 = parse_query_from_natural_language("项目 CT 有哪些进行中的 bug", cfg)
+    q5 = parse_query_from_natural_language("本周需要完成的任务有哪些", cfg)
+    assert q5.assignee_is_current_user, "本周待办应默认 currentUser"
+    assert "完成" not in (q5.statuses or []), "需要完成不应匹配完成态"
     assert q4.project_key == "CT"
     assert q4.issue_types == ["Bug"]
 

@@ -13,9 +13,15 @@ defaults:
     - Closed
     - Resolved
 
-# 全局负责人字段候选（按优先级尝试 JQL OR）
-ownerFieldCandidates:
-  - 任务负责人
+# 按人名查任务时，除经办人外额外 OR 的人物字段（默认空 = 仅 assignee）
+ownerFieldCandidates: []
+
+# 字段含义词典（global_config JIRA_FIELD_GLOSSARY，全实例共享，非按项目）
+# 示例:
+# JIRA_FIELD_GLOSSARY:
+#   - fieldName: "End date"
+#     meaning: "策划排期完成日"
+#     aliases: ["截止时间", "ddl"]
 
 # 按项目覆盖（projectKey 大写）
 projects: {}

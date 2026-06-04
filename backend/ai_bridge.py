@@ -35,6 +35,12 @@ from prompt_manager import (
     resolve_deadline_field, parse_date_range_from_text,
     build_weekly_report_jql, extract_deadline_display,
 )
+from jira_field_glossary import (
+    normalize_glossary,
+    format_glossary_for_prompt,
+    resolve_glossary_entry_by_text,
+    glossary_suggests_deadline,
+)
 from knowledge_retriever import (
     BoundedCache, _CONTEXT_CACHE, _SEMANTIC_CACHE, _SVN_COMMIT_CACHE,
     CACHE_TTL, make_source_summary, classify_file_changes,
@@ -75,6 +81,10 @@ def load_global_config():
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
     return {}
+
+
+def _load_field_glossary() -> list:
+    return normalize_glossary(load_global_config().get("JIRA_FIELD_GLOSSARY", []))
 
 
 def _resolved_deepseek_model(config: dict) -> str:
@@ -292,7 +302,7 @@ def llm_judge_relevance(question: str, l1_parts: list, proj_keys: str = "", api_
 
     # 动态提示词: 用实际项目元数据替换硬编码模板
     project_meta = discover_project_metadata(proj_keys)
-    decision_prompt = build_decision_prompt(project_meta)
+    decision_prompt = build_decision_prompt(project_meta, field_glossary=_load_field_glossary())
 
     try:
         r = _deepseek_call({
@@ -319,17 +329,24 @@ def llm_decide_jql(question: str, proj_keys: list) -> str:
     """结构化意图提取 + Python 原生 JQL 组装"""
     import json
     proj_cond = "project in (" + ",".join(proj_keys) + ")" if proj_keys else "project in (CT)"
+    glossary = _load_field_glossary()
+    glossary_hint = format_glossary_for_prompt(glossary, max_items=15)
+    glossary_section = ""
+    if glossary_hint:
+        glossary_section = f"\n团队字段词典（用户口语可能对应下列 Jira 字段）:\n{glossary_hint}\n"
+    matched_glossary = resolve_glossary_entry_by_text(question, glossary)
 
     prompt = f"""分析用户的 Jira 查询需求，提取关键过滤条件并严格输出 JSON 格式。
 用户问题: {question}
-
+{glossary_section}
 输出格式必须为：
 {{
     "time_filter": "this_week" | "this_month" | "today" | "none",
     "target_field": "deadline" | "created" | "updated",
     "status_filter": "unfinished" | "done" | "all"
 }}
-注意：若询问"本周需要完成/结束的任务"，target_field 取 "deadline"，time_filter 取 "this_week"。只输出合法的 JSON，不要包裹 Markdown 标记。"""
+注意：若询问"本周需要完成/结束的任务"，target_field 取 "deadline"，time_filter 取 "this_week"。
+若用户口语命中词典别名且与截止/周报相关，target_field 取 "deadline"。只输出合法的 JSON，不要包裹 Markdown 标记。"""
 
     try:
         r = _deepseek_call({
@@ -352,8 +369,17 @@ def llm_decide_jql(question: str, proj_keys: list) -> str:
 
             target_proj = proj_keys[0] if proj_keys else "CT"
             target_field_logical = intent_data.get("target_field", "created")
+            if matched_glossary and glossary_suggests_deadline(question, glossary):
+                target_field_logical = "deadline"
             if target_field_logical == "deadline":
-                field_physical = resolve_deadline_field_for_project(target_proj)["jql_name"]
+                if matched_glossary and matched_glossary.get("fieldName"):
+                    cfg_map = dict(_load_deadline_config_map())
+                    cfg_map[target_proj] = matched_glossary["fieldName"]
+                    field_physical = resolve_deadline_field(
+                        target_proj, cfg_map, get_all_jira_fields_cached()
+                    )["jql_name"]
+                else:
+                    field_physical = resolve_deadline_field_for_project(target_proj)["jql_name"]
             else:
                 schema = PROJECT_SCHEMA_MAP.get(target_proj, PROJECT_SCHEMA_MAP["DEFAULT"])
                 field_physical = schema.get(target_field_logical, "created")
@@ -763,7 +789,10 @@ def collect_context(issue_key: str, user_question: str = "", frontend_cfg: dict 
 
             rt_cfg = load_jira_runtime_config(frontend_cfg)
             query = parse_query_from_natural_language(q, rt_cfg)
-            result = search_and_analyze(jira, query, config=rt_cfg, user_pat=user_pat, frontend_cfg=frontend_cfg)
+            result = search_and_analyze(
+                jira, query, config=rt_cfg, user_pat=user_pat, frontend_cfg=frontend_cfg,
+                user_question=q, api_key=api_key or "", http_post=http.post,
+            )
             if result.get("total", 0) > 0:
                 return "## Jira 结构化搜索\n" + format_search_result_for_llm(result, q)[:L1_CHARS["jira"]]
 
@@ -1422,7 +1451,11 @@ def _exec_search_jira_issues(args: dict, user_pat: str = "", frontend_cfg: dict 
             query.assignees = [args["assignee"]]
         if args.get("unresolved_only"):
             query.unresolved_only = True
-        result = search_and_analyze(jira, query, config=rt_cfg, user_pat=user_pat, frontend_cfg=frontend_cfg)
+        uc = kwargs.get("user_cfg") if isinstance(kwargs.get("user_cfg"), dict) else {}
+        result = search_and_analyze(
+            jira, query, config=rt_cfg, user_pat=user_pat, frontend_cfg=frontend_cfg,
+            user_question=keyword, api_key=uc.get("deepseek_key", ""), http_post=http.post,
+        )
         llm_text = format_search_result_for_llm(result, keyword)
         items = result.get("issues") or []
         return json.dumps({
@@ -1485,6 +1518,9 @@ def _iter_jira_structured_read_lane(user_text, frontend_cfg, user_cfg, vip_strea
     _query = parse_query_from_natural_language(user_text, _rt_cfg)
     _search_result = search_and_analyze(
         jira, _query, config=_rt_cfg, user_pat=_pat, frontend_cfg=frontend_cfg,
+        user_question=user_text,
+        api_key=user_cfg.get("deepseek_key", ""),
+        http_post=http.post,
     )
     if _search_result.get("requires_user_input") and _search_result.get("supplement"):
         _sup = _search_result["supplement"]
@@ -1563,7 +1599,7 @@ def execute_tool_call(tool_name: str, arguments_str, user_cfg=None, frontend_cfg
         if tool_name in _ATOMIC_TOOLS:
             name, fn = _ATOMIC_TOOLS[tool_name]
             if name in ("query_jira_metadata", "search_jira_issues"):
-                return fn(args, user_pat=user_pat, frontend_cfg=frontend_cfg)
+                return fn(args, user_pat=user_pat, frontend_cfg=frontend_cfg, user_cfg=user_cfg)
             return fn(args)
 
         # 向后兼容: Jira 写操作确认卡
@@ -2696,11 +2732,18 @@ def v1_jira_search():
                 unresolved_only=bool(data.get("unresolved_only")),
                 max_results=int(data.get("max_results") or 50),
             )
-        result = search_and_analyze(jira, q, config=rt_cfg, user_pat=user_pat, frontend_cfg=frontend_cfg)
+        uq = str(data.get("query") or data.get("keyword") or "")
+        gcfg = load_global_config()
+        result = search_and_analyze(
+            jira, q, config=rt_cfg, user_pat=user_pat, frontend_cfg=frontend_cfg,
+            user_question=uq,
+            api_key=gcfg.get("DEEPSEEK_KEY", "") or os.getenv("DEEPSEEK_KEY", ""),
+            http_post=http.post,
+        )
         return jsonify({
             "ok": not result.get("not_recoverable"),
             "result": result,
-            "llm_text": format_search_result_for_llm(result, data.get("query", "")),
+            "llm_text": format_search_result_for_llm(result, uq),
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)[:500]}), 500
@@ -3145,6 +3188,10 @@ def get_admin_config():
         "DEEPSEEK_MODEL": resolved_model,
         "saved_model": resolved_model,
         "JIRA_DEADLINE_FIELD_BY_PROJECT": config.get("JIRA_DEADLINE_FIELD_BY_PROJECT", {}),
+        "JIRA_FIELD_MAPPINGS": config.get("JIRA_FIELD_MAPPINGS") or config.get("fieldMappings") or {},
+        "JIRA_PROJECT_CONFIG": config.get("JIRA_PROJECT_CONFIG", {}),
+        "JIRA_FIELD_GLOSSARY": config.get("JIRA_FIELD_GLOSSARY", []),
+        "JIRA_PROJECTS": config.get("JIRA_PROJECTS", os.getenv("JIRA_PROJECTS", "")),
     })
 
 @app.route('/v1/admin/config', methods=['POST', 'OPTIONS'])
@@ -3281,15 +3328,32 @@ def get_admin_stats():
 
 # ── Admin Web 页面路由 ──────────────────────────────────────────
 @app.route('/admin', methods=['GET'])
+@app.route('/admin/', methods=['GET'])
 @app.route('/admin.html', methods=['GET'])
 def render_admin_page():
-    """原版 Vue 3 管理后台 (秽土转生) — /admin 或 /admin.html"""
-    from flask import send_file
+    """Element Plus 管理后台（Vite 构建产物优先）— /admin 或 /admin.html"""
+    from flask import send_file, send_from_directory
     import os as _os
-    admin_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'admin.html')
+    _backend = _os.path.dirname(_os.path.abspath(__file__))
+    spa_index = _os.path.join(_backend, 'static', 'admin', 'index.html')
+    if _os.path.exists(spa_index):
+        return send_file(spa_index)
+    admin_path = _os.path.join(_backend, 'admin.html')
     if _os.path.exists(admin_path):
         return send_file(admin_path)
-    return "admin.html not found", 404
+    return "admin UI not found", 404
+
+
+@app.route('/admin-static/<path:filename>')
+def serve_admin_vite_assets(filename):
+    """Admin SPA 静态资源（Vite base=/admin-static/ → static/admin/assets/…）"""
+    from flask import send_from_directory
+    import os as _os
+    asset_root = _os.path.join(
+        _os.path.dirname(_os.path.abspath(__file__)),
+        'static', 'admin',
+    )
+    return send_from_directory(asset_root, filename)
 
 @app.route('/static/<path:filename>')
 def serve_static(filename):
@@ -3342,6 +3406,156 @@ def test_jira_connection():
             return jsonify({"success": False, "error": f"Jira 拒绝访问: HTTP {res.status_code}"}), 401
     except http.exceptions.RequestException as e:
         return jsonify({"success": False, "error": f"Jira 连接超时或无法解析: {str(e)}"}), 500
+
+
+def _admin_resolve_jira_pat(pat: str = "") -> str:
+    p = (pat or "").strip()
+    if p == "********" or not p:
+        p = load_global_config().get("JIRA_PAT", os.getenv("JIRA_PAT", ""))
+    return p or ""
+
+
+def _admin_fetch_jira_fields_raw(jira_url: str = "", pat: str = "") -> list:
+    """Admin：用指定 URL/PAT 拉取 Jira /field（不写全局缓存）。"""
+    base = (jira_url or load_global_config().get("JIRA_BASE_URL", os.getenv("JIRA_BASE_URL", ""))).rstrip("/")
+    token = _admin_resolve_jira_pat(pat)
+    if not base or not token:
+        return []
+    try:
+        r = http.get(
+            f"{base}/rest/api/2/field",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            timeout=15,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            return data if isinstance(data, list) else []
+    except Exception as e:
+        logger.warning(f"[Admin] Jira /field failed: {e}")
+    return []
+
+
+def _admin_simplify_jira_fields(raw_fields: list) -> list:
+    out = []
+    for f in raw_fields or []:
+        if not isinstance(f, dict):
+            continue
+        name = (f.get("name") or "").strip()
+        fid = (f.get("id") or "").strip()
+        if not name:
+            continue
+        schema = f.get("schema") if isinstance(f.get("schema"), dict) else {}
+        st = (schema.get("type") or "").lower()
+        custom = bool(f.get("custom")) or fid.startswith("customfield_")
+        out.append({
+            "id": fid,
+            "name": name,
+            "custom": custom,
+            "schemaType": st,
+        })
+
+    def _rank(item):
+        n = item["name"].lower()
+        score = 0
+        if item["schemaType"] == "date":
+            score += 100
+        if any(k in n for k in ("截止", "end", "due", "完成日期", "结束")):
+            score += 80
+        if any(k in n for k in ("负责", "owner", "assignee", "经办")):
+            score += 40
+        return -score
+
+    out.sort(key=lambda x: (_rank(x), x["name"]))
+    return out
+
+
+def _admin_fetch_jira_projects_raw(jira_url: str = "", pat: str = "") -> list:
+    """Admin：GET /rest/api/2/project 可访问项目列表。"""
+    base = (jira_url or load_global_config().get("JIRA_BASE_URL", os.getenv("JIRA_BASE_URL", ""))).rstrip("/")
+    token = _admin_resolve_jira_pat(pat)
+    if not base or not token:
+        return []
+    try:
+        r = http.get(
+            f"{base}/rest/api/2/project",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            timeout=20,
+        )
+        if r.status_code != 200:
+            logger.warning(f"[Admin] Jira /project HTTP {r.status_code}")
+            return []
+        data = r.json()
+        if not isinstance(data, list):
+            return []
+        out = []
+        for p in data:
+            if not isinstance(p, dict):
+                continue
+            key = (p.get("key") or "").strip().upper()
+            if not key:
+                continue
+            out.append({
+                "key": key,
+                "name": (p.get("name") or key).strip(),
+                "id": str(p.get("id") or ""),
+            })
+        out.sort(key=lambda x: x["key"])
+        return out
+    except Exception as e:
+        logger.warning(f"[Admin] Jira /project failed: {e}")
+        return []
+
+
+@app.route('/v1/admin/jira/projects', methods=['GET', 'OPTIONS'])
+@require_admin
+def admin_jira_projects():
+    if request.method == 'OPTIONS':
+        return Response(status=204)
+    jira_url = request.args.get("url", "").strip()
+    pat = request.args.get("pat", "").strip()
+    projects = _admin_fetch_jira_projects_raw(jira_url, pat)
+    if not projects:
+        return jsonify({
+            "success": False,
+            "error": "无法获取 Jira 项目列表，请先在「Jira 连接」测试连通并保存 PAT",
+        }), 400
+    return jsonify({"success": True, "projects": projects})
+
+
+@app.route('/v1/admin/jira/fields', methods=['GET', 'OPTIONS'])
+@require_admin
+def admin_jira_fields():
+    if request.method == 'OPTIONS':
+        return Response(status=204)
+    jira_url = request.args.get("url", "").strip()
+    pat = request.args.get("pat", "").strip()
+    raw = _admin_fetch_jira_fields_raw(jira_url, pat)
+    if not raw:
+        return jsonify({"success": False, "error": "无法获取 Jira 字段列表，请先测试连通并填写地址与 PAT"}), 400
+    return jsonify({"success": True, "fields": _admin_simplify_jira_fields(raw)})
+
+
+@app.route('/v1/admin/jira/deadline-suggest', methods=['GET', 'OPTIONS'])
+@require_admin
+def admin_jira_deadline_suggest():
+    if request.method == 'OPTIONS':
+        return Response(status=204)
+    project = (request.args.get("project") or "CT").strip().upper()
+    jira_url = request.args.get("url", "").strip()
+    pat = request.args.get("pat", "").strip()
+    cfg_map = _load_deadline_config_map()
+    raw = _admin_fetch_jira_fields_raw(jira_url, pat)
+    meta = resolve_deadline_field(project, cfg_map, raw)
+    return jsonify({
+        "success": True,
+        "project": project,
+        "display_name": meta.get("display_name", ""),
+        "jql_name": meta.get("jql_name", ""),
+        "field_id": meta.get("field_id", ""),
+        "source": meta.get("source", ""),
+        "hint": "Alice 将用此字段筛选「本周周报 / 待办任务」",
+    })
+
 
 @app.route('/v1/admin/test/fisheye', methods=['POST'])
 @require_admin

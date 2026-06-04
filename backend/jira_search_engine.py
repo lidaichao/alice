@@ -4,6 +4,7 @@ Jira 结构化查询引擎 — 移植 Baize jira-search-service.js 语义（Pyth
 """
 from __future__ import annotations
 
+import os
 import re
 import logging
 from dataclasses import dataclass, field, asdict
@@ -148,6 +149,12 @@ def get_jql_user_names(users: list, fallback: list) -> list:
     return list(dict.fromkeys(normalize_list(fallback)))
 
 
+def _is_assignee_field_name(field_name: str) -> bool:
+    """经办人始终单独查；额外人物字段列表里跳过重复项。"""
+    n = (field_name or "").strip().lower()
+    return n in ("assignee", "经办人")
+
+
 def build_assignee_or_owner_clause(
     query: JiraSearchQuery,
     config: JiraRuntimeConfig,
@@ -162,7 +169,14 @@ def build_assignee_or_owner_clause(
     clauses = [build_in_clause("assignee", user_names)]
     proj = config.get_project(query.project_key)
     owner_fields = proj.owner_fields or config.owner_field_candidates
+    seen = {"assignee"}
     for field_name in owner_fields:
+        if not field_name or _is_assignee_field_name(field_name):
+            continue
+        key = field_name.strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
         c = build_in_clause(field_name, user_names)
         if c:
             clauses.append(c)
@@ -440,7 +454,23 @@ def parse_query_from_natural_language(user_text: str, config: JiraRuntimeConfig)
             q.assignee_is_current_user = True
         q.unresolved_only = True
 
-    return q
+    return normalize_search_query(q, text)
+
+
+def normalize_search_query(query: JiraSearchQuery, user_text: str = "") -> JiraSearchQuery:
+    """对齐 Baize normalizeSearchInput：bug 标签 → BUG 项目等。"""
+    text = user_text or ""
+    labels = normalize_list(query.labels)
+    if any(re.fullmatch(r"bug", lb, re.I) for lb in labels) or (
+        re.search(r"\bBUG\s*项目\b", text, re.I) and not query.project_key
+    ):
+        q = JiraSearchQuery(**query.to_dict())
+        q.project_key = "BUG"
+        q.labels = [lb for lb in labels if not re.fullmatch(r"bug", lb, re.I)]
+        if re.search(r"\bbug\b|缺陷", text, re.I) and not q.issue_types:
+            q.issue_types = ["Bug"]
+        return q
+    return query
 
 
 def should_force_jira_structured_read(
@@ -449,6 +479,12 @@ def should_force_jira_structured_read(
     intent_label: str = "",
 ) -> bool:
     """是否必须走结构化读直通车（含 intent_router / classify 命中）"""
+    keys = ISSUE_KEY_RE.findall(user_text or "")
+    if len(keys) == 1 and re.search(
+        r"详情|内容|描述|评论|什么情况|怎么样|是谁|备注|改成|改为|流转|完成|关闭",
+        user_text or "",
+    ):
+        return False
     if is_jira_structured_read_query(user_text, intent_route):
         return True
     if intent_route == "jira_query":
@@ -548,6 +584,11 @@ def validate_recovery_jql(jql: str, original: str = "") -> dict:
     return {"valid": True, "jql": normalized}
 
 
+def classify_jira_search_error(error_msg: str, http_status: int = 0) -> str:
+    from jira_search_recovery import classify_jira_search_error as _c
+    return _c(error_msg, http_status)
+
+
 def recover_jql_on_error(jql: str, error_msg: str, query: JiraSearchQuery, config: JiraRuntimeConfig) -> Optional[str]:
     """规则化 JQL 恢复（Phase 1b 基础版）"""
     err = (error_msg or "").lower()
@@ -581,9 +622,16 @@ def search_and_analyze(
     user_pat: str = "",
     frontend_cfg: Optional[dict] = None,
     resolve_users: bool = True,
+    user_question: str = "",
+    api_key: str = "",
+    http_post=None,
 ) -> dict:
     config = config or load_jira_runtime_config(frontend_cfg)
     user_resolution = []
+    query = normalize_search_query(query, user_question)
+    if not api_key:
+        api_key = os.getenv("DEEPSEEK_KEY", "")
+    use_llm_recovery = os.environ.get("JIRA_LLM_RECOVERY", "1").strip() not in ("0", "false", "no")
 
     if resolve_users and query.assignees:
         resolved_all = []
@@ -654,10 +702,73 @@ def search_and_analyze(
             return result
         except Exception as e:
             err_msg = str(e)
-            recovery_history.append({"attempt": attempt, "jql": jql, "error": err_msg[:200]})
+            http_status = 0
+            m_st = re.search(r"HTTP\s+(\d+)", err_msg)
+            if m_st:
+                http_status = int(m_st.group(1))
+            err_code = classify_jira_search_error(err_msg, http_status)
+            recovery_history.append({
+                "attempt": attempt, "jql": jql, "error": err_msg[:200], "error_code": err_code,
+            })
             if attempt > MAX_RECOVERY_ATTEMPTS:
                 break
             new_jql = recover_jql_on_error(jql, err_msg, query, config)
+            if (not new_jql or new_jql == jql) and use_llm_recovery and err_code in (
+                "JIRA_API_ERROR", "JIRA_REQUEST_TIMEOUT", "JIRA_INVALID_VALUE",
+            ):
+                try:
+                    from jira_search_recovery import llm_analyze_jira_search_recovery
+                    llm_rec = llm_analyze_jira_search_recovery(
+                        user_question or "",
+                        jql,
+                        err_code,
+                        err_msg,
+                        config.default_project_keys,
+                        api_key=api_key,
+                        http_post=http_post,
+                    )
+                    if llm_rec:
+                        recovery_history.append({"llm_recovery": llm_rec.get("status")})
+                        if llm_rec.get("status") == "retry_available":
+                            new_jql = (llm_rec.get("retry") or {}).get("jql")
+                        elif llm_rec.get("status") == "needs_user_input":
+                            sup = llm_rec.get("supplement") or {}
+                            choices = sup.get("choices") or []
+                            if not choices and sup.get("inputs"):
+                                for inp in sup["inputs"]:
+                                    if inp.get("type") == "select":
+                                        choices = [
+                                            {"value": o, "label": o}
+                                            for o in (inp.get("options") or [])
+                                        ]
+                            return {
+                                "requires_user_input": True,
+                                "jql": jql,
+                                "issues": [],
+                                "total": 0,
+                                "analysis": build_empty_analysis(llm_rec.get("summary", "")),
+                                "supplement": {
+                                    "prompt": sup.get("prompt", "请补充查询条件"),
+                                    "choices": choices[:8],
+                                },
+                                "jira_search_recovery": llm_rec,
+                                "user_resolution": user_resolution,
+                                "jira_lane": "structured_search",
+                            }
+                        elif llm_rec.get("status") == "not_recoverable":
+                            return {
+                                "jql": jql,
+                                "issues": [],
+                                "total": 0,
+                                "analysis": build_empty_analysis(llm_rec.get("summary", "")),
+                                "requires_user_input": False,
+                                "not_recoverable": True,
+                                "jira_search_recovery": llm_rec,
+                                "error": err_msg[:200],
+                                "jira_lane": "structured_search",
+                            }
+                except Exception as llm_e:
+                    logger.warning(f"[JiraSearch] LLM recovery skipped: {llm_e}")
             if not new_jql or new_jql == jql:
                 break
             v = validate_recovery_jql(new_jql, jql)
