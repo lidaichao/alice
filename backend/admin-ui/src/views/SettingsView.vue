@@ -12,10 +12,10 @@
       <template #actions>
         <div class="card-actions-inner">
           <div class="test-action-group">
+            <TestActionHint action-key="ai" />
             <el-button class="card-btn" :loading="s.testing.ai" :disabled="s.editLock.ai" @click="s.testAiSystem">
               测试 API
             </el-button>
-            <TestActionHint action-key="ai" />
           </div>
           <el-button v-if="!s.editLock.ai" class="card-btn" type="primary" @click="s.startEdit('ai')">
             编辑配置
@@ -51,10 +51,10 @@
               <el-option v-for="m in s.modelSelectOptions" :key="m" :label="m" :value="m" />
             </el-select>
             <div class="test-action-group">
+              <TestActionHint action-key="aiModels" />
               <el-button :loading="s.fetchingModels" :disabled="s.savingModel" @click="s.fetchAiModels()">
                 刷新模型列表
               </el-button>
-              <TestActionHint action-key="aiModels" />
             </div>
           </div>
           <p class="field-hint">
@@ -83,10 +83,11 @@
       <template #actions>
         <div class="card-actions-inner">
           <div class="test-action-group">
-            <el-button class="card-btn" :loading="s.testing.jira" @click="s.testJiraSystem">测试连接</el-button>
             <TestActionHint action-key="jira" />
+            <el-button class="card-btn" :loading="s.testing.jira" @click="s.testJiraSystem">测试连接</el-button>
           </div>
           <div class="test-action-group">
+            <TestActionHint action-key="jiraFields" />
             <el-button
               class="card-btn"
               :loading="s.jiraFieldsLoading"
@@ -95,7 +96,6 @@
             >
               刷新字段列表
             </el-button>
-            <TestActionHint action-key="jiraFields" />
           </div>
           <el-button v-if="!s.editLock.jira" class="card-btn" type="primary" @click="s.startEdit('jira')">
             编辑连接
@@ -158,10 +158,10 @@
       <template #actions>
         <div class="card-actions-inner">
           <div class="test-action-group">
+            <TestActionHint action-key="svn" />
             <el-button class="card-btn" :loading="s.testing.svn" :disabled="s.editLock.svn" @click="s.testSvnSystem">
               测试 Checkout
             </el-button>
-            <TestActionHint action-key="svn" />
           </div>
           <el-button v-if="!s.editLock.svn" class="card-btn" type="primary" @click="s.startEdit('svn')">
             编辑配置

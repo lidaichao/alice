@@ -21,6 +21,7 @@
       <template #actions>
         <div class="card-actions-inner">
           <div v-if="s.editLock.jiraPm" class="test-action-group">
+            <TestActionHint action-key="jiraFields" />
             <el-button
               size="small"
               :loading="s.jiraFieldsLoading"
@@ -29,7 +30,6 @@
             >
               刷新 Jira 字段列表
             </el-button>
-            <TestActionHint action-key="jiraFields" />
           </div>
           <el-button v-if="!s.editLock.jiraPm" class="card-btn" type="primary" @click="s.startEdit('jiraPm')">
             编辑配置
@@ -78,10 +78,10 @@
         <div class="section-toolbar">
           <el-input v-model="s.jiraProjectFilter" placeholder="筛选项目" size="small" style="width: 200px" clearable />
           <div class="test-action-group">
+            <TestActionHint action-key="jiraProjects" />
             <el-button size="small" :loading="s.jiraProjectsLoading" :disabled="!s.jiraCanUseFields" @click="s.fetchJiraProjects">
               从 Jira 加载项目列表
             </el-button>
-            <TestActionHint action-key="jiraProjects" />
           </div>
         </div>
         <div v-if="s.jiraPmForm.selectedProjectKeys.length" class="selected-tags mb-2">

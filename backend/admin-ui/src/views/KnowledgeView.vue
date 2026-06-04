@@ -12,10 +12,10 @@
       <template #actions>
         <div class="card-actions-inner">
           <div class="test-action-group">
+            <TestActionHint action-key="notion" />
             <el-button class="card-btn" :loading="s.testing.notion" :disabled="s.editLock.notion" @click="s.testNotionSystem">
               测试并拉取数据库
             </el-button>
-            <TestActionHint action-key="notion" />
           </div>
           <el-button v-if="!s.editLock.notion" class="card-btn" type="primary" @click="s.startEdit('notion')">
             编辑配置
@@ -78,10 +78,10 @@
       <template #actions>
         <div class="card-actions-inner">
           <div class="test-action-group">
+            <TestActionHint action-key="gdrive" />
             <el-button class="card-btn" :loading="s.testing.gdrive" :disabled="s.editLock.gdrive" @click="s.testGDriveSystem">
               测试并列出文件夹内容
             </el-button>
-            <TestActionHint action-key="gdrive" />
           </div>
           <el-button v-if="!s.editLock.gdrive" class="card-btn" type="primary" @click="s.startEdit('gdrive')">
             编辑配置

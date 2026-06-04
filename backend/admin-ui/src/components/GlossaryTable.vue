@@ -5,10 +5,10 @@
         添加含义说明
       </el-button>
       <div class="test-action-group">
+        <TestActionHint action-key="jiraFields" />
         <el-button size="small" :disabled="!s.jiraCanUseFields" :loading="s.jiraFieldsLoading" @click="s.fetchJiraFieldOptions">
           刷新字段列表
         </el-button>
-        <TestActionHint action-key="jiraFields" />
       </div>
       <el-input
         v-model="s.jiraFieldFilter"
