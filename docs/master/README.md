@@ -36,3 +36,4 @@
 |------|------|
 | [Baize_Architecture_v1.0.md](Baize_Architecture_v1.0.md) | 上游白泽对照 |
 | [desktop_app_plan.md](desktop_app_plan.md) | 桌面端重构记录 |
+| [../../归档/README.md](../../归档/README.md) | 实验脚本、旧插件、WorkBuddy 工作区（非运行时） |

@@ -11,8 +11,8 @@ alwaysApply: true
 |----------|----------|
 | `frontend/src/` | `npm run dev` 编译通过 |
 | `backend/ai_bridge.py` / `intent_router.py` | `py test/e2e_v2.py` |
-| `jira_mcp_server.py` / `jira_api.py` | `py research/Claw/test_all_mcp_tools.py` |
-| SVN diff 相关 | `py research/Claw/test_jira_diff.py` |
+| `jira_mcp_server.py` / `jira_api.py` | `py 归档/research/Claw/test_all_mcp_tools.py` |
+| SVN diff 相关 | `py 归档/research/Claw/test_jira_diff.py` |
 
 Windows 终端：`$env:PYTHONIOENCODING='utf-8'` 后再跑 Python 脚本。
 
@@ -27,6 +27,6 @@ Windows 终端：`$env:PYTHONIOENCODING='utf-8'` 后再跑 Python 脚本。
 
 ## 重大修改后：记忆归档
 
-直接编辑 `research/Claw/.workbuddy/memory/MEMORY.md`（不要只在聊天里发片段）。
+直接编辑 `归档/research/Claw/.workbuddy/memory/MEMORY.md`（不要只在聊天里发片段）。
 
 记录：日期、改动模块、文件路径、一句话说明、已知技术债。

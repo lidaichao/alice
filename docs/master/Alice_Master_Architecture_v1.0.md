@@ -11,7 +11,7 @@
 ## 【核心约束】奥卡姆剃刀原则
 
 > **Electron (容器) + React (前端视图) + Python (后端大脑) 唯一主干架构**
-> Java Jira 插件已归档至 `archive/`
+> Java Jira 插件已归档至 `归档/archive/jira-workbuddy-plugin/`
 
 ---
 
