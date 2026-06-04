@@ -21,12 +21,12 @@
     </el-aside>
     <el-container>
       <el-header class="admin-header" height="56px">
-        <h1 class="page-title">{{ store.currentMenuName }}</h1>
+        <h1 class="page-title">{{ pageTitle }}</h1>
       </el-header>
       <el-main class="admin-main">
-        <SettingsView v-show="store.activeMenu === 'settings'" />
-        <JiraQueryView v-show="store.activeMenu === 'jiraQuery'" />
-        <KnowledgeView v-show="store.activeMenu === 'kb'" />
+        <SettingsView v-show="menuActive === 'settings'" />
+        <JiraQueryView v-show="menuActive === 'jiraQuery'" />
+        <KnowledgeView v-show="menuActive === 'kb'" />
       </el-main>
     </el-container>
   </el-container>
@@ -40,7 +40,9 @@ import JiraQueryView from './views/JiraQueryView.vue';
 import KnowledgeView from './views/KnowledgeView.vue';
 
 const store = useAdminStore();
-const menuActive = computed(() => store.activeMenu.value ?? store.activeMenu);
+const unwrap = (v) => (v && typeof v === 'object' && 'value' in v ? v.value : v);
+const menuActive = computed(() => unwrap(store.activeMenu));
+const pageTitle = computed(() => unwrap(store.currentMenuName));
 provide('adminStore', store);
 </script>
 
