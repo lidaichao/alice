@@ -1,42 +1,50 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { COMMANDS, type Command } from '@/store/useChatStore';
-import { useSessionStore, type ChatMessage } from '@/store/useSessionStore';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { COMMANDS, type Command, useChatStore } from '@/store/useChatStore';
 import { Header } from '@/Header';
 import { Sidebar } from '@/Sidebar';
 import { RightPanel } from '@/RightPanel';
 import { Button } from '@/components/ui/button';
 import { CommandPanel } from '@/components/CommandPanel';
 import ConfirmCard from '@/components/ConfirmCard';
-import { ChatList } from '@lobehub/ui/chat';
+import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { ThemeProvider } from '@lobehub/ui';
 import { Square } from 'lucide-react';
 
 export const App: React.FC = () => {
-  // ═══ 所有 Hook 必须在最顶层，无条件调用 ═══
-  const sessions = useSessionStore((s) => s.sessions);
-  const activeId = useSessionStore((s) => s.activeId);
-  const updateMessages = useSessionStore((s) => s.updateMessages);
+  // ═══ 统一数据源：useChatStore（chatSlice + agentSlice + uiSlice + memorySlice）═══
+  const initDB = useChatStore((s) => s.initDB);
+  const isDbLoaded = useChatStore((s) => s.isDbLoaded);
+  const sessions = useChatStore((s) => s.sessions);
+  const activeSessionId = useChatStore((s) => s.activeSessionId);
+  const sendMessage = useChatStore((s) => s.sendMessage);
+  const isGenerating = useChatStore((s) => s.isGenerating);
+  const stopGenerating = useChatStore((s) => s.stopGenerating);
+  const pendingConfirmations = useChatStore((s) => s.pendingConfirmations);
 
-  // ── 消息数据流：直接从 Zustand 状态机读取，不经过任何中间 SDK ──
-  const currentSession = sessions?.find((s) => s.id === activeId);
-  const messages: ChatMessage[] = currentSession?.messages || [];
+  const currentSession = sessions.find((s) => s.id === activeSessionId);
+  const messages = currentSession?.messages || [];
 
-  // ── 本地引擎状态：UI 与网络彻底解耦 ──
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  // ── 初始化：加载 DB + 首次启动自动建会话 ──
+  useEffect(() => {
+    initDB();
+  }, []); // initDB ref stable from zustand
 
-  // ── UI 状态与发送引擎彻底解耦 ──
+  useEffect(() => {
+    if (isDbLoaded && sessions.length === 0 && !activeSessionId) {
+      useChatStore.getState().addSession();
+    }
+  }, [isDbLoaded, sessions.length, activeSessionId]);
+
+  // ── UI-only 本地状态（输入框、命令面板、滚动感知）──
   const [myInput, setMyInput] = useState('');
-
-  const isGenerating = isLoading;
   const [showCommands, setShowCommands] = useState(false);
   const [commandFilter, setCommandFilter] = useState('');
   const [selectedCmdIndex, setSelectedCmdIndex] = useState(0);
+  const [userScrolledUp, setUserScrolledUp] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
-  const [userScrolledUp, setUserScrolledUp] = useState(false);
 
+  // ── 自动滚动 ──
   useEffect(() => {
     if (isGenerating && userScrolledUp) return;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -48,116 +56,38 @@ export const App: React.FC = () => {
     setUserScrolledUp((scrollHeight - scrollTop - clientHeight > 80) && isGenerating);
   };
 
-  // ── 原生 fetch + SSE 流式引擎（零中间 SDK）──
-  const doSendMessage = async () => {
-    if (!myInput || myInput.trim() === '' || isLoading || !activeId) return;
-
+  // ── 发送：委托给 chatSlice.sendMessage（含 agent/systemPrompt/citations 全链路）──
+  const handleSend = useCallback(() => {
+    if (!myInput.trim() || isGenerating || !activeSessionId) return;
     const text = myInput;
-    console.log('📤 准备发送的用户消息内容:', text);
-    setMyInput('');      // 1. UI 瞬间清空
-    setError(null);
-    setIsLoading(true);
+    setMyInput('');
+    sendMessage(text);
+  }, [myInput, isGenerating, activeSessionId, sendMessage]);
 
-    // 2. 先斩后奏：用户消息立即上屏
-    const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content: text };
-    const withUser = [...messages, userMsg];
-    updateMessages(activeId, withUser);
-
-    // 3. 预创建 AI 气泡空壳
-    const aiMsgId = (Date.now() + 1).toString();
-    const withAi = [...withUser, { id: aiMsgId, role: 'assistant' as const, content: '' }];
-    updateMessages(activeId, withAi);
-
-    // 4. AbortController 用于停止
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-
+  // ── Jira 确认卡回调 ──
+  const handleConfirm = useCallback(async (opId: string) => {
     try {
-      const res = await fetch('/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: withUser.map(m => ({ role: m.role, content: m.content })),
-          config: {}
-        }),
-        signal: ctrl.signal
-      });
-
-      if (!res.ok) { setError(`HTTP ${res.status}`); return; }
-      if (!res.body) { setError('ReadableStream 不可用'); return; }
-
-      // 5. 杂食解析 — 兼容 OpenAI / 裸 JSON / 纯文本流
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      let aiContent = '';
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-
-        console.log('📡 收到数据块:', chunk);
-
-        const lines = chunk.split('\n');
-        for (let line of lines) {
-          line = line.trim();
-          if (!line) continue;
-          if (line === 'data: [DONE]' || line === '[DONE]') continue;
-
-          // 1. 尝试剥离开头的 "data: "（如果有的话）
-          if (line.startsWith('data:')) {
-            line = line.replace(/^data:\s*/, '');
-          }
-
-          try {
-            // 2. 尝试作为 JSON 解析
-            const data = JSON.parse(line);
-            let deltaContent = '';
-
-            // 兼容模式 A: OpenAI 格式
-            if (data.choices && data.choices[0]?.delta?.content) {
-              deltaContent = data.choices[0].delta.content;
-            }
-            // 兼容模式 B: 裸 JSON 返回 content
-            else if (data.content) {
-              deltaContent = data.content;
-            }
-            // 兼容模式 C: message 格式
-            else if (data.message && data.message.content) {
-              deltaContent = data.message.content;
-            }
-
-            if (deltaContent) {
-              aiContent += deltaContent;
-            }
-
-          } catch {
-            // 3. 降级方案：不是 JSON → 纯文本流，直接追加
-            aiContent += line;
-          }
-        }
-
-        // 4. 无论解析出什么，立刻更新到界面上
-        useSessionStore.getState().updateMessages(activeId, [
-          ...withUser,
-          { id: aiMsgId, role: 'assistant' as const, content: aiContent }
-        ]);
-      }
-    } catch (err: any) {
-      if (err.name === 'AbortError') return; // 用户主动停止，不报错
-      setError(err.message || String(err));
-    } finally {
-      setIsLoading(false);
-      abortRef.current = null;
+      await fetch(`/operations/${opId}/confirm`, { method: 'POST' });
+    } catch (e) {
+      console.error('[ConfirmCard] confirm POST failed:', e);
     }
-  };
+    useChatStore.setState((s) => ({
+      pendingConfirmations: s.pendingConfirmations.filter((c) => c.op_id !== opId),
+    }));
+  }, []);
 
-  const stopGeneration = () => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setIsLoading(false);
-  };
+  const handleReject = useCallback(async (opId: string) => {
+    try {
+      await fetch(`/operations/${opId}/reject`, { method: 'POST' });
+    } catch (e) {
+      console.error('[ConfirmCard] reject POST failed:', e);
+    }
+    useChatStore.setState((s) => ({
+      pendingConfirmations: s.pendingConfirmations.filter((c) => c.op_id !== opId),
+    }));
+  }, []);
 
+  // ── 命令面板 ──
   const filteredCmds = COMMANDS.filter(c =>
     c.key.toLowerCase().includes(commandFilter.toLowerCase()) ||
     c.label.toLowerCase().includes(commandFilter.toLowerCase())
@@ -172,10 +102,8 @@ export const App: React.FC = () => {
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target?.value ?? (e as any);
     setMyInput(typeof val === 'string' ? val : String(val || ''));
-    // auto-resize
     const el = e.target as HTMLTextAreaElement;
     if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 200) + 'px'; }
-    // slash command
     const v = typeof val === 'string' ? val : '';
     if (v.endsWith('/')) { setShowCommands(true); setCommandFilter(''); setSelectedCmdIndex(0); }
     else if (showCommands) {
@@ -196,14 +124,14 @@ export const App: React.FC = () => {
     }
     if (e.key === 'Enter' && !e.shiftKey && !showCommands) {
       e.preventDefault();
-      doSendMessage();
+      handleSend();
     }
   };
 
-  // ═══ 渲染: 所有 Hook 之后才做条件判断 ═══
-  if (!sessions || !activeId) {
+  // ═══ 加载中 ═══
+  if (!isDbLoaded) {
     return (
-      <ThemeProvider>
+      <ThemeProvider themeMode="dark">
         <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
           <Sidebar />
           <main className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
@@ -214,40 +142,75 @@ export const App: React.FC = () => {
     );
   }
 
-  console.log('📊 喂给 ChatList 的全量数据:', messages);
+  // ═══ 无会话 ═══
+  if (!activeSessionId || !currentSession) {
+    return (
+      <ThemeProvider themeMode="dark">
+        <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
+          <Sidebar />
+          <main className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
+            请创建或选择一个会话
+          </main>
+        </div>
+      </ThemeProvider>
+    );
+  }
 
   return (
-    <ThemeProvider>
+    <ThemeProvider themeMode="dark">
       <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
         <Sidebar />
         <main className="flex-1 flex flex-col min-w-0 bg-muted/10 relative border-r border-border">
           <Header />
-          <div ref={chatContainerRef} onScroll={handleChatScroll} className="flex-1 overflow-y-auto p-4 md:p-6 text-gray-900 dark:text-gray-100">
-            <div className="[&_*]:!text-gray-900 dark:[&_*]:!text-gray-100">
-            <ChatList
-              data={messages.map(m => ({
-                id: String(m.id || Date.now()),
-                role: m.role || 'user',
-                content: m.content || '',
-                meta: {
-                  title: m.role === 'user' ? '用户' : 'Alice',
-                  avatar: m.role === 'user' ? '🧑‍💻' : '🐰'
-                }
-              })) as any}
-            />
+
+          {/* ── 消息列表 ── */}
+          <div ref={chatContainerRef} onScroll={handleChatScroll} className="flex-1 overflow-y-auto p-4 space-y-6">
+            {messages.map((m) => {
+              const isUser = m.role === 'user';
+              return (
+                <div key={m.id} className={`flex gap-4 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+                  {/* 头像 */}
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center bg-muted text-xl shrink-0 shadow-sm">
+                    {isUser ? '🧑‍💻' : '🐰'}
+                  </div>
+
+                  {/* 气泡 */}
+                  <div className={`max-w-[75%] p-4 rounded-2xl ${
+                    isUser
+                      ? 'bg-blue-600 text-white rounded-tr-none'
+                      : 'bg-muted text-foreground rounded-tl-none'
+                  }`}>
+                    {m.role === 'assistant' && m.content ? (
+                      <MarkdownRenderer content={m.content} citations={m.citations} />
+                    ) : m.content ? (
+                      <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">{m.content}</div>
+                    ) : (
+                      <span className="text-muted-foreground italic text-sm">正在思考...</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* ── Jira 确认卡（内联在消息流末尾）── */}
+            {pendingConfirmations.map((card) => (
+              <div key={card.op_id} className="flex gap-4 flex-row">
+                <div className="w-10 h-10 shrink-0" />
+                <div className="max-w-[75%] flex-1">
+                  <ConfirmCard card={card} onConfirm={handleConfirm} onReject={handleReject} />
+                </div>
+              </div>
+            ))}
+
             {isGenerating && <span className="blinking-cursor" />}
             <div ref={messagesEndRef} className="h-1" />
-            </div>
           </div>
 
-          {/* ── LobeUI 恢复：UI 状态与引擎已解耦，绑定到 myInput ── */}
+          {/* ── 输入区 ── */}
           <div className="p-4 bg-background border-t border-border flex-shrink-0 flex flex-col gap-2 relative">
-            {/* 错误守卫 — 暴露网络死因 */}
-            {error && <div className="text-red-500 text-xs mb-1 px-1">后端通信异常: {error}</div>}
-
             <div className="flex justify-center gap-2 mb-2">
               {isGenerating && (
-                <Button variant="ghost" size="sm" onClick={stopGeneration} className="text-red-500 hover:text-red-700 text-xs gap-1">
+                <Button variant="ghost" size="sm" onClick={stopGenerating} className="text-red-500 hover:text-red-700 text-xs gap-1">
                   <Square size={12} /> ⏹ 停止生成
                 </Button>
               )}
@@ -262,8 +225,8 @@ export const App: React.FC = () => {
                 placeholder="输入分析指令，或键入 / 呼出模板..." rows={1}
                 className="flex-1 max-h-48 min-h-[56px] resize-none rounded-xl border border-input bg-background px-4 py-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring shadow-sm"
               />
-              <Button onClick={doSendMessage}
-                disabled={isLoading || !myInput || myInput.trim() === ''} className="h-12 w-12 shrink-0 rounded-xl shadow-md">
+              <Button onClick={handleSend}
+                disabled={isGenerating || !myInput || myInput.trim() === ''} className="h-12 w-12 shrink-0 rounded-xl shadow-md">
                 <svg className="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
                 </svg>

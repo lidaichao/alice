@@ -292,7 +292,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
         if (abortedSession) await db.sessions.put(abortedSession);
       } else {
         // SSE 流异常中断: 注入错误气泡到当前会话最后一条消息
-        logger.error('[SSE] Stream error:', error.message || error);
+        console.error('[SSE] Stream error:', error.message || error);
         const errorSession = get().sessions.find(s => s.id === activeSessionId);
         if (errorSession) {
           const updated = {

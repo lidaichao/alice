@@ -1,14 +1,13 @@
 import React from 'react';
-import { useSessionStore } from '@/store/useSessionStore';
 import { useChatStore } from '@/store/useChatStore';
 import { Button } from '@/components/ui/button';
 import { PanelRight } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const sessions = useSessionStore((s) => s.sessions);
-  const activeId = useSessionStore((s) => s.activeId);
+  const sessions = useChatStore((s) => s.sessions);
+  const activeSessionId = useChatStore((s) => s.activeSessionId);
   const toggleRightPanel = useChatStore((s) => s.toggleRightPanel);
-  const activeSession = sessions.find((s) => s.id === activeId);
+  const activeSession = sessions.find((s) => s.id === activeSessionId);
 
   return (
     <header className="h-16 bg-background flex items-center justify-between px-4 border-b border-border shrink-0">
@@ -31,7 +30,7 @@ export const Header: React.FC = () => {
       </div>
 
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={() => { console.log('点击了上下文按钮'); toggleRightPanel(); }}>
+        <Button variant="ghost" size="sm" onClick={toggleRightPanel}>
           <PanelRight size={16} className="mr-2" />
           上下文
         </Button>

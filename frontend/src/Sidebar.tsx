@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
-import { useSessionStore } from '@/store/useSessionStore';
+import { useChatStore } from '@/store/useChatStore';
 import { Button } from '@/components/ui/button';
 import { useTheme } from 'next-themes';
 import { Sun, Moon, Monitor, Plus, Trash2, Edit2, Wifi, Bug } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 export const Sidebar: React.FC = () => {
-  const sessions = useSessionStore((s) => s.sessions);
-  const activeId = useSessionStore((s) => s.activeId);
-  const createSession = useSessionStore((s) => s.createSession);
-  const switchSession = useSessionStore((s) => s.switchSession);
-  const deleteSession = useSessionStore((s) => s.deleteSession);
-  const renameSession = useSessionStore((s) => s.renameSession);
+  const sessions = useChatStore((s) => s.sessions);
+  const activeId = useChatStore((s) => s.activeSessionId);
+  const createSession = useChatStore((s) => s.addSession);
+  const switchSession = useChatStore((s) => s.setActiveSession);
+  const deleteSession = useChatStore((s) => s.deleteSession);
+  const renameSession = useChatStore((s) => s.renameSession);
   const { theme, setTheme } = useTheme();
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -22,10 +22,10 @@ export const Sidebar: React.FC = () => {
     setEditTitle(title);
   };
 
-  const commitRename = (id: string) => {
+  const commitRename = async (id: string) => {
     const trimmed = editTitle.trim();
     if (trimmed && trimmed !== sessions.find((s) => s.id === id)?.title) {
-      renameSession(id, trimmed);
+      await renameSession(id, trimmed);
     }
     setEditingId(null);
     setEditTitle('');
@@ -39,7 +39,7 @@ export const Sidebar: React.FC = () => {
       {/* Header + New Session */}
       <div className="p-3 border-b border-border flex items-center justify-between shrink-0">
         <span className="text-sm font-semibold text-foreground">会话列表</span>
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={createSession} title="新建会话">
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => createSession()} title="新建会话">
           <Plus size={16} />
         </Button>
       </div>
@@ -104,7 +104,7 @@ export const Sidebar: React.FC = () => {
                         </button>
                         <button
                           className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-red-50 text-red-600 flex items-center gap-2"
-                          onClick={(e) => { e.stopPropagation(); deleteSession(session.id); }}
+                          onClick={(e) => { e.stopPropagation(); void deleteSession(session.id); }}
                         >
                           <Trash2 size={12} /> 删除
                         </button>
