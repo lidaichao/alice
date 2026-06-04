@@ -2,6 +2,8 @@
 
 > 版本：v2.1 | 日期：2026-06-04
 
+**相关文档**：[Master PRD](Alice_Master_PRD_v1.0.md) · [技术架构](Alice_Master_Architecture_v1.0.md) · [白泽 Baize 架构](Baize_Architecture_v1.0.md)
+
 ---
 
 ## 一、产品概述

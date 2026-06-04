@@ -39,7 +39,7 @@ DANGEROUS_PATTERNS = [
 JIRA_ISSUE_STATUS_PATTERNS = [
     re.compile(
         r'(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9]).*'
-        r'(?:改成|改为|更新|修改|设置|流转|transition).*(?:完成|关闭|resolved|进行中|待办|done|closed)',
+        r'(?:改成|改为|更新|修改|设置|流转|transition).*(?:完成|关闭|resolved|进行中|处理中|待办|done|closed)',
         re.I,
     ),
     re.compile(
@@ -50,7 +50,7 @@ JIRA_ISSUE_STATUS_PATTERNS = [
     ),
     re.compile(
         r'(?:jira|任务|issue).{0,20}(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9]).{0,30}'
-        r'(?:状态|state).{0,12}(?:改成|改为|更新|设为|置为).{0,12}(?:完成|关闭|resolved|done)',
+        r'(?:状态|state).{0,12}(?:改成|改为|更新|设为|置为).{0,12}(?:完成|关闭|resolved|done|处理中|进行中|待办)',
         re.I,
     ),
 ]

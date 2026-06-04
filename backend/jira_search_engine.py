@@ -448,9 +448,7 @@ def parse_query_from_natural_language(user_text: str, config: JiraRuntimeConfig)
         q.assignees = []  # 关键词搜索不与经办人 OR 混用，避免误 JQL
 
     if re.search(r"需要完成|待办|本周.*任务|本周.*哪些", text) and not q.assignees:
-        if re.search(r"我|本人|当前用户", text) or re.search(
-            r"本周.*(?:需要|要).*(?:完成|办)|有哪些.*任务", text
-        ):
+        if re.search(r"我|本人|当前用户", text):
             q.assignee_is_current_user = True
         q.unresolved_only = True
 
@@ -499,6 +497,8 @@ def should_force_jira_structured_read(
         return is_jira_structured_read_query(user_text, intent_route)
     if intent_label in ("JIRA_STRUCTURED_SEARCH", "JIRA_KEYWORD_SEARCH"):
         return True
+    if intent_label == "WEEK_DEADLINE_TASKS":
+        return False
     if re.search(r"本周.*(?:任务|待办|需要完成)|需要完成.*任务|有哪些.*任务", user_text or "", re.I):
         return True
     return False
@@ -542,6 +542,7 @@ def parse_jira_transition_target(user_text: str) -> str:
     """从自然语言提取目标状态关键词（用于匹配 transition）"""
     text = user_text or ""
     for label, hint in (
+        ("处理中", r"处理中"),
         ("完成", r"完成|done|resolved|解决|关闭"),
         ("关闭", r"关闭|closed"),
         ("进行中", r"进行中|in\s*progress"),
@@ -559,7 +560,7 @@ def is_jira_transition_write_request(user_text: str, intent_route: str = "") -> 
         return False
     return bool(
         re.search(
-            r"改成|改为|更新.*状态|流转|transition|完成|关闭|resolved|进行中|待办",
+            r"改成|改为|更新.*状态|流转|transition|完成|关闭|resolved|进行中|处理中|待办",
             user_text or "",
             re.I,
         )

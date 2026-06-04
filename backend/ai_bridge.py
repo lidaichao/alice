@@ -46,6 +46,7 @@ from chat_pipeline.dsml_cleaner import (
     filter_content_lines,
     sse_line_has_dsml_leak,
 )
+from saas_http import saas_request, get_http_proxies
 from chat_pipeline.vip_fastpath import VipFastpathContext, iter_vip_fastpath
 from knowledge_retriever import (
     BoundedCache, _CONTEXT_CACHE, _SEMANTIC_CACHE, _SVN_COMMIT_CACHE,
@@ -1309,14 +1310,14 @@ def _exec_search_docs_catalog(args: dict, **kwargs) -> str:
                 raw_folders = os.getenv("GDRIVE_FOLDERS") or getattr(jira, '_global_cfg', {}).get("GDRIVE_FOLDERS", "")
                 folders = [f.strip() for f in re.split(r'[\n,]+', raw_folders) if f.strip()]
                 if folders:
-                    proxy_ip = os.getenv("GDRIVE_PROXY_IP")
-                    proxy_port = os.getenv("GDRIVE_PROXY_PORT")
-                    proxies = {"https": f"http://{proxy_ip}:{proxy_port}"} if proxy_ip and proxy_port else None
+                    proxies = get_http_proxies()
                     all_files = {}
                     for fid in folders:
-                        gr = http.get(
+                        gr = saas_request(
+                            "GET",
                             f"https://www.googleapis.com/drive/v3/files?key={GK}&q='{fid}'+in+parents&fields=files(id,name,mimeType)&pageSize=30",
-                            timeout=10, proxies=proxies)
+                            proxies=proxies,
+                        )
                         if gr.status_code == 200:
                             for f in gr.json().get("files", []):
                                 all_files[f["id"]] = f
@@ -1339,6 +1340,15 @@ def _exec_search_docs_catalog(args: dict, **kwargs) -> str:
                         })
         except Exception as e:
             logger.warning(f"[Catalog] GDrive failed: {e}")
+            if source == "gdrive":
+                return json.dumps({
+                    "status": "error",
+                    "result": [],
+                    "llm_text": (
+                        f"【GDrive 目录检索失败】{str(e)[:120]}\n"
+                        "请检查 .env 中 HTTP_PROXY/HTTPS_PROXY 或 GDRIVE_PROXY_IP/PORT，稍后重试。"
+                    ),
+                }, ensure_ascii=False)
 
     if not catalog:
         return json.dumps({
@@ -1412,23 +1422,42 @@ def _exec_read_specific_doc(args: dict, **kwargs) -> str:
         if not GK:
             return json.dumps({"status": "error", "result": "Google Drive API Key 未配置"})
         try:
-            meta_r = http.get(
+            proxies = get_http_proxies()
+            meta_r = saas_request(
+                "GET",
                 f"https://www.googleapis.com/drive/v3/files/{doc_id}?key={GK}&fields=name,mimeType",
-                timeout=10)
+                proxies=proxies,
+            )
             if meta_r.status_code != 200:
                 return json.dumps({"status": "error", "result": f"文件 {doc_id} 不存在或无权访问"})
             mime = meta_r.json().get("mimeType", "")
             name = meta_r.json().get("name", "未命名")
             export_mime = "text/csv" if "spreadsheet" in mime else "text/plain"
-            cr = http.get(
+            cr = saas_request(
+                "GET",
                 f"https://www.googleapis.com/drive/v3/files/{doc_id}/export?mimeType={export_mime}&key={GK}",
-                timeout=15)
+                proxies=proxies,
+            )
             if cr.status_code == 200:
                 content = f"# {name}\n\n{cr.text[:8000]}"
                 return json.dumps({"status": "ok", "llm_text": content}, ensure_ascii=False)
-            return json.dumps({"status": "error", "result": f"文件 {name} 导出失败 (HTTP {cr.status_code})"})
+            return json.dumps({
+                "status": "error",
+                "result": f"文件 {name} 导出失败 (HTTP {cr.status_code})",
+                "llm_text": (
+                    f"【GDrive】文件《{name}》导出失败。请检查代理配置或稍后重试。"
+                ),
+            }, ensure_ascii=False)
         except Exception as e:
-            return json.dumps({"status": "error", "result": f"GDrive 读取异常: {str(e)[:200]}"})
+            hint = (
+                "请确认 .env 已配置 HTTP_PROXY/HTTPS_PROXY 或 GDRIVE_PROXY_IP/PORT，"
+                "网络恢复后让我重新读取该文档。"
+            )
+            return json.dumps({
+                "status": "error",
+                "result": f"GDrive 读取异常: {str(e)[:200]}",
+                "llm_text": f"【GDrive 网络异常】无法读取文档内容。{hint}",
+            }, ensure_ascii=False)
 
     return json.dumps({"status": "error", "result": f"不支持的文档来源: {source}"})
 
@@ -1543,8 +1572,8 @@ def _iter_jira_structured_read_lane(user_text, frontend_cfg, user_cfg, vip_strea
     yield from vip_stream_fn(_read_prompt, _fallback2)
 
 
-def _iter_jira_write_express_lane(user_text, user_cfg, intent_info):
-    """Jira 写操作直通车：状态流转确认卡（避免 ReAct 空回复）。"""
+def _collect_jira_write_sse_chunks(user_text, user_cfg, intent_info) -> list:
+    """Jira 写操作直通车：返回 confirm_card SSE 块列表（避免空 generator 漏进 ReAct）。"""
     from jira_search_engine import (
         is_jira_transition_write_request,
         parse_jira_transition_target,
@@ -1552,43 +1581,42 @@ def _iter_jira_write_express_lane(user_text, user_cfg, intent_info):
     )
     from jira_operation_manager import (
         create_transition_operation_card,
-        resolve_transition_for_target,
         save_operation,
         build_confirm_tool_response,
     )
 
     if not is_jira_transition_write_request(user_text, intent_info.get("route", "")):
-        return
+        return []
 
     m = ISSUE_KEY_RE.search(user_text)
     if not m:
-        return
+        return []
     issue_key = m.group(1).upper()
     target = parse_jira_transition_target(user_text)
-    _pat = user_cfg.get("jira_pat", "")
-    tr_meta = {}
-    try:
-        transitions = jira.list_transitions(issue_key, user_pat=_pat or None)
-        tr_meta = resolve_transition_for_target(transitions, target)
-    except Exception as te:
-        logger.warning(f"[JiraWrite] list_transitions failed: {te}")
 
     op = create_transition_operation_card(
         issue_key=issue_key,
         target_status=target,
-        transition_id=tr_meta.get("transition_id", ""),
-        transition_name=tr_meta.get("transition_name", ""),
-        to_status=tr_meta.get("to_status", ""),
+        transition_id="",
+        transition_name="",
+        to_status="",
     )
     save_operation(op)
     preview = (
-        f"即将把 **{issue_key}** 流转到「{tr_meta.get('to_status') or target}」"
-        f"（操作: {tr_meta.get('transition_name') or '待确认'}）。\n"
-        f"请在确认卡上授权后执行，Alice 不会未经确认直接改 Jira。"
+        f"【操作确认卡】已生成。即将把 **{issue_key}** 流转到「{target}」。\n"
+        f"请在确认卡上点击授权后执行；Alice 不会未经您确认直接修改 Jira。\n"
+        f"（您拥有完整改状态权限，系统仅做安全确认，并非无权限。）"
     )
     payload = build_confirm_tool_response(op, preview)
-    yield f"data: {json.dumps({'_event': 'confirm_card', 'op_id': op['id'], 'operation': payload.get('operation'), 'preview': preview}, ensure_ascii=False)}\n\n".encode("utf-8")
-    yield f"data: {json.dumps({'choices': [{'delta': {'content': preview}}]}, ensure_ascii=False)}\n\n".encode("utf-8")
+    return [
+        f"data: {json.dumps({'_event': 'confirm_card', 'op_id': op['id'], 'operation': payload.get('operation'), 'preview': preview}, ensure_ascii=False)}\n\n".encode("utf-8"),
+        f"data: {json.dumps({'choices': [{'delta': {'content': preview}}]}, ensure_ascii=False)}\n\n".encode("utf-8"),
+    ]
+
+
+def _iter_jira_write_express_lane(user_text, user_cfg, intent_info):
+    for chunk in _collect_jira_write_sse_chunks(user_text, user_cfg, intent_info):
+        yield chunk
 
 
 def execute_tool_call(tool_name: str, arguments_str, user_cfg=None, frontend_cfg=None) -> str:
@@ -1732,6 +1760,12 @@ CORE_SYSTEM_PROMPT_V2 = """你是 Alice V2.0，Jira 项目和知识库管理 AI 
 6. 无数据绝对熔断：无工具返回数据 = 禁止输出任何数值/表格/Issue列表。
 7. 搜索结果必须展示：工具返回了任务列表就必须以表格列出前5-10条，不能因为"没有精确匹配"就跳过不展示！
 
+【Jira 写操作 — 操作确认卡协议】
+- 你拥有修改 Jira 状态、创建任务的能力；系统会在执行前自动生成「操作确认卡」供用户审核。
+- 用户要求「改成处理中/完成/关闭」等时：走写操作直通车，禁止回答「无权限」「无法修改」。
+- 正确话术示例：「已为您生成确认卡，请在卡片上确认后将 CT-10859 流转到处理中。」
+- 禁止在未确认的情况下声称已修改成功。
+
 【回答风格】
 - 中文，结构化（表格/列表）
 - 基于事实，诚实
@@ -1786,7 +1820,7 @@ def chat_completions():
             if msg.get("role") == "user":
                 user_text = msg.get("content", "")
                 break
-        tool_names, intent_label = route_intent(user_text)
+        tool_names, intent_label = route_intent(user_text, api_key=user_cfg.get("deepseek_key"))
         if tool_names:
             active_tools = get_filtered_tools(active_tools, tool_names)
     except ImportError:
@@ -1836,11 +1870,10 @@ def chat_completions():
         # ══════════════════════════════════════════════════════════
         if user_text and intent_info.get("route") == "jira_write":
             try:
-                _write_emitted = False
-                for _chunk in _iter_jira_write_express_lane(user_text, user_cfg, intent_info):
-                    _write_emitted = True
+                _write_chunks = _collect_jira_write_sse_chunks(user_text, user_cfg, intent_info)
+                for _chunk in _write_chunks:
                     yield _chunk
-                if _write_emitted:
+                if _write_chunks:
                     yield b"data: [DONE]\n\n"
                     return
             except Exception as _jwe:
@@ -2577,6 +2610,24 @@ def confirm_op(op_id):
         skip_labels = skip_labels or op["recovery"]["pending_action"] == "retry_without_labels"
 
     try:
+        if op.get("kind") == "jira_transition_issue":
+            draft = (op.get("drafts") or [{}])[0]
+            if not draft.get("transition_id"):
+                try:
+                    from jira_operation_manager import resolve_transition_for_target
+                    target = draft.get("target_status") or "处理中"
+                    transitions = jira.list_transitions(draft.get("issue_key", ""), user_pat=user_pat or None)
+                    tr_meta = resolve_transition_for_target(transitions, target)
+                    if tr_meta.get("transition_id"):
+                        draft.update({
+                            "transition_id": tr_meta["transition_id"],
+                            "transition_name": tr_meta.get("transition_name", ""),
+                            "to_status": tr_meta.get("to_status", ""),
+                        })
+                        save_operation(op)
+                except Exception as te:
+                    logger.warning(f"[OpCard] resolve transition on confirm failed: {te}")
+
         op = mark_running(op)
         save_operation(op)
         result = execute_confirmed_operation(jira, op, user_pat=user_pat, skip_labels=skip_labels)
@@ -3599,20 +3650,12 @@ def update_admin_password():
         return jsonify({"ok": False, "error": "密码至少需要 4 个字符"}), 400
     ADMIN_PASS = new_pwd
     try:
+        from dotenv import set_key
+
         env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-        if os.path.exists(env_path):
-            with open(env_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            found = False
-            with open(env_path, 'w', encoding='utf-8') as f:
-                for line in lines:
-                    if line.startswith('ADMIN_PASS='):
-                        f.write(f'ADMIN_PASS={new_pwd}\n')
-                        found = True
-                    else:
-                        f.write(line)
-                if not found:
-                    f.write(f'\nADMIN_PASS={new_pwd}\n')
+        if not os.path.exists(env_path):
+            open(env_path, "a", encoding="utf-8").close()
+        set_key(env_path, "ADMIN_PASS", new_pwd)
     except Exception as e:
         logger.warning(f"Failed to persist ADMIN_PASS: {e}")
     return jsonify({"ok": True, "message": "密码已更新，下次登录请使用新密码"})

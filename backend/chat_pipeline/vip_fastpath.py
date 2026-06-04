@@ -28,6 +28,57 @@ class VipFastpathContext:
     jira_http: Any = None
 
 
+def _title_score(title: str, query: str) -> float:
+    t = (title or "").strip().lower()
+    q = (query or "").strip().lower()
+    if not t or not q:
+        return 0.0
+    if t == q or q in t or t in q:
+        return 1.0
+    q_chars = [c for c in q if len(c.strip())]
+    if not q_chars:
+        return 0.0
+    hit = sum(1 for c in q_chars if c in t)
+    return hit / max(len(q_chars), 1)
+
+
+def _pick_catalog_prefer_source(items: list, query: str, prefer: str = "notion") -> dict:
+    """Pick best title match, boosting preferred source (e.g. notion for tech docs)."""
+    if not items:
+        return {}
+    best = items[0]
+    best_score = -1.0
+    for it in items:
+        score = _title_score(it.get("title") or "", query)
+        if (it.get("source") or "").lower() == prefer:
+            score += 0.35
+        if score > best_score:
+            best_score = score
+            best = it
+    return best
+
+
+def _pick_catalog_item(items: list, query: str, user_text: str = "") -> dict:
+    """Prefer best title match; boost Google Drive when query matches design doc titles."""
+    if not items:
+        return {}
+    prefer_gdrive = bool(re.search(r"云盘|gdrive|google", user_text or "", re.I))
+    best = items[0]
+    best_score = -1.0
+    for it in items:
+        title = it.get("title") or ""
+        score = _title_score(title, query)
+        src = (it.get("source") or "").lower()
+        if src == "gdrive":
+            score += 0.15
+        if prefer_gdrive and src == "gdrive":
+            score += 0.25
+        if score > best_score:
+            best_score = score
+            best = it
+    return best
+
+
 def _plugin_sse(name: str, status: str) -> bytes:
     payload = {"custom_type": "plugin_state", "plugin": {"name": name, "status": status}}
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8")
@@ -62,7 +113,7 @@ def _run_knowledge_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
 
     _doc_block = ""
     if _catalog_items:
-        _pick = _catalog_items[0]
+        _pick = _pick_catalog_item(_catalog_items, _kq, ctx.user_text or "")
         _doc_id = _pick.get("doc_id", "")
         _doc_src = _pick.get("source", "notion")
         _doc_title = _pick.get("title", "")
@@ -91,10 +142,111 @@ def _run_knowledge_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
     yield from ctx.vip_stream(_know_prompt, _doc_block or "（无文档数据）")
 
 
+def _run_revision_analysis_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
+    """Q2: Issue + revision → SVN diff → 分析（优先于仅提交列表）"""
+    _diff_rev = re.search(r"(?:r|版本\s*)\s*(\d{4,6})", ctx.user_text or "", re.I)
+    if not _diff_rev:
+        return
+    if ctx.intent_label not in ("CODE_COMMIT_DIFF", "revision_analysis", "CODE_COMMIT_LIST") and not re.search(
+        r"分析|审查|diff|提交内容", ctx.user_text or "", re.I
+    ):
+        return
+    if re.search(r"有哪些.*提交|提交列表|最近.*天.*提交", ctx.user_text or "", re.I) and not re.search(
+        r"分析|审查|提交内容", ctx.user_text or "", re.I
+    ):
+        return
+
+    _rev_id = _diff_rev.group(1)
+    logger.info(f"[VIP] Revision analysis lane r{_rev_id}")
+
+    yield _plugin_sse("get_single_commit_diff", "running")
+    raw_diff = ""
+    try:
+        from knowledge_retriever import get_single_commit_diff
+
+        _d = get_single_commit_diff(_rev_id)
+        raw_diff = str(_d)[:8000] if _d and len(str(_d)) > 20 else ""
+    except Exception as e:
+        raw_diff = f"[Diff r{_rev_id} 获取失败: {e}]"
+    yield _plugin_sse("get_single_commit_diff", "done")
+
+    _issue_ctx = ""
+    _ik_list = list(ctx.issue_keys_found)
+    if _ik_list:
+        _ik = _ik_list[0]
+        yield _plugin_sse("get_issue_commits", "running")
+        try:
+            from knowledge_retriever import fetch_precise_commits_via_fisheye
+
+            _issue_ctx = (fetch_precise_commits_via_fisheye(_ik) or "")[:3000]
+        except Exception as e:
+            _issue_ctx = f"Issue {_ik} 提交上下文获取失败: {e}"
+        yield _plugin_sse("get_issue_commits", "done")
+
+    _prompt = (
+        f"你是 Alice 资深主程。请基于下方【真实 SVN Diff】分析 revision r{_rev_id} 的提交内容。\n"
+        "必须引用 diff 中的具体文件/逻辑变化；若 diff 为空，明确说明无法获取 diff，禁止编造。\n\n"
+        f"【SVN Diff r{_rev_id}】\n{raw_diff[:8000]}\n\n"
+    )
+    if _issue_ctx:
+        _prompt += f"【关联 Issue 提交记录】\n{_issue_ctx}\n\n"
+    _prompt += f"【用户问题】\n{ctx.user_text}"
+    yield from ctx.vip_stream(_prompt, raw_diff[:4000] or "（无 Diff 数据）")
+
+
+def _run_week_deadline_tasks_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
+    """Q3: 本周截止字段（End date）+ 策划分列"""
+    t = ctx.user_text or ""
+    if ctx.intent_label != "WEEK_DEADLINE_TASKS" and not re.search(
+        r"本周.*(?:需要完成|要完成)|需要完成.*任务", t, re.I
+    ):
+        return
+
+    logger.info("[VIP] Week deadline tasks lane")
+    yield _plugin_sse("search_jira_issues", "running")
+    table_text = ""
+    jql = ""
+    dl_meta = {"display_name": "截止时间"}
+    range_label = ""
+    try:
+        table_text, jql, dl_meta, date_range = ctx.build_weekly_jira_snapshot(
+            t, ctx.frontend_cfg, ctx.user_cfg.get("jira_pat", ""),
+        )
+        range_label = date_range[2]
+    except Exception as e:
+        table_text = f"Jira 查询失败: {str(e)[:200]}"
+    yield _plugin_sse("search_jira_issues", "done")
+
+    disp = dl_meta.get("display_name", "截止时间")
+    planner_note = ""
+    if "策划" in t:
+        planner_note = (
+            "\n【策划分列】从表格中筛选 labels/标题/经办人角色与「策划」相关的行单独成表；"
+            "若表格无明确策划列，据经办人与标题合理推断并说明依据。\n"
+        )
+
+    _prompt = (
+        "你是 Alice PM 助理。根据下方【真实 Jira 数据】回答，禁止编造 Issue。\n\n"
+        f"【数据依据】筛选字段「{disp}」；时间：{range_label}；JQL：{jql}\n"
+        "（JQL 必须基于截止时间/End date 字段，禁止仅用 updated 或 assignee=currentUser）\n\n"
+        f"{table_text}\n{planner_note}\n"
+        "【输出要求】\n"
+        "1. 先列出本周需要完成的全部任务（表格）\n"
+        "2. 若用户要求策划负责，单独一节「策划负责」\n"
+        "3. 开头写明数据依据（字段名 + JQL）\n\n"
+        f"【用户问题】\n{t}"
+    )
+    yield from ctx.vip_stream(_prompt, table_text or "（无数据）")
+
+
 def _run_diff_rag_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
     _diff_rev = re.search(r"(?:r|版本\s*)\s*(\d{4,6})", ctx.user_text or "")
     _diff_intent = bool(
-        re.search(r"diff|分析.*代码|代码.*分析|代码.*审查|变更|改了.*什么", ctx.user_text or "")
+        re.search(
+            r"diff|分析.*代码|代码.*分析|代码.*审查|变更|改了.*什么|提交内容",
+            ctx.user_text or "",
+            re.I,
+        )
     )
     if not (_diff_rev and _diff_intent):
         return
@@ -130,7 +282,7 @@ def _run_diff_rag_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
         if _sr_obj.get("status") == "ok":
             catalog = _sr_obj.get("result", [])
             if isinstance(catalog, list) and catalog:
-                _first = catalog[0]
+                _first = _pick_catalog_item(catalog, _search_kw, ctx.user_text or "")
                 _doc_id = _first.get("doc_id", "")
                 _doc_source = _first.get("source", "notion")
                 _doc_title = _first.get("title", "未知文档")
@@ -228,7 +380,9 @@ def _run_issue_detail_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
             r"详情|内容|描述|评论|状态|什么情况|怎么样|是谁|什么问题|备注",
             ctx.user_text or "",
         )
-    ) and not bool(re.search(r"提交|commit|diff|代码变更|改了什么", ctx.user_text or "", re.I))
+    ) and not bool(
+        re.search(r"提交|commit|diff|代码变更|改了什么|改成|改为|流转", ctx.user_text or "", re.I)
+    )
 
     if not (_issue_detail_intent and len(ctx.issue_keys_found) == 1):
         return
@@ -277,6 +431,102 @@ def _run_issue_detail_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
         f"{_detail_block}\n\n【用户问题】\n{ctx.user_text}"
     )
     yield from ctx.vip_stream(_detail_prompt, _detail_block)
+
+
+def _run_tech_doc_commit_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
+    """Q8: Notion 技术文档预取 + Issue 提交 → 设计意图 vs 代码对比"""
+    t = ctx.user_text or ""
+    if not ctx.issue_keys_found:
+        return
+    if not re.search(r"技术文档|设计文档|PRD|notion", t, re.I):
+        return
+    if not re.search(r"提交|commit|代码|分析", t, re.I):
+        return
+
+    _ik = sorted(ctx.issue_keys_found, key=len, reverse=True)[0]
+    _search_kw = f"技术文档 {_ik}"
+    try:
+        jira = ctx.jira_http
+        if jira:
+            _pat = ctx.user_cfg.get("jira_pat", "")
+            _jr = jira.jira_get(
+                f"/issue/{_ik}",
+                params={"fields": "summary"},
+                timeout=10,
+                user_pat=_pat or None,
+            )
+            if _jr.status_code == 200:
+                _sum = (_jr.json().get("fields") or {}).get("summary", "")
+                if _sum:
+                    _search_kw = f"{_sum} {_ik} 技术文档"
+    except Exception:
+        pass
+    logger.info(f"[VIP] Tech-doc + commit lane: {_ik} kw={_search_kw[:60]}")
+
+    notion_block = ""
+    yield _plugin_sse("search_docs_catalog", "running")
+    _cat_raw = ctx.exec_search_docs_catalog({"query": _search_kw, "source": "all"})
+    yield _plugin_sse("search_docs_catalog", "done")
+    try:
+        _items = json.loads(_cat_raw).get("result") or []
+    except Exception:
+        _items = []
+    if _items:
+        _pick = _pick_catalog_prefer_source(_items, _search_kw, prefer="notion")
+        if not _pick:
+            _pick = _items[0]
+        _doc_id = _pick.get("doc_id", "")
+        _doc_src = _pick.get("source", "notion")
+        _doc_title = _pick.get("title", "")
+        yield _plugin_sse("read_specific_doc", "running")
+        _read_raw = ctx.exec_read_specific_doc({"doc_id": _doc_id, "source": _doc_src})
+        yield _plugin_sse("read_specific_doc", "done")
+        try:
+            _rj = json.loads(_read_raw)
+            notion_block = _rj.get("llm_text") or str(_rj.get("result", ""))[:6000]
+            if _doc_title:
+                notion_block = f"【{_doc_src}】《{_doc_title}》\n\n{notion_block}"
+        except Exception:
+            notion_block = str(_read_raw)[:6000]
+
+    commit_block = ""
+    yield _plugin_sse("get_issue_commits", "running")
+    try:
+        from knowledge_retriever import fetch_precise_commits_via_fisheye
+
+        commit_block = fetch_precise_commits_via_fisheye(_ik) or ""
+    except Exception as e:
+        commit_block = f"提交记录获取失败: {e}"
+    yield _plugin_sse("get_issue_commits", "done")
+
+    _diff_block = ""
+    _rev_m = re.search(r"(?:r|版本\s*)\s*(\d{4,6})", t, re.I)
+    if _rev_m:
+        _rid = _rev_m.group(1)
+        yield _plugin_sse("get_single_commit_diff", "running")
+        try:
+            from knowledge_retriever import get_single_commit_diff
+
+            _d = get_single_commit_diff(_rid)
+            _diff_block = str(_d)[:4000] if _d else ""
+        except Exception as e:
+            _diff_block = f"Diff r{_rid} 获取失败: {e}"
+        yield _plugin_sse("get_single_commit_diff", "done")
+
+    _prompt = (
+        "你是 Alice 资深主程。必须结合【Notion/知识库技术文档】与【真实提交数据】分析任务代码。\n"
+        "输出须包含：\n"
+        "1. 根据 Notion 技术文档，该任务的设计意图是什么\n"
+        "2. 提交代码实际改了什么（可引用 diff）\n"
+        "3. 实现与设计是否一致；不一致处逐条说明\n"
+        "禁止编造文档或提交中不存在的内容。\n\n"
+        f"【技术文档】\n{notion_block[:6000] or '（未检索到 Notion 技术文档，请说明）'}\n\n"
+        f"【{_ik} 提交记录】\n{commit_block[:6000]}\n\n"
+    )
+    if _diff_block:
+        _prompt += f"【代码 Diff】\n{_diff_block}\n\n"
+    _prompt += f"【用户问题】\n{t}"
+    yield from ctx.vip_stream(_prompt, notion_block or commit_block or "（无数据）")
 
 
 def _run_commit_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
@@ -384,7 +634,10 @@ def iter_vip_fastpath(ctx: VipFastpathContext) -> Iterator[bytes]:
     """
     lanes = (
         _run_knowledge_lane,
+        _run_week_deadline_tasks_lane,
+        _run_revision_analysis_lane,
         _run_diff_rag_lane,
+        _run_tech_doc_commit_lane,
         _run_weekly_lane,
         _run_issue_detail_lane,
         _run_commit_lane,

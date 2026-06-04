@@ -2,6 +2,8 @@
 
 > 版本：v2.3 | 日期：2026-06-04 | 分支：master
 
+**相关文档**：[Master PRD](Alice_Master_PRD_v1.0.md) · [技术说明 TECHNICAL](TECHNICAL.md) · [桌面端方案](desktop_app_plan.md) · [灰盒 SOP](Alice_Graybox_SOP_v1.0.md) · [上游参考：白泽 Baize 架构](Baize_Architecture_v1.0.md)
+
 ---
 
 ## 【核心约束】奥卡姆剃刀原则
@@ -101,3 +103,9 @@ F5 刷新
 | tool_choice: required | 强制 LLM 调用工具 |
 | Stop Interceptor | 第一轮话痨拦截 |
 | 行级 DSML 过滤 | 修复跨行 .*? 吞噬全文 bug |
+
+---
+
+## 上游参考：白泽（Baize）
+
+Alice 的 Jira 确定性查询、确认卡、工程意图拦截等能力，语义上移植自 **白泽 Baize**（Node.js + Claude Code 本地 Hub）。对照与模块映射见 [Baize_Architecture_v1.0.md](Baize_Architecture_v1.0.md) §11；Jira 准确性 A/B 见 [eval/reports/jira_baize_ab_latest.md](../../eval/reports/jira_baize_ab_latest.md)。

@@ -285,6 +285,7 @@ def resolve_transition_for_target(transitions: list, target_status: str) -> dict
     aliases = {
         "完成": ("完成", "done", "resolved", "解决", "可发布", "关闭"),
         "关闭": ("关闭", "closed", "done"),
+        "处理中": ("处理中", "in progress", "处理", "进行中"),
         "进行中": ("进行中", "in progress", "处理"),
         "待办": ("待办", "to do", "open", "新建"),
     }

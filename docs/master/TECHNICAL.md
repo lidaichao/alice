@@ -2,6 +2,8 @@
 
 > 版本：v2.1 | 日期：2026-06-04 | 分支：master
 
+**相关文档**：[Master 架构 V2.2](Alice_Master_Architecture_v1.0.md) · [白泽 Baize 架构（上游参考）](Baize_Architecture_v1.0.md) · [桌面端方案](desktop_app_plan.md)
+
 ---
 
 ## 一、技术栈

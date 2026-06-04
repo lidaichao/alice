@@ -1,159 +1,234 @@
 """
-Alice V2.0 Intent Router — 意图路由层
-═══════════════════════════════════════════════════════════
-设计原理 (Industry-validated pattern, 2025-2026):
-  "不要让模型一边理解人话，一边挑工具，一边还要组织答案"
-  → 路由层负责"用户要什么工具"，LLM 负责"数据怎么回答"
-
-与 LlamaIndex 的关系:
-  LlamaIndex 管检索完成后 LLM 的摘要选择与回答合成
-  Intent Router 管检索开始前 LLM 应该拿到哪些工具
-  互补，不冲突
-
-关键设计:
-  1. 模式匹配 (非关键词匹配) — 基于用户意图的语义模式
-  2. 路由输出是工具子集，不是固定调用链 — LLM 仍自主决策调用顺序
-  3. 不确定时回退到全量工具 — 宁可多给，不可少给
-═══════════════════════════════════════════════════════════
+Alice V2.0 Intent Router — LLM 语义分发 + TTL 缓存
 """
-import re
+from __future__ import annotations
+
+import hashlib
+import json
 import logging
+import os
+import re
+import time
+from typing import Optional
 
-logger = logging.getLogger('intent_router')
+import requests
 
-# ── 意图模式定义 ─────────────────────────────────────────
-# 每个模式: (pattern_regex, tool_subset, label)
-# pattern 匹配用户问法，tool_subset 是该意图下应暴露的工具
+logger = logging.getLogger("intent_router")
 
-INTENT_PATTERNS = [
+DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
+CACHE_TTL_SEC = 300
 
-    # P0: 周报/日报/月报 — 项目级汇总（VIP 车道处理，工具仅保留搜索）
-    (
-        r"周报|日报|月报|本周.{0,10}(?:总结|汇总|进度|情况|报告)|写.{0,8}(?:周报|月报|日报)",
-        ["search_jira_issues"],
-        "WEEKLY_REPORT"
+# intent id → (tool_subset, legacy label for VIP / logs)
+INTENT_REGISTRY: dict[str, tuple[Optional[list[str]], str]] = {
+    "weekly_report": (["search_jira_issues"], "WEEKLY_REPORT"),
+    "week_deadline_tasks": (["search_jira_issues"], "WEEK_DEADLINE_TASKS"),
+    "code_commit_list": (["query_jira_metadata", "get_issue_commits"], "CODE_COMMIT_LIST"),
+    "code_diff": (
+        [
+            "get_issue_commits",
+            "get_single_commit_diff",
+            "query_jira_metadata",
+            "search_docs_catalog",
+            "read_specific_doc",
+        ],
+        "CODE_COMMIT_DIFF",
     ),
-
-    # P0: 代码提交列表查询 — 用户问"有哪些提交"、"提交了什么"
-    # 分配 get_issue_commits (列表) + query_jira_metadata (元数据)
-    (
-        r"提交|commit|改了什么代码|代码变更|变更了哪些|改了哪些文件|提交记录|提交内容|提交列表|有哪些.*提交|提交.*有哪些",
-        ["query_jira_metadata", "get_issue_commits"],
-        "CODE_COMMIT_LIST"
+    "revision_analysis": (
+        ["get_single_commit_diff", "get_issue_commits", "query_jira_metadata"],
+        "CODE_COMMIT_DIFF",
     ),
-
-    # P0.5: 代码 Diff 分析 — 用户问"分析 diff"、"看看 diff"、"分析 r40538"
-    # 分配 get_single_commit_diff + get_issue_commits + 知识库工具 (业务背景)
-    (
-        r"diff|分析.*代码|代码.*分析|代码.*审查|看看.*r\d+|分析.*r\d+|审查.*提交|帮我看看.*版本|分析.*变更|diff.*分析",
-        ["get_issue_commits", "get_single_commit_diff", "query_jira_metadata",
-         "search_docs_catalog", "read_specific_doc"],
-        "CODE_COMMIT_DIFF"
+    "doc_search": (["search_docs_catalog", "read_specific_doc"], "DOC_SEARCH"),
+    "doc_jira_cross": (
+        [
+            "search_docs_catalog",
+            "read_specific_doc",
+            "search_jira_issues",
+            "query_jira_metadata",
+        ],
+        "DOC_JIRA_CROSS",
     ),
+    "jira_search": (["search_jira_issues"], "JIRA_STRUCTURED_SEARCH"),
+    "jira_keyword_search": (["search_jira_issues"], "JIRA_KEYWORD_SEARCH"),
+    "jira_write": (["search_jira_issues"], "JIRA_WRITE"),
+    "issue_metadata": (["query_jira_metadata"], "ISSUE_METADATA"),
+    "knowledge_query": (["search_docs_catalog", "read_specific_doc"], "KNOWLEDGE_QUERY"),
+    "full_set": (None, "FULL_SET"),
+}
 
-    # P1: 文档内容查询 — 只需要知识库检索
-    (
-        r"文档.*写了|写了什么|文档.*内容|文档.*摘要|这份.*文档|说明.*这份|讲.*什么|说了什么",
-        ["search_docs_catalog", "read_specific_doc"],
-        "DOC_SEARCH"
-    ),
+ROUTER_SYSTEM = """你是 Alice 的意图分类器。根据用户最后一句话，输出唯一意图 JSON。
 
-    # P2: 文档+Jira 关联查询 — 跨工具关联检索
-    (
-        r"文档.*(?:jira|任务|关联|相关.*任务)|(?:jira|任务|关联).*文档",
-        ["search_docs_catalog", "read_specific_doc", "search_jira_issues", "query_jira_metadata"],
-        "DOC_JIRA_CROSS"
-    ),
+可选 intent（必须从中选一个）：
+- week_deadline_tasks: 本周/这周需要完成、待交付的任务列表（含按角色如策划筛选）
+- weekly_report: 写周报/日报/月报、本周工作总结
+- revision_analysis: 分析某个 SVN revision（如 r40759）的提交内容/diff，常带 Issue Key
+- code_diff: 代码 diff 审查、Code Review、分析代码变更
+- code_commit_list: 查看某 Issue 有哪些提交、提交列表（不要 diff 深度分析）
+- doc_search: 查文档内容、摘要、云盘/Notion 设计文档
+- doc_jira_cross: 同时要文档和 Jira 任务关联
+- jira_search: Jira 任务统计、筛选、列表（非单 Issue 详情）
+- jira_keyword_search: 按关键词找任务
+- jira_write: 创建/改状态/流转 Jira（含「改成处理中」）— 系统会弹确认卡，不是无权限
+- issue_metadata: 单个 CT-123 的状态、详情、评论
+- knowledge_query: 知识库/策划案/wiki 泛查询
+- full_set: 闲聊或无法判断（宁可用 full_set）
 
-    # P3: 结构化 Jira 查询（统计/人名/筛选 — 禁止仅靠 metadata）
-    (
-        r"统计|汇总|有多少|几个|列表|未完成的|待办|本周|今天|经办|负责人|分配",
-        ["search_jira_issues"],
-        "JIRA_STRUCTURED_SEARCH"
-    ),
+规则提示：
+- 「简要分析 r40759 提交内容」→ revision_analysis（不是 code_commit_list）
+- 「球员系统…设计 讲讲文档」→ doc_search
+- 「本周需要完成的任务」「策划负责」→ week_deadline_tasks
+- 仅「最近两天提交了什么」→ code_commit_list
 
-    # P3b: 关键词搜索 Jira (无具体 Issue Key)
-    (
-        r"找.*(?:任务|bug|需求|故事|缺陷)|搜索|查找.*jira|和.*有关的.*任务|相关.*任务",
-        ["search_jira_issues"],
-        "JIRA_KEYWORD_SEARCH"
-    ),
+只输出 JSON：{"intent": "<id>", "confidence": <0.0-1.0>}"""
 
-    # P3c: Jira 写操作（状态流转/创建 — 由写直通车处理，ReAct 不抢答）
-    (
-        r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9]).*(?:改成|改为|完成|关闭|流转)"
-        r"|(?:创建|新建|批量导入).*(?:jira|任务|issue)",
-        ["search_jira_issues"],
-        "JIRA_WRITE"
-    ),
+_route_cache: dict[str, tuple[float, Optional[list[str]], str]] = {}
 
-    # P4: 具体任务状态查询 — 轻量（排除写操作）
-    (
-        r"(?<!改成)(?<!改为)(?<!更新)状态|谁在负责|经办人|怎么样|是什么|详细信息",
-        ["query_jira_metadata"],
-        "ISSUE_METADATA"
-    ),
 
-    # P5: 知识库/文档查询 (补天修复)
-    # 匹配: "查文档"、"知识库里有什么"、"wiki"、"云盘"、"策划案"等
-    (
-        r"文档|知识库|wiki|云盘|策划案|设计案|KB-|技术文档",
-        ["search_docs_catalog", "read_specific_doc"],
-        "KNOWLEDGE_QUERY"
-    ),
-]
+def _cache_key(text: str) -> str:
+    norm = re.sub(r"\s+", " ", (text or "").strip().lower())[:500]
+    return hashlib.sha256(norm.encode("utf-8")).hexdigest()
 
-# ── 路由函数 ──────────────────────────────────────────────
 
-def route_intent(user_text: str) -> tuple:
+def _cache_get(text: str) -> Optional[tuple[Optional[list[str]], str]]:
+    ck = _cache_key(text)
+    hit = _route_cache.get(ck)
+    if not hit:
+        return None
+    exp, tools, label = hit
+    if time.time() > exp:
+        _route_cache.pop(ck, None)
+        return None
+    logger.info(f"[IntentRouter] cache hit → {label}")
+    return tools, label
+
+
+def _cache_set(text: str, tools: Optional[list[str]], label: str) -> None:
+    _route_cache[_cache_key(text)] = (time.time() + CACHE_TTL_SEC, tools, label)
+
+
+def _resolve_api_key(explicit: Optional[str] = None) -> str:
+    if explicit:
+        return explicit.strip()
+    key = os.getenv("DEEPSEEK_KEY") or os.getenv("DEEPSEEK_API_KEY") or ""
+    if key:
+        return key.strip()
+    try:
+        path = os.path.join(os.path.dirname(__file__), "global_config.json")
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return (json.load(f).get("DEEPSEEK_KEY") or "").strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _parse_router_json(content: str) -> dict:
+    text = (content or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    return json.loads(text)
+
+
+def classify_intent_llm(user_text: str, api_key: Optional[str] = None) -> dict:
+    """DeepSeek temperature=0 → {intent, confidence}"""
+    key = _resolve_api_key(api_key)
+    if not key:
+        return {"intent": "full_set", "confidence": 0.0, "reason": "no_api_key"}
+
+    prompt = f"用户输入：\n{(user_text or '')[:800]}"
+    try:
+        resp = requests.post(
+            DEEPSEEK_URL,
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            json={
+                "model": os.getenv("DEEPSEEK_MODEL") or "deepseek-chat",
+                "messages": [
+                    {"role": "system", "content": ROUTER_SYSTEM},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.0,
+                "max_tokens": 80,
+            },
+            timeout=12,
+        )
+        resp.raise_for_status()
+        content = (
+            resp.json()
+            .get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+        )
+        parsed = _parse_router_json(content)
+        intent = (parsed.get("intent") or "full_set").strip().lower()
+        if intent not in INTENT_REGISTRY:
+            intent = "full_set"
+        conf = float(parsed.get("confidence", 0.8))
+        return {"intent": intent, "confidence": max(0.0, min(1.0, conf))}
+    except Exception as e:
+        logger.warning(f"[IntentRouter] LLM classify failed: {e}")
+        return {"intent": "full_set", "confidence": 0.0, "reason": str(e)}
+
+
+def _fast_path_intent(user_text: str) -> Optional[str]:
+    """零成本确定性分流（非正则森林，仅极高置信短路径）"""
+    t = user_text or ""
+    if re.search(r"KB-[\w-]+", t, re.I):
+        return "doc_search"
+    if re.search(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])", t) and re.search(
+        r"(?:改成|改为|状态|流转)", t, re.I
+    ) and re.search(r"处理中|完成|关闭|进行中|待办", t, re.I):
+        return "jira_write"
+    if re.search(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])", t) and re.search(
+        r"(?:r|版本)\s*\d{4,6}", t, re.I
+    ) and re.search(r"分析|审查|diff|提交内容", t, re.I):
+        return "revision_analysis"
+    if re.search(r"技术文档", t, re.I) and re.search(
+        r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])", t
+    ) and re.search(r"提交|commit|代码", t, re.I):
+        return "doc_jira_cross"
+    return None
+
+
+def route_intent(user_text: str, api_key: Optional[str] = None) -> tuple:
     """
-    根据用户输入，返回应暴露的工具子集。
-
-    Args:
-        user_text: 用户原始输入文本
-
-    Returns:
-        (tool_names, intent_label)
-        - tool_names: 推荐的工具名称列表
-        - intent_label: 匹配到的意图标签 (用于日志)
-        - 如果无匹配，返回 None (走全量工具)
+    Returns (tool_names, intent_label).
+    tool_names=None → 全量工具。
     """
     if not user_text or not user_text.strip():
         return None, "EMPTY"
 
-    text = user_text.lower().strip()
+    cached = _cache_get(user_text)
+    if cached is not None:
+        return cached
 
-    for pattern, tools, label in INTENT_PATTERNS:
-        if re.search(pattern, text):
-            logger.info(f"[IntentRouter] Matched '{label}' → tools: {tools}")
-            return tools, label
+    fp = _fast_path_intent(user_text)
+    if fp:
+        tools, label = INTENT_REGISTRY[fp]
+        _cache_set(user_text, tools, label)
+        logger.info(f"[IntentRouter] fast-path '{fp}' → {label}")
+        return tools, label
 
-    # 无匹配 → 全量工具 (宁可多给，不可少给)
-    logger.info(f"[IntentRouter] No match → full toolset")
-    return None, "FULL_SET"
+    verdict = classify_intent_llm(user_text, api_key)
+    intent_id = verdict.get("intent", "full_set")
+    tools, label = INTENT_REGISTRY.get(intent_id, INTENT_REGISTRY["full_set"])
+    logger.info(
+        f"[IntentRouter] LLM '{intent_id}' conf={verdict.get('confidence')} → {label} tools={tools}"
+    )
+    _cache_set(user_text, tools, label)
+    return tools, label
 
 
 def get_filtered_tools(active_tools: list, tool_names: list) -> list:
-    """
-    从全量工具列表中，按名称筛选出匹配的工具。
-
-    Args:
-        active_tools: 当前可用的全部工具 (DeepSeek API JSON Schema 格式)
-        tool_names: 需要保留的工具名称列表
-
-    Returns:
-        筛选后的工具列表
-    """
     if tool_names is None:
-        return active_tools  # 全量
-
+        return active_tools
     filtered = [
-        t for t in active_tools
+        t
+        for t in active_tools
         if t.get("function", {}).get("name") in tool_names or t.get("type") != "function"
     ]
     if not filtered:
-        return active_tools  # 安全兜底
-
-    logger.info(f"[IntentRouter] Filtered tools: {len(active_tools)} → {len(filtered)} "
-                f"({[t['function']['name'] for t in filtered if t.get('type') == 'function']})")
+        return active_tools
+    logger.info(
+        f"[IntentRouter] Filtered tools: {len(active_tools)} → {len(filtered)}"
+    )
     return filtered

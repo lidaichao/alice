@@ -2,6 +2,8 @@
 
 > 版本：v1.1 | 日期：2026-06-04 | 作者：可达鸭 (Psyduck)
 
+**相关文档**：[技术架构](Alice_Master_Architecture_v1.0.md) · [白泽 Baize 架构](Baize_Architecture_v1.0.md)
+
 ---
 
 ## 一、什么是 Alice？

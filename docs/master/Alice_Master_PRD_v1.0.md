@@ -5,6 +5,8 @@
 > 本文档基于仓库 `H:\workbuddy\alice` 全部现有代码和文档汇编而成。
 > 标注 `✅` = 已实现，`🟡` = 部分实现，`⏳` = 规划中。
 
+**相关文档**：[技术架构](Alice_Master_Architecture_v1.0.md) · [白泽 Baize 架构（Jira/确认卡上游参考）](Baize_Architecture_v1.0.md)
+
 ---
 
 ## 一、产品定位与目标用户

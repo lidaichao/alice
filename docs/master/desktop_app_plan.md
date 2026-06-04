@@ -2,6 +2,8 @@
 
 > 日期：2026-06-03 | 状态：✅ 已完成
 
+**相关文档**：[Alice 技术架构](Alice_Master_Architecture_v1.0.md) · [白泽 Baize 架构](Baize_Architecture_v1.0.md)
+
 ---
 
 ## 阶段执行状态
@@ -33,6 +35,8 @@ DeepSeek V4 Flash API → SSE 流式返回
 ---
 
 ## 对比白泽 (Baize) 的差异
+
+白泽完整技术方案见 [Baize_Architecture_v1.0.md](Baize_Architecture_v1.0.md)。
 
 | 维度 | 白泽 | Alice V2.0 |
 |------|------|-----------|
