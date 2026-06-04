@@ -6,7 +6,11 @@ import { RightPanel } from '@/RightPanel';
 import { Button } from '@/components/ui/button';
 import { CommandPanel } from '@/components/CommandPanel';
 import ConfirmCard from '@/components/ConfirmCard';
+import DraftCard from '@/components/DraftCard';
 import JiraSearchSupplement from '@/components/JiraSearchSupplement';
+import type { DraftCardItem } from '@/store/slices/chatSlice';
+import { buildJiraWriteRequestBody } from '@/lib/runtimeConfig';
+import { buildConfirmCardFromApi, formatOperationResultMessage } from '@/lib/jiraConfirm';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { PluginToolCard } from '@/components/MarkdownRenderer';
 import { ThemeProvider } from '@lobehub/ui';
@@ -96,32 +100,94 @@ export const App: React.FC = () => {
     });
   }, [myInput, isGenerating, activeSessionId, sendMessage, scrollToBottom]);
 
-  // ── Jira 确认卡回调 ──
-  const handleConfirm = useCallback(async (opId: string) => {
-    try {
-      const res = await fetch(`/operations/${opId}/confirm`, { method: 'POST' });
+  const appendAssistantMessage = useChatStore((s) => s.appendAssistantMessage);
+
+  const handleDraftSubmit = useCallback(
+    async (draftId: string, items: DraftCardItem[]) => {
+      const res = await fetch(`/drafts/${draftId}/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.ok === false) {
-        console.error('[ConfirmCard] confirm failed:', data.error || res.statusText);
+        throw new Error(data.error || res.statusText || '提交草稿失败');
       }
-    } catch (e) {
-      console.error('[ConfirmCard] confirm POST failed:', e);
+      const opId = data.operation_id as string;
+      const opPayload = {
+        ...(data.operation as Record<string, unknown>),
+        warnings: [
+          ...((data.warnings as string[]) || []),
+          ...(((data.operation as Record<string, unknown>)?.warnings as string[]) || []),
+        ],
+      };
+      const card = buildConfirmCardFromApi(opId, opPayload);
+      useChatStore.setState((s) => ({
+        pendingDraftCards: s.pendingDraftCards.filter((d) => d.draft_id !== draftId),
+        pendingConfirmations: s.pendingConfirmations.some((c) => c.op_id === opId)
+          ? s.pendingConfirmations
+          : [...s.pendingConfirmations, card],
+      }));
+      if (data.message) {
+        await appendAssistantMessage(String(data.message));
+      }
+    },
+    [appendAssistantMessage],
+  );
+
+  const handleDraftCancel = useCallback(async (draftId: string) => {
+    const res = await fetch(`/drafts/${draftId}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildJiraWriteRequestBody()),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.ok === false) {
+      throw new Error(data.error || '取消草稿失败');
     }
     useChatStore.setState((s) => ({
-      pendingConfirmations: s.pendingConfirmations.filter((c) => c.op_id !== opId),
+      pendingDraftCards: s.pendingDraftCards.filter((d) => d.draft_id !== draftId),
     }));
   }, []);
 
-  const handleReject = useCallback(async (opId: string) => {
-    try {
-      await fetch(`/operations/${opId}/reject`, { method: 'POST' });
-    } catch (e) {
-      console.error('[ConfirmCard] reject POST failed:', e);
-    }
-    useChatStore.setState((s) => ({
-      pendingConfirmations: s.pendingConfirmations.filter((c) => c.op_id !== opId),
-    }));
-  }, []);
+  const handleConfirm = useCallback(
+    async (opId: string) => {
+      const res = await fetch(`/operations/${opId}/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildJiraWriteRequestBody()),
+      });
+      const data = await res.json().catch(() => ({}));
+      const msg = formatOperationResultMessage(data);
+      await appendAssistantMessage(msg);
+      if (!res.ok || data.ok === false) {
+        throw new Error(data.error || res.statusText);
+      }
+      useChatStore.setState((s) => ({
+        pendingConfirmations: s.pendingConfirmations.filter((c) => c.op_id !== opId),
+      }));
+    },
+    [appendAssistantMessage],
+  );
+
+  const handleReject = useCallback(
+    async (opId: string) => {
+      const res = await fetch(`/operations/${opId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildJiraWriteRequestBody()),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) {
+        throw new Error(data.error || '拒绝失败');
+      }
+      await appendAssistantMessage('已拒绝该 Jira 写操作，未对 Jira 做任何修改。');
+      useChatStore.setState((s) => ({
+        pendingConfirmations: s.pendingConfirmations.filter((c) => c.op_id !== opId),
+      }));
+    },
+    [appendAssistantMessage],
+  );
 
   // ── 命令面板 ──
   const filteredCmds = COMMANDS.filter(c =>
@@ -242,20 +308,12 @@ export const App: React.FC = () => {
             {pendingDraftCards.map((draft) => (
               <div key={draft.draft_id} className="flex gap-4 flex-row">
                 <div className="w-10 h-10 shrink-0" />
-                <div className="max-w-[75%] flex-1 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
-                  <div className="font-medium text-amber-700 dark:text-amber-300 mb-2">
-                    草稿箱 · {draft.items.length} 条待创建任务
-                  </div>
-                  <ul className="list-disc pl-4 space-y-1 mb-3">
-                    {draft.items.map((it) => (
-                      <li key={it.index}>
-                        <span className="font-mono text-xs">{it.projectKey}</span> {it.summary}
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-xs text-muted-foreground">
-                    请在后端 API 确认：POST /drafts/{draft.draft_id}/confirm → 再于确认卡授权写入 Jira。
-                  </p>
+                <div className="max-w-[75%] flex-1">
+                  <DraftCard
+                    draft={draft}
+                    onSubmit={handleDraftSubmit}
+                    onCancel={handleDraftCancel}
+                  />
                 </div>
               </div>
             ))}

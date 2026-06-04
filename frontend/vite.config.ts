@@ -23,6 +23,7 @@ export default defineConfig({
       '/v1': { target: 'http://127.0.0.1:9099', changeOrigin: true },
       '/api': { target: 'http://127.0.0.1:9099', changeOrigin: true },
       '/operations': { target: 'http://127.0.0.1:9099', changeOrigin: true },
+      '/drafts': { target: 'http://127.0.0.1:9099', changeOrigin: true },
       '/health': { target: 'http://127.0.0.1:9099', changeOrigin: true },
     }
   }

@@ -290,9 +290,20 @@ GET /operations/pending
 
 Jira 操作:
   GET  /operations/<id>           确认卡详情
-  POST /operations/<id>/confirm   确认操作
+  POST /operations/<id>/confirm   确认操作（body 含 jira_pat）
   POST /operations/<id>/reject    拒绝操作
-  GET  /operations/pending        待确认列表
+  GET  /operations/pending        待确认列表（?conversation_id=）
+
+Jira 草稿箱:
+  GET  /drafts/<id>               草稿详情
+  POST /drafts/<id>/confirm       提交草稿 → operation（返回 drafts[] + warnings）
+  POST /drafts/<id>/reject        作废草稿
+
+团队浅层记忆:
+  GET    /api/memory/entries      列表 + meta.inject_note
+  POST   /api/memory/entries      { text }
+  PUT    /api/memory/entries/<id> { text }
+  DELETE /api/memory/entries/<id>
 
 代理透传 (9):
   POST /proxy/notion/test|search

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useTheme } from 'next-themes';
 import { Sun, Moon, Monitor, Plus, Trash2, Edit2, Wifi, Bug } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { TeamMemoryPanel } from '@/components/TeamMemoryPanel';
 
 export const Sidebar: React.FC = () => {
   const sessions = useChatStore((s) => s.sessions);
@@ -117,6 +118,8 @@ export const Sidebar: React.FC = () => {
           })
         )}
       </div>
+
+      <TeamMemoryPanel />
 
       {/* Footer */}
       <div className="p-3 border-t border-border shrink-0 flex flex-col gap-2 bg-background/50">

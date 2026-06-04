@@ -3,13 +3,31 @@ import { Message, Session } from '../useChatStore';
 import { db } from '@/lib/db';
 import { AGENTS } from '../useChatStore';
 import type { JiraSearchSupplementCard } from '@/components/JiraSearchSupplement';
+import { buildConfirmCardFromApi } from '@/lib/jiraConfirm';
 
-function loadRuntimeConfig(): Record<string, string> {
+import { loadRuntimeConfig } from '@/lib/runtimeConfig';
+
+async function restorePendingOperations(sessionId: string, set: (fn: (s: ChatSlice) => Partial<ChatSlice>) => void) {
+  if (!sessionId) return;
   try {
-    const raw = sessionStorage.getItem('alice_runtime_config');
-    return raw ? JSON.parse(raw) : {};
+    const res = await fetch(
+      `/operations/pending?conversation_id=${encodeURIComponent(sessionId)}`,
+    );
+    const data = await res.json();
+    if (!data.ok || !Array.isArray(data.operations)) return;
+    set((state) => {
+      const existing = new Set(state.pendingConfirmations.map((c) => c.op_id));
+      const merged = [...state.pendingConfirmations];
+      for (const row of data.operations) {
+        const opId = row.id as string;
+        if (!opId || existing.has(opId)) continue;
+        merged.push(buildConfirmCardFromApi(opId, row.operation));
+        existing.add(opId);
+      }
+      return { pendingConfirmations: merged };
+    });
   } catch {
-    return {};
+    /* 后端未启动时静默 */
   }
 }
 
@@ -28,6 +46,7 @@ export interface DraftCard {
   event: 'draft_card';
   items: DraftCardItem[];
   preview?: string;
+  warnings?: string[];
   status?: 'pending' | 'submitted';
 }
 
@@ -40,6 +59,9 @@ export interface ConfirmCard {
     summary?: string;
     description?: string;
     project?: string;
+    drafts_count?: number;
+    drafts?: DraftCardItem[];
+    warnings?: string[];
   };
   created_at?: string;
   status?: 'pending' | 'confirmed' | 'rejected';
@@ -65,6 +87,8 @@ export interface ChatSlice {
   togglePinSession: (id: string) => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
+  appendAssistantMessage: (content: string) => Promise<void>;
+  restorePendingForSession: (sessionId: string) => Promise<void>;
 }
 
 export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set, get) => ({
@@ -83,15 +107,43 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
         db.sessions.orderBy('updatedAt').reverse().toArray(),
         db.customAgents.toArray(),
       ]);
+      const activeId = allSessions.length > 0 ? allSessions[0].id : null;
       set({
         sessions: allSessions.map(s => ({ ...s, agentId: s.agentId || 'default' })),
         customAgents: myAgents,
-        activeSessionId: allSessions.length > 0 ? allSessions[0].id : null,
-        isDbLoaded: true
+        activeSessionId: activeId,
+        isDbLoaded: true,
       });
+      if (activeId) {
+        await restorePendingOperations(activeId, set);
+      }
     } catch (error) {
       set({ isDbLoaded: true });
     }
+  },
+
+  restorePendingForSession: async (sessionId: string) => {
+    await restorePendingOperations(sessionId, set);
+  },
+
+  appendAssistantMessage: async (content: string) => {
+    const { activeSessionId } = get();
+    if (!activeSessionId || !content.trim()) return;
+    const aiMsg: Message = {
+      id: `a-sys-${Date.now()}`,
+      role: 'assistant',
+      content: content.trim(),
+      timestamp: Date.now(),
+    };
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === activeSessionId
+          ? { ...s, messages: [...s.messages, aiMsg], updatedAt: Date.now() }
+          : s,
+      ),
+    }));
+    const updated = get().sessions.find((s) => s.id === activeSessionId);
+    if (updated) await db.sessions.put(updated);
   },
 
   renameSession: async (id, newTitle) => {
@@ -135,7 +187,10 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
     }));
   },
 
-  setActiveSession: (id) => set({ activeSessionId: id }),
+  setActiveSession: (id) => {
+    set({ activeSessionId: id, pendingConfirmations: [], pendingDraftCards: [] });
+    void restorePendingOperations(id, set);
+  },
   clearAllSessions: async () => {
     await db.sessions.clear();
     set({ sessions: [], activeSessionId: null });
@@ -218,6 +273,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: messagesPayload,
+          conversation_id: activeSessionId,
           config: (() => {
             const rc = loadRuntimeConfig();
             return {
@@ -271,6 +327,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
                     event: 'draft_card',
                     items: Array.isArray(data.items) ? data.items : [],
                     preview: data.preview || '',
+                    warnings: Array.isArray(data.warnings) ? data.warnings : [],
                     status: 'pending',
                   };
                   set((state) => ({
@@ -295,18 +352,17 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
 
                 if (isConfirmCard) {
                   const rawOp = data.operation || {};
-                  const card: ConfirmCard = {
-                    op_id: data.op_id || data.operation_id || rawOp.id || '',
-                    event: 'confirm_card',
-                    operation: {
-                      type: rawOp.type || rawOp.kind?.replace?.(/^jira_/, '') || 'unknown',
-                      issue_key: rawOp.issue_key,
-                      summary: rawOp.summary,
-                      description: rawOp.description,
-                      project: rawOp.project,
-                    },
-                    status: 'pending'
-                  };
+                  const opId = data.op_id || data.operation_id || rawOp.id || '';
+                  const card = buildConfirmCardFromApi(opId, {
+                    type: rawOp.type || rawOp.kind?.replace?.(/^jira_/, '') || 'unknown',
+                    issue_key: rawOp.issue_key,
+                    summary: rawOp.summary,
+                    description: rawOp.description,
+                    project: rawOp.project,
+                    drafts_count: rawOp.drafts_count,
+                    drafts: rawOp.drafts,
+                    warnings: rawOp.warnings,
+                  });
                   set((state) => ({
                     pendingConfirmations: [...state.pendingConfirmations, card],
                     sessions: state.sessions.map(s => {

@@ -100,6 +100,52 @@ def get_all_memory() -> list[dict]:
         return list(store.get("entries") or [])
 
 
+def get_memory_meta() -> dict:
+    """供 UI 展示注入上限与截断提示。"""
+    entries = get_all_memory()
+    count = len(entries)
+    char_sum = sum(len((e.get("text") or "")) for e in entries)
+    budget = 2000
+    meta = {
+        "count": count,
+        "inject_char_budget": budget,
+        "approx_chars": min(char_sum, budget),
+        "inject_note": f"约 {budget} 字会注入模型（取最近条目，超出截断）",
+    }
+    if count > 50:
+        meta["truncation_warning"] = "规则较多，仅部分会注入 Prompt，建议删除过时条目。"
+    return meta
+
+
+def update_memory_entry(entry_id: str, text: str) -> dict:
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("记忆内容不能为空")
+    with _lock:
+        store = _load_store()
+        for e in store.get("entries") or []:
+            if e.get("id") == entry_id:
+                e["text"] = text
+                e["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+                _persist_store(store)
+                logger.info(f"[Memory] updated {entry_id}")
+                return e
+    raise ValueError("记忆条目不存在")
+
+
+def delete_memory_entry(entry_id: str) -> bool:
+    with _lock:
+        store = _load_store()
+        entries = store.get("entries") or []
+        new_entries = [e for e in entries if e.get("id") != entry_id]
+        if len(new_entries) == len(entries):
+            raise ValueError("记忆条目不存在")
+        store["entries"] = new_entries
+        _persist_store(store)
+        logger.info(f"[Memory] deleted {entry_id}")
+        return True
+
+
 def format_memory_for_prompt(max_chars: int = 2000) -> str:
     """组装注入 System Prompt 的常驻记忆块。"""
     entries = get_all_memory()

@@ -267,14 +267,18 @@ def operation_to_confirm_ui(operation: dict) -> dict:
     ui_type = kind.replace("jira_", "") if kind.startswith("jira_") else kind
     drafts = operation.get("drafts") or []
     first = drafts[0] if drafts else {}
-    return {
+    ui = {
         "type": ui_type or "unknown",
         "issue_key": first.get("issue_key", ""),
         "summary": first.get("summary", ""),
         "description": (first.get("body") or first.get("description") or "")[:500],
         "project": first.get("projectKey", ""),
         "drafts_count": len(drafts),
+        "warnings": operation.get("warnings") or [],
     }
+    if kind == "jira_bulk_create" and drafts:
+        ui["drafts"] = draft_items_for_ui(drafts)
+    return ui
 
 
 def build_confirm_tool_response(operation: dict, message: str = "") -> dict:
@@ -594,6 +598,23 @@ def submit_draft_to_operation(draft_id: str, items: Optional[list] = None) -> di
         _persist_draft_box()
         logger.info(f"[DraftBox] promoted {draft_id} → operation {op['id']}")
         return op
+
+
+def reject_draft(draft_id: str) -> dict:
+    """作废草稿（awaiting_review → rejected）。"""
+    with _lock:
+        draft = _draft_box.get(draft_id)
+        if not draft:
+            raise ValueError("草稿不存在")
+        if draft.get("status") == "promoted":
+            raise ValueError("草稿已提交，请操作确认卡")
+        if draft.get("status") == "rejected":
+            return draft
+        draft["status"] = "rejected"
+        draft["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        _persist_draft_box()
+        logger.info(f"[DraftBox] rejected {draft_id}")
+        return draft
 
 
 # ══════════════════════════════════════════════════════════════

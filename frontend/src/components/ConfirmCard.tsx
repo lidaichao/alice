@@ -2,26 +2,35 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ShieldAlert, CheckCircle, XCircle } from 'lucide-react';
 import type { ConfirmCard as ConfirmCardType } from '@/store/slices/chatSlice';
+import IssueDraftList from '@/components/IssueDraftList';
 
 interface Props {
   card: ConfirmCardType;
-  onConfirm: (opId: string) => void;
-  onReject: (opId: string) => void;
+  onConfirm: (opId: string) => Promise<void>;
+  onReject: (opId: string) => Promise<void>;
 }
 
 export default function ConfirmCard({ card, onConfirm, onReject }: Props) {
   const [loading, setLoading] = useState<'confirm' | 'reject' | null>(null);
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (loading) return;
     setLoading('confirm');
-    onConfirm(card.op_id);
+    try {
+      await onConfirm(card.op_id);
+    } finally {
+      setLoading(null);
+    }
   };
 
-  const handleReject = () => {
+  const handleReject = async () => {
     if (loading) return;
     setLoading('reject');
-    onReject(card.op_id);
+    try {
+      await onReject(card.op_id);
+    } finally {
+      setLoading(null);
+    }
   };
 
   const op = card.operation || {};
@@ -54,8 +63,26 @@ export default function ConfirmCard({ card, onConfirm, onReject }: Props) {
               {op.description}
             </div>
           )}
+          {(op.drafts_count ?? 0) > 1 && (
+            <div className="text-xs text-muted-foreground mt-1">
+              共 {op.drafts_count} 条待创建
+            </div>
+          )}
         </div>
       </div>
+
+      {op.drafts && op.drafts.length > 0 && (
+        <div className="mb-3">
+          <IssueDraftList items={op.drafts} />
+        </div>
+      )}
+      {op.warnings && op.warnings.length > 0 && (
+        <ul className="mb-3 text-xs text-amber-700 dark:text-amber-300 list-disc pl-4">
+          {op.warnings.map((w, i) => (
+            <li key={i}>{w}</li>
+          ))}
+        </ul>
+      )}
 
       <div className="flex gap-2 justify-end">
         <Button

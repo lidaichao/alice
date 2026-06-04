@@ -1646,7 +1646,11 @@ def _heuristic_issues_drafts(user_text: str) -> list:
     ]
 
 
-def _collect_draft_sse_chunks(user_text: str, issues_list: list = None) -> list:
+def _collect_draft_sse_chunks(
+    user_text: str,
+    issues_list: list = None,
+    conversation_id: str = "",
+) -> list:
     """草稿箱直通车：draft_card SSE，禁止直写 Jira。"""
     from jira_operation_manager import (
         create_issues_draft,
@@ -1654,7 +1658,11 @@ def _collect_draft_sse_chunks(user_text: str, issues_list: list = None) -> list:
     )
 
     items = issues_list if issues_list else _heuristic_issues_drafts(user_text)
-    draft = create_issues_draft(items, source_text=user_text)
+    draft = create_issues_draft(
+        items,
+        source_text=user_text,
+        conversation_id=conversation_id or "",
+    )
     payload = build_draft_tool_response(draft)
     preview = payload.get("result", "")
     card_evt = {
@@ -1878,6 +1886,11 @@ def chat_completions():
     messages = data.get("messages", [])
     user_cfg = parse_user_config(data)
     frontend_cfg = data.get("config", {}) or {}
+    conversation_id = (
+        data.get("conversation_id")
+        or frontend_cfg.get("conversation_id")
+        or ""
+    )
 
     if not messages:
         return jsonify({"error": "No messages"}), 400
@@ -1992,7 +2005,10 @@ def chat_completions():
             _is_draft = False
         if user_text and _is_draft:
             try:
-                _draft_chunks = _collect_draft_sse_chunks(user_text)
+                _draft_chunks = _collect_draft_sse_chunks(
+                    user_text,
+                    conversation_id=conversation_id,
+                )
                 for _chunk in _draft_chunks:
                     yield _chunk
                 if _draft_chunks:
@@ -2904,17 +2920,81 @@ def confirm_draft_box(draft_id):
     items = body.get("items")
     try:
         op = submit_draft_to_operation(draft_id, items=items)
+        from jira_operation_manager import draft_items_for_ui, operation_to_confirm_ui
+
         payload = build_confirm_tool_response(
             op,
             f"草稿已锁定，共 {len(op.get('drafts') or [])} 条，请在确认卡上授权创建。",
         )
+        ui_drafts = draft_items_for_ui(op.get("drafts") or [])
         return jsonify({
             "ok": True,
             "draft_id": draft_id,
             "operation_id": op["id"],
-            "operation": payload.get("operation"),
+            "operation": operation_to_confirm_ui(op),
+            "drafts": ui_drafts,
+            "warnings": op.get("warnings") or draft.get("warnings") or [],
             "message": payload.get("result"),
         })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:500]}), 400
+
+
+@app.route("/drafts/<draft_id>/reject", methods=["POST"])
+def reject_draft_box(draft_id):
+    """作废草稿"""
+    from jira_operation_manager import reject_draft
+
+    try:
+        draft = reject_draft(draft_id)
+        return jsonify({"ok": True, "draft_id": draft_id, "status": draft.get("status")})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:500]}), 400
+
+
+@app.route("/api/memory/entries", methods=["GET"])
+def list_memory_entries():
+    from memory_manager import get_all_memory, get_memory_meta
+
+    return jsonify({
+        "ok": True,
+        "entries": get_all_memory(),
+        "meta": get_memory_meta(),
+    })
+
+
+@app.route("/api/memory/entries", methods=["POST"])
+def create_memory_entry():
+    from memory_manager import add_memory_entry
+
+    body = request.get_json(silent=True) or {}
+    text = (body.get("text") or "").strip()
+    try:
+        entry = add_memory_entry(text, source=body.get("source") or "ui")
+        return jsonify({"ok": True, "entry": entry})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:500]}), 400
+
+
+@app.route("/api/memory/entries/<entry_id>", methods=["PUT"])
+def update_memory_entry_route(entry_id):
+    from memory_manager import update_memory_entry, get_memory_meta
+
+    body = request.get_json(silent=True) or {}
+    try:
+        entry = update_memory_entry(entry_id, body.get("text") or "")
+        return jsonify({"ok": True, "entry": entry, "meta": get_memory_meta()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:500]}), 400
+
+
+@app.route("/api/memory/entries/<entry_id>", methods=["DELETE"])
+def delete_memory_entry_route(entry_id):
+    from memory_manager import delete_memory_entry, get_memory_meta
+
+    try:
+        delete_memory_entry(entry_id)
+        return jsonify({"ok": True, "meta": get_memory_meta()})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)[:500]}), 400
 
@@ -2922,14 +3002,19 @@ def confirm_draft_box(draft_id):
 @app.route("/operations/pending", methods=["GET"])
 def list_pending_ops():
     """列出待确认的操作"""
+    from jira_operation_manager import operation_to_confirm_ui
+
     conv_id = request.args.get("conversation_id", "")
     ops = get_pending_operations(conv_id)
     return jsonify({"ok": True, "operations": [{
-        "id": o["id"], "status": o["status"], "kind": o["kind"],
+        "id": o["id"],
+        "status": o["status"],
+        "kind": o["kind"],
         "drafts_count": len(o.get("drafts", [])),
         "warnings": o.get("warnings", []),
         "recovery": o.get("recovery"),
         "created_at": o.get("created_at"),
+        "operation": operation_to_confirm_ui(o),
     } for o in ops]})
 
 

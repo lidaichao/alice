@@ -47,3 +47,33 @@ def test_draft_box(tmp_path, monkeypatch):
     op = jom.submit_draft_to_operation(draft["id"])
     assert op["id"].startswith("jira-op-")
     assert op["status"] == "awaiting_confirmation"
+
+    ui = jom.operation_to_confirm_ui(op)
+    assert ui.get("drafts_count") == 2
+    assert len(ui.get("drafts") or []) == 2
+
+    draft2 = jom.create_issues_draft(
+        [{"summary": "待取消", "projectKey": "CT", "issueType": "Task"}],
+    )
+    rejected = jom.reject_draft(draft2["id"])
+    assert rejected["status"] == "rejected"
+    try:
+        jom.submit_draft_to_operation(draft2["id"])
+        assert False, "should not confirm rejected draft"
+    except ValueError:
+        pass
+
+
+def test_memory_crud(tmp_path, monkeypatch):
+    import memory_manager as mm
+
+    mem_file = tmp_path / "shallow_memory.json"
+    monkeypatch.setattr(mm, "_MEMORY_FILE", str(mem_file))
+    e1 = mm.add_memory_entry("规则 A")
+    e2 = mm.update_memory_entry(e1["id"], "规则 A 修订")
+    assert e2["text"] == "规则 A 修订"
+    mm.delete_memory_entry(e1["id"])
+    assert len(mm.get_all_memory()) == 0
+    meta = mm.get_memory_meta()
+    assert meta["count"] == 0
+    assert meta["inject_char_budget"] == 2000
