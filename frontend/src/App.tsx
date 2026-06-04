@@ -7,7 +7,6 @@ import { RightPanel } from '@/RightPanel';
 import { Button } from '@/components/ui/button';
 import { CommandPanel } from '@/components/CommandPanel';
 import ConfirmCard from '@/components/ConfirmCard';
-import { useChat } from '@ai-sdk/react';
 import { ChatList } from '@lobehub/ui/chat';
 import { ThemeProvider } from '@lobehub/ui';
 import { Square } from 'lucide-react';
@@ -16,16 +15,19 @@ export const App: React.FC = () => {
   // ═══ 所有 Hook 必须在最顶层，无条件调用 ═══
   const sessions = useSessionStore((s) => s.sessions);
   const activeId = useSessionStore((s) => s.activeId);
-  const createSession = useSessionStore((s) => s.createSession);
   const updateMessages = useSessionStore((s) => s.updateMessages);
 
-  const activeSession = sessions?.find((s) => s.id === activeId);
+  // ── 消息数据流：直接从 Zustand 状态机读取，不经过任何中间 SDK ──
+  const currentSession = sessions?.find((s) => s.id === activeId);
+  const messages: ChatMessage[] = currentSession?.messages || [];
 
-  const { messages, input, setInput, append, isLoading, error, stop } = useChat({
-    api: '/v1/chat/completions',
-    id: activeId || 'default',
-    initialMessages: activeSession?.messages || [],
-  } as any);
+  // ── 本地引擎状态：UI 与网络彻底解耦 ──
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // ── UI 状态与发送引擎彻底解耦 ──
+  const [myInput, setMyInput] = useState('');
 
   const isGenerating = isLoading;
   const [showCommands, setShowCommands] = useState(false);
@@ -34,16 +36,6 @@ export const App: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
-
-  // 持续同步 messages 到 IndexedDB
-  useEffect(() => {
-    if (activeId && messages.length > 0) {
-      const t = setTimeout(() => {
-        updateMessages(activeId, messages.map(m => ({ id: m.id, role: m.role as ChatMessage['role'], content: m.content })));
-      }, 1000);
-      return () => clearTimeout(t);
-    }
-  }, [messages, activeId]);
 
   useEffect(() => {
     if (isGenerating && userScrolledUp) return;
@@ -56,12 +48,77 @@ export const App: React.FC = () => {
     setUserScrolledUp((scrollHeight - scrollTop - clientHeight > 80) && isGenerating);
   };
 
-  // ── 绝对防弹发送逻辑 ──
-  const doSendMessage = () => {
-    if (!input || input.trim() === '' || isLoading) return;
-    const text = input;
-    setInput('');
-    append({ role: 'user', content: text } as any);
+  // ── 原生 fetch + SSE 流式引擎（零中间 SDK）──
+  const doSendMessage = async () => {
+    if (!myInput || myInput.trim() === '' || isLoading || !activeId) return;
+
+    const text = myInput;
+    console.log('📤 准备发送的用户消息内容:', text);
+    setMyInput('');      // 1. UI 瞬间清空
+    setError(null);
+    setIsLoading(true);
+
+    // 2. 先斩后奏：用户消息立即上屏
+    const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content: text };
+    const withUser = [...messages, userMsg];
+    updateMessages(activeId, withUser);
+
+    // 3. 预创建 AI 气泡空壳
+    const aiMsgId = (Date.now() + 1).toString();
+    const withAi = [...withUser, { id: aiMsgId, role: 'assistant' as const, content: '' }];
+    updateMessages(activeId, withAi);
+
+    // 4. AbortController 用于停止
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    try {
+      const res = await fetch('/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: withUser.map(m => ({ role: m.role, content: m.content })),
+          config: {}
+        }),
+        signal: ctrl.signal
+      });
+
+      if (!res.ok) { setError(`HTTP ${res.status}`); return; }
+      if (!res.body) { setError('ReadableStream 不可用'); return; }
+
+      // 5. 吐真剂协议：暴力接收后端原始数据，不做任何解析
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let aiContent = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+
+        // 强行打印到浏览器控制台
+        console.log('📦 收到后端原始数据包:', chunk);
+
+        // 暴力塞进气泡（不做任何 parse！）
+        aiContent += chunk;
+        useSessionStore.getState().updateMessages(activeId, [
+          ...withUser,
+          { id: aiMsgId, role: 'assistant' as const, content: aiContent }
+        ]);
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') return; // 用户主动停止，不报错
+      setError(err.message || String(err));
+    } finally {
+      setIsLoading(false);
+      abortRef.current = null;
+    }
+  };
+
+  const stopGeneration = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setIsLoading(false);
   };
 
   const filteredCmds = COMMANDS.filter(c =>
@@ -70,14 +127,14 @@ export const App: React.FC = () => {
   );
 
   const handleSelectCommand = (cmd: Command) => {
-    setInput(cmd.template);
+    setMyInput(cmd.template);
     setShowCommands(false);
     setSelectedCmdIndex(0);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target?.value ?? (e as any);
-    setInput(typeof val === 'string' ? val : String(val || ''));
+    setMyInput(typeof val === 'string' ? val : String(val || ''));
     // auto-resize
     const el = e.target as HTMLTextAreaElement;
     if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 200) + 'px'; }
@@ -120,6 +177,8 @@ export const App: React.FC = () => {
     );
   }
 
+  console.log('📊 喂给 ChatList 的全量数据:', messages);
+
   return (
     <ThemeProvider>
       <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
@@ -129,29 +188,27 @@ export const App: React.FC = () => {
           <div ref={chatContainerRef} onScroll={handleChatScroll} className="flex-1 overflow-y-auto p-4 md:p-6">
             <ChatList
               data={messages.map(m => ({
-                id: m.id,
-                role: m.role as any,
-                content: m.content,
-                extra: (m as any).pendingCard ? (
-                  <ConfirmCard
-                    card={(m as any).pendingCard}
-                    onConfirm={async (opId: string) => { await fetch(`/operations/${opId}/confirm`, { method: 'POST' }); }}
-                    onReject={async (opId: string) => { await fetch(`/operations/${opId}/reject`, { method: 'POST' }); }}
-                  />
-                ) : undefined,
+                id: String(m.id || Date.now()),
+                role: m.role || 'user',
+                content: m.content || '',
+                meta: {
+                  title: m.role === 'user' ? '用户' : 'Alice',
+                  avatar: m.role === 'user' ? '🧑‍💻' : '🐰'
+                }
               })) as any}
             />
             {isGenerating && <span className="blinking-cursor" />}
             <div ref={messagesEndRef} className="h-1" />
           </div>
 
+          {/* ── LobeUI 恢复：UI 状态与引擎已解耦，绑定到 myInput ── */}
           <div className="p-4 bg-background border-t border-border flex-shrink-0 flex flex-col gap-2 relative">
             {/* 错误守卫 — 暴露网络死因 */}
-            {error && <div className="text-red-500 text-xs mb-1 px-1">后端通信异常: {error.message}</div>}
+            {error && <div className="text-red-500 text-xs mb-1 px-1">后端通信异常: {error}</div>}
 
             <div className="flex justify-center gap-2 mb-2">
               {isGenerating && (
-                <Button variant="ghost" size="sm" onClick={stop} className="text-red-500 hover:text-red-700 text-xs gap-1">
+                <Button variant="ghost" size="sm" onClick={stopGeneration} className="text-red-500 hover:text-red-700 text-xs gap-1">
                   <Square size={12} /> ⏹ 停止生成
                 </Button>
               )}
@@ -160,14 +217,14 @@ export const App: React.FC = () => {
             <div className="flex items-end gap-3 max-w-4xl mx-auto w-full relative">
               {showCommands && <CommandPanel filterText={commandFilter} selectedIndex={selectedCmdIndex} onSelect={handleSelectCommand} />}
               <textarea
-                value={input}
+                value={myInput}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 placeholder="输入分析指令，或键入 / 呼出模板..." rows={1}
                 className="flex-1 max-h-48 min-h-[56px] resize-none rounded-xl border border-input bg-background px-4 py-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring shadow-sm"
               />
               <Button onClick={doSendMessage}
-                disabled={isLoading || !input || input.trim() === ''} className="h-12 w-12 shrink-0 rounded-xl shadow-md">
+                disabled={isLoading || !myInput || myInput.trim() === ''} className="h-12 w-12 shrink-0 rounded-xl shadow-md">
                 <svg className="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
                 </svg>
