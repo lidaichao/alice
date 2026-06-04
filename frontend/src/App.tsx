@@ -86,7 +86,7 @@ export const App: React.FC = () => {
       if (!res.ok) { setError(`HTTP ${res.status}`); return; }
       if (!res.body) { setError('ReadableStream 不可用'); return; }
 
-      // 5. SSE 逐行解析 — 严谨提取 content，错误隔离
+      // 5. 杂食解析 — 兼容 OpenAI / 裸 JSON / 纯文本流
       const reader = res.body.getReader();
       const decoder = new TextDecoder('utf-8');
       let aiContent = '';
@@ -94,40 +94,54 @@ export const App: React.FC = () => {
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
-
         const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
 
-        for (const line of lines) {
-          if (line.trim() === '' || !line.startsWith('data: ')) continue;
-          if (line.includes('[DONE]')) continue;
+        console.log('📡 收到数据块:', chunk);
+
+        const lines = chunk.split('\n');
+        for (let line of lines) {
+          line = line.trim();
+          if (!line) continue;
+          if (line === 'data: [DONE]' || line === '[DONE]') continue;
+
+          // 1. 尝试剥离开头的 "data: "（如果有的话）
+          if (line.startsWith('data:')) {
+            line = line.replace(/^data:\s*/, '');
+          }
 
           try {
-            const jsonStr = line.slice(6).trim();
-            if (!jsonStr) continue;
+            // 2. 尝试作为 JSON 解析
+            const data = JSON.parse(line);
+            let deltaContent = '';
 
-            const data = JSON.parse(jsonStr);
-
-            // 1. 提取大模型回复文本
+            // 兼容模式 A: OpenAI 格式
             if (data.choices && data.choices[0]?.delta?.content) {
-              aiContent += data.choices[0].delta.content;
+              deltaContent = data.choices[0].delta.content;
+            }
+            // 兼容模式 B: 裸 JSON 返回 content
+            else if (data.content) {
+              deltaContent = data.content;
+            }
+            // 兼容模式 C: message 格式
+            else if (data.message && data.message.content) {
+              deltaContent = data.message.content;
             }
 
-            // 2. Agent 状态日志
-            if (data.custom_type === 'agent_step') {
-              console.log(`🤖 Agent 思考中: 步骤 ${data.step}/${data.max_steps}`);
+            if (deltaContent) {
+              aiContent += deltaContent;
             }
-
-            // 3. 实时更新气泡
-            useSessionStore.getState().updateMessages(activeId, [
-              ...withUser,
-              { id: aiMsgId, role: 'assistant' as const, content: aiContent }
-            ]);
 
           } catch {
-            // 非标准 JSON / 截断数据 → 静默跳过，不污染 UI
+            // 3. 降级方案：不是 JSON → 纯文本流，直接追加
+            aiContent += line;
           }
         }
+
+        // 4. 无论解析出什么，立刻更新到界面上
+        useSessionStore.getState().updateMessages(activeId, [
+          ...withUser,
+          { id: aiMsgId, role: 'assistant' as const, content: aiContent }
+        ]);
       }
     } catch (err: any) {
       if (err.name === 'AbortError') return; // 用户主动停止，不报错
