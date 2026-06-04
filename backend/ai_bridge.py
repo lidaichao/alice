@@ -23,7 +23,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from jira_api import JiraClient
 
 # ── 意图分类（移植自白泽 Baize）─────────────────────────────
-from intent_classifier import classify_intent, should_intercept, needs_confirmation, is_jira_operation
+from intent_classifier import (
+    classify_intent,
+    should_intercept,
+    needs_confirmation,
+    is_jira_operation,
+    is_smalltalk_greeting,
+    should_use_chat_only_lane,
+)
 
 # ── 模块拆分导入 ──────────────────────────────────────────
 from prompt_manager import (
@@ -1876,6 +1883,93 @@ CORE_SYSTEM_PROMPT_V2 = """你是 Alice V2.0，Jira 项目和知识库管理 AI 
 - 最终回答必须是纯文本，禁止包含 <|tool_calls|> 等标签语法"""
 
 
+def _message_content_to_text(content) -> str:
+    """OpenAI 兼容：string 或 multimodal parts → 纯文本。"""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "text":
+                parts.append(str(item.get("text") or ""))
+        return "".join(parts)
+    return str(content or "")
+
+
+def _last_user_message_text(messages: list) -> str:
+    for msg in reversed(messages or []):
+        if msg.get("role") == "user":
+            return _message_content_to_text(msg.get("content")).strip()
+    return ""
+
+
+CHAT_ONLY_SYSTEM = """你是 Alice，团队内的 Jira 与知识库 AI 工作助理。
+
+当前为闲聊模式：用户没有提出具体的查任务、搜文档或代码提交类需求。
+- 用自然、简短的中文回复（通常 2～4 句），像同事打招呼，不要机械罗列功能清单。
+- 禁止调用任何工具，禁止编造 Jira Issue、文档或提交记录。
+- 若用户顺便问你能做什么，可轻描淡写提一句可查任务/文档，不要展开成固定模板。"""
+
+
+def _build_chat_only_messages(user_text: str) -> list:
+    system = CHAT_ONLY_SYSTEM
+    try:
+        from memory_manager import format_memory_for_prompt
+
+        mem = format_memory_for_prompt()
+        if mem:
+            system += f"\n\n{mem}"
+    except Exception:
+        pass
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user_text},
+    ]
+
+
+def _iter_llm_sse_messages(
+    messages: list,
+    user_cfg: dict,
+    headers: dict,
+    *,
+    temperature: float = 0.65,
+):
+    """无 tools 的流式 LLM（闲聊道）。"""
+    try:
+        vip_resp = http.post(
+            DEEPSEEK_URL,
+            headers=headers,
+            json={
+                "model": user_cfg["deepseek_model"],
+                "messages": messages,
+                "stream": True,
+                "temperature": temperature,
+            },
+            stream=True,
+            timeout=90,
+        )
+        _yielded = False
+        for raw_line in vip_resp.iter_lines():
+            if raw_line:
+                decoded = raw_line.decode("utf-8", errors="replace")
+                if sse_line_has_dsml_leak(decoded):
+                    continue
+                _yielded = True
+                yield raw_line + b"\n"
+        if not _yielded:
+            fallback = "你好，我是 Alice。有需要查任务或文档时，直接告诉我就好。"
+            yield (
+                f"data: {json.dumps({'choices': [{'delta': {'content': fallback}}]}, ensure_ascii=False)}\n\n"
+            ).encode("utf-8")
+    except Exception as exc:
+        logger.error(f"[ChatOnly] Stream failed: {exc}")
+        err = "⚠️ 闲聊回复暂时不可用，请稍后重试。"
+        yield (
+            f"data: {json.dumps({'choices': [{'delta': {'content': err}}]}, ensure_ascii=False)}\n\n"
+        ).encode("utf-8")
+
 
 @app.route("/v1/chat/completions", methods=["POST", "OPTIONS"])
 def chat_completions():
@@ -1921,18 +2015,28 @@ def chat_completions():
     #  路由层根据意图模式预选工具子集, LLM 只负责"拿到数据后怎么回答"
     # ══════════════════════════════════════════════════
     intent_label = "FULL_SET"
+    user_text = _last_user_message_text(messages)
+    intent_info_pre = (
+        classify_intent(user_text)
+        if user_text
+        else {"route": "ordinary_chat", "reason": "empty_text"}
+    )
+    chat_only_precheck = should_use_chat_only_lane(
+        user_text, intent_info_pre, intent_label
+    )
     try:
         from intent_router import route_intent, get_filtered_tools
-        user_text = ""
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                user_text = msg.get("content", "")
-                break
-        tool_names, intent_label = route_intent(user_text, api_key=user_cfg.get("deepseek_key"))
-        if tool_names:
-            active_tools = get_filtered_tools(active_tools, tool_names)
+
+        if not chat_only_precheck and not is_smalltalk_greeting(user_text):
+            tool_names, intent_label = route_intent(
+                user_text, api_key=user_cfg.get("deepseek_key")
+            )
+            if tool_names:
+                active_tools = get_filtered_tools(active_tools, tool_names)
     except ImportError:
         pass  # intent_router.py 不存在时降级为全量工具
+    if chat_only_precheck:
+        intent_label = "CHAT_ONLY"
 
     logger.info(f"[V2.0] Active tools: {[t['function']['name'] for t in active_tools]}")
 
@@ -1950,28 +2054,22 @@ def chat_completions():
                               if item.get("type") == "text")
                 cleaned_msgs.append({"role": msg["role"], "content": text})
 
-        # 提取用户最后一条消息
-        user_text = ""
-        for msg in reversed(cleaned_msgs):
-            if msg.get("role") == "user":
-                user_text = msg.get("content", "")
-                break
+        user_text = _last_user_message_text(cleaned_msgs)
 
-        intent_info = {"route": "ordinary_chat", "reason": ""}
+        intent_info = (
+            classify_intent(user_text)
+            if user_text
+            else {"route": "ordinary_chat", "reason": "empty_text"}
+        )
         # ── 意图分类（Baize 风格：危险拦截 / 写操作提示）────────
-        if user_text:
-            try:
-                intent_info = classify_intent(user_text)
-                if intent_info.get("route") == "dangerous":
-                    block_msg = (
-                        "【Alice】检测到高风险操作请求，已拦截。"
-                        f"（{intent_info.get('reason', 'dangerous')}）"
-                    )
-                    yield f"data: {json.dumps({'choices': [{'delta': {'content': block_msg}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-                    yield b"data: [DONE]\n\n"
-                    return
-            except Exception as _ic_err:
-                logger.warning(f"[Intent] classify_intent failed: {_ic_err}")
+        if user_text and intent_info.get("route") == "dangerous":
+            block_msg = (
+                "【Alice】检测到高风险操作请求，已拦截。"
+                f"（{intent_info.get('reason', 'dangerous')}）"
+            )
+            yield f"data: {json.dumps({'choices': [{'delta': {'content': block_msg}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+            yield b"data: [DONE]\n\n"
+            return
 
         # ── 浅层记忆写入（「请记住…」）────────────────────────
         if user_text:
@@ -1988,6 +2086,17 @@ def chat_completions():
                     return
             except Exception as _mem_e:
                 logger.warning(f"[Memory] capture failed: {_mem_e}")
+
+        # ── 闲聊道：无工具 LLM，单轮上下文（不附带会话历史，避免续写上一轮关键词）──
+        if user_text and should_use_chat_only_lane(user_text, intent_info, intent_label):
+            logger.info("[ChatOnly] ordinary_chat → LLM stream (no tools, single-turn)")
+            yield from _iter_llm_sse_messages(
+                _build_chat_only_messages(user_text),
+                user_cfg,
+                headers,
+            )
+            yield b"data: [DONE]\n\n"
+            return
 
         # ══════════════════════════════════════════════════════════
         #  草稿箱直通车（draft_card → [DONE]，禁止直写 Jira）
@@ -2881,6 +2990,31 @@ def reject_op(op_id):
     save_operation(op)
     logger.info(f"[OpCard] Rejected: {op_id}")
     return jsonify({"ok": True, "operation": {"id": op["id"], "status": op["status"]}})
+
+@app.route("/drafts", methods=["POST"])
+def create_draft_box():
+    """创建草稿箱（供前端/集成测试；聊天流仍由 tool 写入）。"""
+    from jira_operation_manager import create_issues_draft, draft_items_for_ui
+
+    body = request.get_json(silent=True) or {}
+    items_in = body.get("items") or body.get("issues_list") or []
+    try:
+        draft = create_issues_draft(
+            items_in,
+            conversation_id=body.get("conversation_id", ""),
+            client_id=body.get("client_id", ""),
+            user_id=body.get("user_id", ""),
+            source_text=body.get("source_text", ""),
+        )
+        return jsonify({
+            "ok": True,
+            "draft_id": draft["id"],
+            "items": draft_items_for_ui(draft.get("items") or []),
+            "warnings": draft.get("warnings") or [],
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:500]}), 400
+
 
 @app.route("/drafts/<draft_id>", methods=["GET"])
 def get_draft_box(draft_id):

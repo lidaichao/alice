@@ -1,8 +1,10 @@
 # Alice AI Bridge — 技术架构文档 (V2.2)
 
-> 版本：v2.3 | 日期：2026-06-04 | 分支：master
+> 版本：v2.3 | 日期：2026-06-05 | 分支：master
 
-**相关文档**：[Master PRD](Alice_Master_PRD_v1.0.md) · [技术说明 TECHNICAL](TECHNICAL.md) · [桌面端方案](desktop_app_plan.md) · [灰盒 SOP](Alice_Graybox_SOP_v1.0.md) · [上游参考：白泽 Baize 架构](Baize_Architecture_v1.0.md)
+**相关文档**：[三期蓝图计划（开发校准）](alice三期蓝图计划.md) · [Master PRD](Alice_Master_PRD_v1.0.md) · [文档索引](README.md) · [技术说明 TECHNICAL](TECHNICAL.md) · [API 契约](Alice_API_Contract_v1.0.md) · [桌面端方案](desktop_app_plan.md) · [灰盒 SOP](Alice_Graybox_SOP_v1.0.md) · [上游参考：白泽 Baize 架构](Baize_Architecture_v1.0.md)
+
+> **排期与模块拆分顺序**以蓝图为准（近期 E1 绞杀者：`chat_orchestrator` / `plugin_gateway`）。
 
 ---
 

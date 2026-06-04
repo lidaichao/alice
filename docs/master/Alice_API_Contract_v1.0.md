@@ -1,9 +1,13 @@
 # Alice AI Bridge — API 契约文档 (v1.0)
 
-> 版本：v1.1 | 日期：2026-06-04 | 作者：可达鸭 (Psyduck)
+> 版本：v1.1 | 日期：2026-06-05 | 作者：可达鸭 (Psyduck)
 >
 > 本文档通过逆向读取 `backend/ai_bridge.py` 中的 Flask 路由装饰器生成。
 > ⚠️ SSE 接口标记为 `stream: text/event-stream`。
+
+**相关文档**：[三期蓝图计划（开发校准）](alice三期蓝图计划.md) · [Master 架构](Alice_Master_Architecture_v1.0.md) · [前端组件树](Alice_Frontend_Component_Tree_v1.0.md) · [灰盒 SOP](Alice_Graybox_SOP_v1.0.md)
+
+> 计划中的 SSE 事件（如 `intent_disambiguation`）见蓝图 **E5.2**；合入前须同步更新本文档。
 
 ---
 

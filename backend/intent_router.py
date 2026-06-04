@@ -172,6 +172,13 @@ def classify_intent_llm(user_text: str, api_key: Optional[str] = None) -> dict:
 def _fast_path_intent(user_text: str) -> Optional[str]:
     """零成本确定性分流（非正则森林，仅极高置信短路径）"""
     t = user_text or ""
+    try:
+        from intent_classifier import is_smalltalk_greeting
+
+        if is_smalltalk_greeting(t):
+            return "full_set"
+    except ImportError:
+        pass
     if re.search(r"KB-[\w-]+", t, re.I):
         return "doc_search"
     if re.search(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])", t) and re.search(

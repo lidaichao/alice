@@ -1,8 +1,8 @@
 # Alice Jira AI — 灰度测试白皮书 (Graybox SOP)
 
-> 版本：v1.1 | 日期：2026-06-04 | 作者：可达鸭 (Psyduck)
+> 版本：v1.2 | 日期：2026-06-05 | 作者：可达鸭 (Psyduck)
 
-**相关文档**：[技术架构](Alice_Master_Architecture_v1.0.md) · [白泽 Baize 架构](Baize_Architecture_v1.0.md)
+**相关文档**：[三期蓝图计划（开发校准）](alice三期蓝图计划.md) · [技术架构](Alice_Master_Architecture_v1.0.md) · [文档索引](README.md) · [白泽 Baize 架构](Baize_Architecture_v1.0.md)
 
 ---
 
@@ -73,6 +73,8 @@ Alice 是一款面向游戏研发团队的 AI 工作助手。
 ## 四、如何使用
 
 ### 常用对话
+
+**闲聊**：`ordinary_chat`（如打招呼、天气闲聊）走**无工具 LLM 闲聊道**（流式自然回复，非固定模板）；一旦句中出现 Jira/任务/文档等作业信号，才进入检索与工具链路。
 
 | 你说 | Alice 回答 |
 |------|-----------|
@@ -163,7 +165,21 @@ Alice 内置 OTA 更新机制：
 
 ---
 
-## 八、联系方式
+## 八、发版门禁（开发/运维）
+
+每次合并 main 或对外发灰度包前，执行 [alice三期蓝图计划.md](alice三期蓝图计划.md) **§6.1**：
+
+| 步骤 | 命令 / 动作 |
+|------|-------------|
+| 意图自测 | `py -3 backend/intent_classifier.py` |
+| 闲聊冒烟 | `py -3 scripts/smoke_chat_only.py` → `SMOKE_CHAT_ONLY_OK` |
+| 草稿 e2e | `py -3 scripts/e2e_short_draft_memory.py` → `E2E_SHORT_OK` |
+| Eval 基线 | `eval/` 金标子集不低于上一版（见 E3） |
+| 人工点验 | 本 SOP 第四节场景勾选，纪要写入 `eval/reports/` |
+
+---
+
+## 九、联系方式
 
 | 角色 | 联系方式 |
 |------|----------|

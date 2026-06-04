@@ -126,6 +126,82 @@ def matches_any(text: str, patterns: list) -> bool:
     return any(p.search(text) for p in patterns)
 
 
+_SMALLTALK_GREETING_RE = re.compile(
+    r"^(?:你好|您好|嗨|哈喽|hello|hi|hey|在吗|在不在|早上好|下午好|晚上好|谢谢|感谢|再见|拜拜)"
+    r"(?:[!！?？~。\s]*)$",
+    re.I,
+)
+_SMALLTALK_INTRO_RE = re.compile(
+    r"^(?:你是谁|你叫什么|自我介绍|你能做什么|你会什么)(?:[!！?？~。\s]*)$",
+    re.I,
+)
+
+
+def is_smalltalk_greeting(text: str) -> bool:
+    """寒暄/自我介绍：不应触发 Jira 检索或延续上一轮关键词。"""
+    t = (text or "").strip()
+    if not t or len(t) > 40:
+        return False
+    if _SMALLTALK_GREETING_RE.match(t) or _SMALLTALK_INTRO_RE.match(t):
+        return True
+    return False
+
+
+_OPERATIONAL_SIGNAL_RE = re.compile(
+    r"jira|任务|issue|bug|需求|story|工单|周报|日报|月报|迭代|sprint|"
+    r"文档|知识库|wiki|云盘|策划|KB-|提交|commit|diff|svn|fisheye|"
+    r"查询|搜索|查找|统计|汇总|经办|负责人|未完成|待办|"
+    r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])",
+    re.I,
+)
+
+_WORK_INTENT_LABEL_PREFIXES = (
+    "JIRA_",
+    "DOC_",
+    "CODE_",
+    "WEEK_",
+    "ISSUE_",
+    "KNOWLEDGE_",
+    "REVISION_",
+)
+
+
+def has_operational_intent_signals(text: str) -> bool:
+    """句中出现 Jira/文档/检索等信号 → 走作业通道，不走闲聊道。"""
+    t = (text or "").strip()
+    if not t:
+        return False
+    return bool(_OPERATIONAL_SIGNAL_RE.search(t))
+
+
+def _is_work_intent_label(intent_label: str) -> bool:
+    label = (intent_label or "").strip().upper()
+    if not label or label in ("FULL_SET", "EMPTY", "CHAT_ONLY"):
+        return False
+    return label.startswith(_WORK_INTENT_LABEL_PREFIXES)
+
+
+def should_use_chat_only_lane(
+    text: str,
+    intent_info: dict | None,
+    intent_label: str = "FULL_SET",
+) -> bool:
+    """
+    ordinary_chat 且无作业信号、且路由标签非工作类 → 无工具 LLM 闲聊道。
+    """
+    t = (text or "").strip()
+    if not t:
+        return False
+    info = intent_info or {}
+    if info.get("route") != "ordinary_chat":
+        return False
+    if has_operational_intent_signals(t):
+        return False
+    if _is_work_intent_label(intent_label):
+        return False
+    return True
+
+
 def classify_intent(text: str) -> dict:
     """
     对用户消息进行意图分类。
@@ -147,6 +223,14 @@ def classify_intent(text: str) -> dict:
         }
 
     normalized = text.strip()
+
+    if is_smalltalk_greeting(normalized):
+        return {
+            "route": "ordinary_chat",
+            "reason": "smalltalk_greeting",
+            "requires_confirmation": False,
+            "matched_pattern": None,
+        }
 
     # 1. 危险操作 —— 最高优先级
     for p in DANGEROUS_PATTERNS:
@@ -307,6 +391,8 @@ _TEST_CASES = [
     ("删除所有代码", "dangerous", False),
     ("帮我跑一下测试", "engineering_test", True),
     ("今天天气怎么样", "ordinary_chat", False),
+    ("你好", "ordinary_chat", False),
+    ("您好", "ordinary_chat", False),
     ("帮我建一个 Jira bug", "jira_write", True),
     ("统计本周所有人的任务数量", "jira_query", False),
     ("查一下 CT-12345 的详情", "jira_query", False),
@@ -342,9 +428,36 @@ def run_self_test():
     return passed, len(_TEST_CASES), failures
 
 
+def run_chat_lane_self_test() -> tuple[int, int, list]:
+    """闲聊道判定自测。"""
+    cases = [
+        ("你好", True),
+        ("今天天气怎么样", True),
+        ("查本周所有人的任务", False),
+        ("CT-10859 状态", False),
+        ("", False),
+    ]
+    passed = 0
+    failures = []
+    for text, expect_chat in cases:
+        info = classify_intent(text) if text else {"route": "ordinary_chat"}
+        got = should_use_chat_only_lane(text, info, "FULL_SET")
+        if got == expect_chat:
+            passed += 1
+        else:
+            failures.append({
+                "input": text,
+                "expected": expect_chat,
+                "got": got,
+                "route": info.get("route"),
+            })
+    return passed, len(cases), failures
+
+
 if __name__ == "__main__":
     # 直接运行：执行自测
     p, t, f = run_self_test()
+    cp, ct, cf = run_chat_lane_self_test()
     print(f"\n{'='*50}")
     print(f"  IntentClassifier 自测结果")
     print(f"{'='*50}")
@@ -357,4 +470,8 @@ if __name__ == "__main__":
             print(f"      实际: route={item['got']['route']}, confirm={item['got']['confirmation']}")
     else:
         print(f"  ✅ 全部通过!")
+    print(f"  ChatLane: {cp}/{ct}")
+    if cf:
+        for item in cf:
+            print(f"    ✗ chat lane '{item['input']}' expected={item['expected']} got={item['got']}")
     print(f"{'='*50}\n")

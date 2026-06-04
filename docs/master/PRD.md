@@ -2,7 +2,9 @@
 
 > 版本：v2.1 | 日期：2026-06-04
 
-**相关文档**：[Master PRD](Alice_Master_PRD_v1.0.md) · [技术架构](Alice_Master_Architecture_v1.0.md) · [白泽 Baize 架构](Baize_Architecture_v1.0.md)
+**相关文档**：[三期蓝图计划（开发校准）](alice三期蓝图计划.md) · [Master PRD](Alice_Master_PRD_v1.0.md) · [技术架构](Alice_Master_Architecture_v1.0.md) · [文档索引](README.md) · [白泽 Baize 架构](Baize_Architecture_v1.0.md)
+
+> **排期与 WBS**以 [alice三期蓝图计划.md](alice三期蓝图计划.md) 为准。
 
 ---
 

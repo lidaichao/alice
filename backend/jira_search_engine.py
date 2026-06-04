@@ -477,6 +477,17 @@ def should_force_jira_structured_read(
     intent_label: str = "",
 ) -> bool:
     """是否必须走结构化读直通车（含 intent_router / classify 命中）"""
+    try:
+        from intent_classifier import is_smalltalk_greeting, has_operational_intent_signals
+
+        if is_smalltalk_greeting(user_text or ""):
+            return False
+        if not has_operational_intent_signals(user_text or "") and (
+            intent_label or ""
+        ).upper() in ("FULL_SET", "CHAT_ONLY", ""):
+            return False
+    except ImportError:
+        pass
     keys = ISSUE_KEY_RE.findall(user_text or "")
     if len(keys) == 1 and re.search(
         r"详情|内容|描述|评论|什么情况|怎么样|是谁|备注|改成|改为|流转|完成|关闭",

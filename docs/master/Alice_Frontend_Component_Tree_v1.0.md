@@ -1,8 +1,12 @@
 # Alice AI Bridge — 前端组件树与状态流转图 (v1.0)
 
-> 版本：v1.0 | 日期：2026-06-03 | 作者：可达鸭 (Psyduck)
+> 版本：v1.0 | 日期：2026-06-05 | 作者：可达鸭 (Psyduck)
 >
 > 基于 `frontend/src/` 目录实际文件结构生成。
+
+**相关文档**：[三期蓝图计划（开发校准）](alice三期蓝图计划.md) · [Master PRD](Alice_Master_PRD_v1.0.md) · [API 契约](Alice_API_Contract_v1.0.md) · [Master 架构](Alice_Master_Architecture_v1.0.md)
+
+> HITL 相关前端任务（进度 SSE、F5 草稿恢复等）见蓝图 **E2**。
 
 ---
 

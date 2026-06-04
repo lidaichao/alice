@@ -1,0 +1,35 @@
+---
+description: Alice 产品开发唯一校准路径 — 三期蓝图计划（近/中/远 WBS）
+alwaysApply: true
+---
+
+# Alice 开发校准（必读）
+
+## 唯一路径文档
+
+所有功能开发、架构变更、排期与验收，以仓库内白皮书为准：
+
+**`docs/master/alice三期蓝图计划.md`**
+
+开始较大改动前：阅读该文档中的 **§2 架构宪法** 与 **§5 WBS**，确认任务 ID（如 E2.1、E3.5）。
+
+## 执行规则
+
+1. **不得**在未更新蓝图 WBS 的情况下扩大范围（新 Epic 须先写入 §5 并标明优先级）。
+2. **不得**在近一期违反宪法 **C8**（近一期仅用 JSON/SQLite，不引入 Redis/Temporal）。
+3. **不得**在客户端直连 Jira；凭据以 Hub + Admin 为准（E4）。
+4. 发布前满足蓝图 **§6.1 发布门禁**（smoke、e2e、eval）。
+5. 功能细节查 `docs/master/Alice_Master_PRD_v1.0.md`；**路径与顺序**以蓝图为准。
+
+## 与 PRD / 架构文档关系
+
+| 文档 | 作用 |
+|------|------|
+| `alice三期蓝图计划.md` | **做什么、什么顺序、DoD**（最高优先级） |
+| `Alice_Master_PRD_v1.0.md` | 功能清单与角色场景 |
+| `Alice_Master_Architecture_v1.0.md` | 模块与技术栈 |
+| `Alice_API_Contract_v1.0.md` | 接口与 SSE |
+
+## 进度回写
+
+完成 WBS 项后，在 `alice三期蓝图计划.md` 将对应行 `[ ]` 改为 `[x]` 并更新 §修订记录。
