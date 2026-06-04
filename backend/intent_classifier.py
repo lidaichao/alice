@@ -66,6 +66,21 @@ JIRA_WRITE_PATTERNS = [
     re.compile(r'(分配|指派|转交).*(Jira|jira)?.*(任务|issue|bug)'),
 ]
 
+# 批量草稿箱 —— draft_card，禁止直写 Jira
+JIRA_DRAFT_PATTERNS = [
+    re.compile(r'(草拟|起草|草稿).{0,20}(Jira|jira|任务|issue)'),
+    re.compile(r'(拆分|分解).{0,12}(\d+).{0,6}(个子任务|条任务|个任务)'),
+    re.compile(r'批量.{0,8}(草拟|起草|创建|建).{0,12}(任务|issue|jira|bug)'),
+    re.compile(r'(帮我|请).{0,6}(草拟|起草).{0,20}(任务|issue)'),
+]
+
+
+def is_jira_draft_request(text: str) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    return any(p.search(t) for p in JIRA_DRAFT_PATTERNS)
+
 _ISSUE_KEY_IN_TEXT = re.compile(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])')
 
 # 工程写操作 —— 修改代码/文件，需要确认
@@ -150,6 +165,16 @@ def classify_intent(text: str) -> dict:
             return {
                 "route": "engineering_test",
                 "reason": "test_or_build_request",
+                "requires_confirmation": True,
+                "matched_pattern": p.pattern,
+            }
+
+    # 2b. 批量草稿（先于 jira_write，避免直建 Issue）
+    for p in JIRA_DRAFT_PATTERNS:
+        if p.search(normalized):
+            return {
+                "route": "jira_draft",
+                "reason": "jira_bulk_draft",
                 "requires_confirmation": True,
                 "matched_pattern": p.pattern,
             }

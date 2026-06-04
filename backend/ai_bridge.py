@@ -1619,6 +1619,57 @@ def _iter_jira_write_express_lane(user_text, user_cfg, intent_info):
         yield chunk
 
 
+def _heuristic_issues_drafts(user_text: str) -> list:
+    """无 LLM 时的批量草稿兜底（第四战役单测用）。"""
+    t = user_text or ""
+    count = 3
+    m = re.search(r"(\d+)\s*个", t)
+    if m:
+        try:
+            count = min(max(int(m.group(1)), 1), 20)
+        except ValueError:
+            count = 3
+    topic = "UI 优化"
+    m2 = re.search(r"关于(.+?)(?:的\s*)?(?:Jira|任务|issue|bug)?", t, re.I)
+    if m2 and m2.group(1).strip():
+        topic = m2.group(1).strip()[:60]
+    elif re.search(r"UI|界面|前端", t, re.I):
+        topic = "UI 优化"
+    return [
+        {
+            "summary": f"{topic} — {i + 1}",
+            "projectKey": "CT",
+            "issueType": "Task",
+            "description": f"草拟自用户描述：{t[:300]}",
+        }
+        for i in range(count)
+    ]
+
+
+def _collect_draft_sse_chunks(user_text: str, issues_list: list = None) -> list:
+    """草稿箱直通车：draft_card SSE，禁止直写 Jira。"""
+    from jira_operation_manager import (
+        create_issues_draft,
+        build_draft_tool_response,
+    )
+
+    items = issues_list if issues_list else _heuristic_issues_drafts(user_text)
+    draft = create_issues_draft(items, source_text=user_text)
+    payload = build_draft_tool_response(draft)
+    preview = payload.get("result", "")
+    card_evt = {
+        "_event": "draft_card",
+        "draft_id": draft["id"],
+        "items": payload.get("items") or [],
+        "warnings": payload.get("warnings") or [],
+        "preview": preview,
+    }
+    return [
+        f"data: {json.dumps(card_evt, ensure_ascii=False)}\n\n".encode("utf-8"),
+        f"data: {json.dumps({'choices': [{'delta': {'content': preview}}]}, ensure_ascii=False)}\n\n".encode("utf-8"),
+    ]
+
+
 def execute_tool_call(tool_name: str, arguments_str, user_cfg=None, frontend_cfg=None) -> str:
     """Alice V2.0 工具调度器 — 支持 4 原子工具 + 向后兼容"""
     try:
@@ -1636,13 +1687,41 @@ def execute_tool_call(tool_name: str, arguments_str, user_cfg=None, frontend_cfg
                 return fn(args, user_pat=user_pat, frontend_cfg=frontend_cfg, user_cfg=user_cfg)
             return fn(args)
 
-        # 向后兼容: Jira 写操作确认卡
+        elif tool_name == "create_issues_draft":
+            try:
+                from jira_operation_manager import (
+                    create_issues_draft,
+                    build_draft_tool_response,
+                )
+                raw = (
+                    args.get("issues_list")
+                    or args.get("issues")
+                    or args.get("drafts")
+                    or []
+                )
+                if not isinstance(raw, list) or len(raw) == 0:
+                    return json.dumps({
+                        "status": "error",
+                        "result": "issues_list 不能为空",
+                    })
+                draft = create_issues_draft(
+                    raw,
+                    conversation_id=args.get("conversation_id", ""),
+                    source_text=(args.get("source_text") or "")[:500],
+                )
+                return json.dumps(build_draft_tool_response(draft), ensure_ascii=False)
+            except Exception as e:
+                return json.dumps({"status": "error", "result": f"草稿箱失败: {str(e)[:200]}"})
+
+        # 向后兼容: Jira 写操作确认卡 / 批量 → 草稿箱
         elif tool_name in ("add_jira_comment", "create_jira_issues", "create_issue"):
             try:
                 from audit_gateway import audit
                 from jira_operation_manager import (
                     create_comment_operation_card,
                     create_operation_card,
+                    create_issues_draft,
+                    build_draft_tool_response,
                     save_operation,
                     build_confirm_tool_response,
                 )
@@ -1671,6 +1750,16 @@ def execute_tool_call(tool_name: str, arguments_str, user_cfg=None, frontend_cfg
                         "assignee": args.get("assignee"),
                     }]
                     audit_data = {"drafts": drafts}
+                    if len(drafts) > 1:
+                        draft = create_issues_draft(
+                            drafts,
+                            conversation_id=args.get("conversation_id", ""),
+                            source_text="tool:create_jira_issues",
+                        )
+                        return json.dumps(
+                            build_draft_tool_response(draft),
+                            ensure_ascii=False,
+                        )
                     op = create_operation_card(
                         drafts=drafts,
                         conversation_id=args.get("conversation_id", ""),
@@ -1728,6 +1817,12 @@ def execute_tool_call(tool_name: str, arguments_str, user_cfg=None, frontend_cfg
 
 # Alice V2.0 系统提示词
 CORE_SYSTEM_PROMPT_V2 = """你是 Alice V2.0，Jira 项目和知识库管理 AI 助手。
+
+【批量创建 Jira — 草稿箱协议】
+当用户要求「草拟 / 拆分多个子任务 / 批量创建多个 Issue」时：
+- 【禁止】直接调用 create_issue 写 Jira！
+- 【必须】调用 create_issues_draft，传入 issues_list（每条含 summary、projectKey、issueType）。
+- 系统会弹出 draft_card，用户核对后才真正创建。
 
 【致命指令 — 必须无条件遵守】
 当用户需要查询数据时，你【必须直接调用工具 (tool_calls)】。
@@ -1864,6 +1959,48 @@ def chat_completions():
                     return
             except Exception as _ic_err:
                 logger.warning(f"[Intent] classify_intent failed: {_ic_err}")
+
+        # ── 浅层记忆写入（「请记住…」）────────────────────────
+        if user_text:
+            try:
+                from memory_manager import try_capture_memory_from_message
+                _mem_entry = try_capture_memory_from_message(user_text)
+                if _mem_entry:
+                    _mem_ack = (
+                        f"【已记住】{_mem_entry.get('text', '')}\n"
+                        "该规则已写入团队浅层记忆，后续对话将自动注入上下文。"
+                    )
+                    yield f"data: {json.dumps({'choices': [{'delta': {'content': _mem_ack}}]}, ensure_ascii=False)}\n\n".encode("utf-8")
+                    yield b"data: [DONE]\n\n"
+                    return
+            except Exception as _mem_e:
+                logger.warning(f"[Memory] capture failed: {_mem_e}")
+
+        # ══════════════════════════════════════════════════════════
+        #  草稿箱直通车（draft_card → [DONE]，禁止直写 Jira）
+        # ══════════════════════════════════════════════════════════
+        if user_text:
+            try:
+                from intent_classifier import is_jira_draft_request
+                _is_draft = (
+                    intent_info.get("route") == "jira_draft"
+                    or is_jira_draft_request(user_text)
+                )
+            except ImportError:
+                _is_draft = intent_info.get("route") == "jira_draft"
+        else:
+            _is_draft = False
+        if user_text and _is_draft:
+            try:
+                _draft_chunks = _collect_draft_sse_chunks(user_text)
+                for _chunk in _draft_chunks:
+                    yield _chunk
+                if _draft_chunks:
+                    logger.info("[Plugin-Gateway] Jira draft express lane — draft_card sent, stream terminated")
+                    yield b"data: [DONE]\n\n"
+                    return
+            except Exception as _jde:
+                logger.warning(f"[DraftBox] express lane error: {_jde}")
 
         # ══════════════════════════════════════════════════════════
         #  Jira 写直通车 / 微型 Plugin-Gateway（确认卡后立即 [DONE]）
@@ -2016,6 +2153,13 @@ def chat_completions():
 
         # ── 构建初始消息列表 (旧 ReAct) ────────────────────────
         system_context = CORE_SYSTEM_PROMPT_V2
+        try:
+            from memory_manager import format_memory_for_prompt
+            _mem_block = format_memory_for_prompt()
+            if _mem_block:
+                system_context += f"\n\n{_mem_block}"
+        except Exception as _mem_inj:
+            logger.warning(f"[Memory] prompt inject failed: {_mem_inj}")
 
         # 预注入 Issue Key 基本信息
         if issue_keys_found:
@@ -2171,6 +2315,7 @@ def chat_completions():
                 # 按顺序发送 SSE 事件 + 追加 tool messages（写操作确认卡 → 网关终止）
                 _plugin_gateway_terminal = False
                 _confirm_preview = ""
+                _draft_gateway_terminal = False
                 for r in results:
                     yield f"data: {r['sse_running']}\n\n".encode('utf-8')
                     yield f"data: {r['sse_done']}\n\n".encode('utf-8')
@@ -2194,6 +2339,25 @@ def chat_completions():
                             yield f"data: {json.dumps({'custom_type': 'confirm_required', 'operation': ui_op, 'operation_id': op_id, 'message': _confirm_preview}, ensure_ascii=False)}\n\n".encode('utf-8')
                             if _confirm_preview:
                                 yield f"data: {json.dumps({'choices': [{'delta': {'content': _confirm_preview}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                        if obj.get("status") == "draft_required":
+                            _draft_gateway_terminal = True
+                            _plugin_gateway_terminal = True
+                            draft_id = obj.get("draft_id", "")
+                            items_ui = obj.get("items") or []
+                            preview_d = str(obj.get("result") or "")
+                            draft_evt = {
+                                "_event": "draft_card",
+                                "draft_id": draft_id,
+                                "items": items_ui,
+                                "warnings": obj.get("warnings") or [],
+                                "preview": preview_d,
+                            }
+                            yield f"data: {json.dumps(draft_evt, ensure_ascii=False)}\n\n".encode('utf-8')
+                            if preview_d:
+                                yield f"data: {json.dumps({'choices': [{'delta': {'content': preview_d}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
+                            logger.info(
+                                f"[Plugin-Gateway] draft_card emitted — draft_id={draft_id} items={len(items_ui)}"
+                            )
                     except Exception:
                         pass
 
@@ -2217,7 +2381,10 @@ def chat_completions():
                     })
 
                 if _plugin_gateway_terminal:
-                    logger.info("[Plugin-Gateway] confirm_card emitted — breaking ReAct loop, stream [DONE]")
+                    if _draft_gateway_terminal:
+                        logger.info("[Plugin-Gateway] draft_card — breaking ReAct loop, stream [DONE]")
+                    else:
+                        logger.info("[Plugin-Gateway] confirm_card emitted — breaking ReAct loop, stream [DONE]")
                     yield b"data: [DONE]\n\n"
                     return
 
@@ -2698,6 +2865,59 @@ def reject_op(op_id):
     save_operation(op)
     logger.info(f"[OpCard] Rejected: {op_id}")
     return jsonify({"ok": True, "operation": {"id": op["id"], "status": op["status"]}})
+
+@app.route("/drafts/<draft_id>", methods=["GET"])
+def get_draft_box(draft_id):
+    """获取草稿箱内容"""
+    from jira_operation_manager import get_draft, draft_items_for_ui
+    draft = get_draft(draft_id)
+    if not draft:
+        return jsonify({"ok": False, "error": "草稿不存在"}), 404
+    return jsonify({
+        "ok": True,
+        "draft": {
+            "id": draft["id"],
+            "status": draft["status"],
+            "items": draft_items_for_ui(draft.get("items") or []),
+            "warnings": draft.get("warnings") or [],
+            "operation_id": draft.get("operation_id"),
+            "created_at": draft.get("created_at"),
+        },
+    })
+
+
+@app.route("/drafts/<draft_id>/confirm", methods=["POST"])
+def confirm_draft_box(draft_id):
+    """
+    草稿箱批量确认 → 升级为 operation（awaiting_confirmation）。
+    前端再调 /operations/<id>/confirm 执行 Jira 写入。
+    """
+    from jira_operation_manager import (
+        get_draft,
+        submit_draft_to_operation,
+        build_confirm_tool_response,
+    )
+    draft = get_draft(draft_id)
+    if not draft:
+        return jsonify({"ok": False, "error": "草稿不存在"}), 404
+    body = request.get_json(silent=True) or {}
+    items = body.get("items")
+    try:
+        op = submit_draft_to_operation(draft_id, items=items)
+        payload = build_confirm_tool_response(
+            op,
+            f"草稿已锁定，共 {len(op.get('drafts') or [])} 条，请在确认卡上授权创建。",
+        )
+        return jsonify({
+            "ok": True,
+            "draft_id": draft_id,
+            "operation_id": op["id"],
+            "operation": payload.get("operation"),
+            "message": payload.get("result"),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:500]}), 400
+
 
 @app.route("/operations/pending", methods=["GET"])
 def list_pending_ops():

@@ -104,6 +104,23 @@ tools:
           description: "文档来源（与 search_docs_catalog 返回值一致）"
           required: true
 
+  - name: create_issues_draft
+    display: "Jira 批量草稿箱"
+    description: >
+      将一批待创建的 Jira 任务写入本地草稿箱（虚拟态），不会直接调用 Jira API。
+      当用户要求草拟、拆分多个子任务、批量创建多个 Issue 时必须使用本工具。
+      参数 issues_list 为数组，每项含 summary、projectKey、issueType，可选 description、assignee、labels。
+      调用后前端会展示 draft_card，用户确认后才真正创建。
+    category: jira
+    icon: "📋"
+    risk: write
+    function:
+      parameters:
+        issues_list:
+          type: array
+          description: "草稿列表，每项为 {summary, projectKey, issueType, description?, assignee?}"
+          required: true
+
   - name: search_jira_issues
     display: "Jira 关键词搜索"
     description: >

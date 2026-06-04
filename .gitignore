@@ -43,6 +43,8 @@ backend/rabbit_test2.py
 backend/test_simple.py
 backend/logs/
 backend/data/operations.json
+backend/data/shallow_memory.json
+backend/data/jira_draft_box.json
 
 # Frontend specific
 frontend/node_modules/

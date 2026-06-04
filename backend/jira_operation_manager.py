@@ -19,6 +19,16 @@ from typing import Optional
 
 logger = logging.getLogger("jira-op-manager")
 
+_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+_OPS_FILE = os.path.join(_DATA_DIR, "operations.json")
+_DRAFTS_FILE = os.path.join(_DATA_DIR, "jira_draft_box.json")
+_LEGACY_OPS_INDEX = os.path.join(
+    os.path.dirname(__file__), "runtime", "jira-operations", "index.json",
+)
+_store: dict = {}
+_draft_box: dict = {}
+_lock = threading.RLock()
+
 # ══════════════════════════════════════════════════════════════
 #  状态机定义
 # ══════════════════════════════════════════════════════════════
@@ -443,6 +453,150 @@ def _build_warnings(drafts: list) -> list:
 
 
 # ══════════════════════════════════════════════════════════════
+#  草稿箱（draft_card）— 批量创建前先落本地 JSON，禁止直写 Jira
+# ══════════════════════════════════════════════════════════════
+
+def _normalize_issue_draft(item: dict, index: int = 0) -> dict:
+    d = item if isinstance(item, dict) else {}
+    return {
+        "summary": (d.get("summary") or d.get("title") or f"草稿任务 #{index + 1}").strip(),
+        "projectKey": (d.get("projectKey") or d.get("project_key") or "CT").strip(),
+        "issueType": (d.get("issueType") or d.get("issue_type") or "Task").strip(),
+        "description": (d.get("description") or "").strip(),
+        "assignee": (d.get("assignee") or "").strip(),
+        "priority": d.get("priority"),
+        "labels": d.get("labels") if isinstance(d.get("labels"), list) else [],
+    }
+
+
+def draft_items_for_ui(items: list) -> list:
+    out = []
+    for i, raw in enumerate(items or []):
+        d = _normalize_issue_draft(raw, i)
+        out.append({
+            "index": i,
+            "summary": d["summary"],
+            "projectKey": d["projectKey"],
+            "issueType": d["issueType"],
+            "description": d["description"][:500],
+            "assignee": d.get("assignee") or "",
+        })
+    return out
+
+
+def _load_draft_box():
+    global _draft_box
+    try:
+        if os.path.isfile(_DRAFTS_FILE):
+            with open(_DRAFTS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            for d in data.get("drafts") or []:
+                if d.get("id"):
+                    _draft_box[d["id"]] = d
+            if _draft_box:
+                logger.info(f"[DraftBox] loaded {len(_draft_box)} drafts")
+    except Exception as e:
+        logger.warning(f"[DraftBox] load failed: {e}")
+
+
+def _persist_draft_box():
+    try:
+        os.makedirs(_DATA_DIR, exist_ok=True)
+        with _lock:
+            payload = {
+                "drafts": list(_draft_box.values()),
+                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }
+        with open(_DRAFTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning(f"[DraftBox] persist failed: {e}")
+
+
+def create_issues_draft(
+    issues_list: list,
+    conversation_id: str = "",
+    client_id: str = "",
+    user_id: str = "",
+    source_text: str = "",
+) -> dict:
+    """批量草稿入箱（虚拟态），返回 draft 记录供 draft_card SSE 使用。"""
+    raw = issues_list if isinstance(issues_list, list) else []
+    if not raw:
+        raise ValueError("issues_list 不能为空")
+    items = [_normalize_issue_draft(x, i) for i, x in enumerate(raw)]
+    now = time.strftime("%Y-%m-%dT%H:%M:%S")
+    draft = {
+        "id": f"draft-{uuid.uuid4().hex[:12]}",
+        "status": "awaiting_review",
+        "items": items,
+        "warnings": _build_warnings(items),
+        "conversation_id": conversation_id,
+        "client_id": client_id,
+        "user_id": user_id,
+        "source_text": (source_text or "")[:500],
+        "operation_id": None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    with _lock:
+        _draft_box[draft["id"]] = draft
+        _persist_draft_box()
+    logger.info(
+        f"[DraftBox] draft_card created: {draft['id']} | items={len(items)} | "
+        f"summaries={[x['summary'][:40] for x in items[:3]]}"
+    )
+    return draft
+
+
+def get_draft(draft_id: str) -> Optional[dict]:
+    with _lock:
+        return _draft_box.get(draft_id)
+
+
+def build_draft_tool_response(draft: dict, message: str = "") -> dict:
+    items = draft_items_for_ui(draft.get("items") or [])
+    preview = message or (
+        f"已生成 {len(items)} 条 Jira 草稿，请在草稿卡中核对后批量提交。"
+        "Alice 不会未经确认直接创建 Issue。"
+    )
+    return {
+        "status": "draft_required",
+        "draft_id": draft["id"],
+        "items": items,
+        "warnings": draft.get("warnings") or [],
+        "result": preview,
+    }
+
+
+def submit_draft_to_operation(draft_id: str, items: Optional[list] = None) -> dict:
+    """草稿箱确认 → 升级为正式 operation（awaiting_confirmation），再走 confirm API 写 Jira。"""
+    with _lock:
+        draft = _draft_box.get(draft_id)
+        if not draft:
+            raise ValueError("草稿不存在")
+        if draft.get("status") not in ("awaiting_review",):
+            raise ValueError(f"草稿状态 {draft.get('status')} 不可提交")
+        if items:
+            draft["items"] = [_normalize_issue_draft(x, i) for i, x in enumerate(items)]
+            draft["warnings"] = _build_warnings(draft["items"])
+        op = create_operation_card(
+            drafts=draft["items"],
+            conversation_id=draft.get("conversation_id", ""),
+            client_id=draft.get("client_id", ""),
+            user_id=draft.get("user_id", ""),
+            kind="jira_bulk_create",
+        )
+        save_operation(op)
+        draft["status"] = "promoted"
+        draft["operation_id"] = op["id"]
+        draft["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        _persist_draft_box()
+        logger.info(f"[DraftBox] promoted {draft_id} → operation {op['id']}")
+        return op
+
+
+# ══════════════════════════════════════════════════════════════
 #  状态转换
 # ══════════════════════════════════════════════════════════════
 
@@ -508,16 +662,6 @@ def mark_rejected(operation: dict) -> dict:
 #  内存存储（单进程，与 ai_bridge.py 共享）
 # ══════════════════════════════════════════════════════════════
 
-_store: dict = {}          # operation_id → operation
-_lock = threading.RLock()   # 可重入；save_operation → _persist 避免死锁（Q4 180s 根因）
-_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-_OPS_FILE = os.path.join(_DATA_DIR, "operations.json")
-# 兼容旧路径
-_LEGACY_OPS_INDEX = os.path.join(
-    os.path.dirname(__file__), "runtime", "jira-operations", "index.json",
-)
-
-
 def _persist_operations_index():
     try:
         os.makedirs(_DATA_DIR, exist_ok=True)
@@ -550,6 +694,7 @@ def _load_operations_index():
 
 
 _load_operations_index()
+_load_draft_box()
 
 
 def save_operation(op: dict) -> dict:

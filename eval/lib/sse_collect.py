@@ -42,6 +42,10 @@ def parse_sse_line(decoded: str, state: dict) -> None:
 
     if data.get("_event") == "confirm_card" or data.get("custom_type") == "confirm_required":
         state["confirm_card"] = True
+    if data.get("_event") == "draft_card":
+        state["draft_card"] = True
+        state["draft_id"] = data.get("draft_id") or state.get("draft_id")
+        state["draft_items_count"] = len(data.get("items") or [])
     if data.get("_event") == "jira_search_supplement":
         state["supplement"] = True
 
@@ -67,17 +71,20 @@ def parse_sse_line(decoded: str, state: dict) -> None:
 
 def empty_stream_state() -> dict:
     return {
-        "content": "",
+        "done": False,
         "lines": 0,
+        "content": "",
+        "confirm_card": False,
+        "draft_card": False,
+        "draft_id": "",
+        "draft_items_count": 0,
+        "supplement": False,
         "plugins_seen": set(),
         "structured_lane": False,
         "weekly_lane": False,
         "commits_lane": False,
-        "confirm_card": False,
-        "supplement": False,
         "jql_in_stream": "",
         "error": None,
-        "done": False,
         "latency_s": 0.0,
     }
 

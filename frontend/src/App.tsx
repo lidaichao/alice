@@ -22,6 +22,7 @@ export const App: React.FC = () => {
   const isGenerating = useChatStore((s) => s.isGenerating);
   const stopGenerating = useChatStore((s) => s.stopGenerating);
   const pendingConfirmations = useChatStore((s) => s.pendingConfirmations);
+  const pendingDraftCards = useChatStore((s) => s.pendingDraftCards);
   const pendingJiraSupplements = useChatStore((s) => s.pendingJiraSupplements);
 
   const currentSession = sessions.find((s) => s.id === activeSessionId);
@@ -238,6 +239,27 @@ export const App: React.FC = () => {
             })}
 
             {/* ── Jira 确认卡（内联在消息流末尾）── */}
+            {pendingDraftCards.map((draft) => (
+              <div key={draft.draft_id} className="flex gap-4 flex-row">
+                <div className="w-10 h-10 shrink-0" />
+                <div className="max-w-[75%] flex-1 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+                  <div className="font-medium text-amber-700 dark:text-amber-300 mb-2">
+                    草稿箱 · {draft.items.length} 条待创建任务
+                  </div>
+                  <ul className="list-disc pl-4 space-y-1 mb-3">
+                    {draft.items.map((it) => (
+                      <li key={it.index}>
+                        <span className="font-mono text-xs">{it.projectKey}</span> {it.summary}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs text-muted-foreground">
+                    请在后端 API 确认：POST /drafts/{draft.draft_id}/confirm → 再于确认卡授权写入 Jira。
+                  </p>
+                </div>
+              </div>
+            ))}
+
             {pendingConfirmations.map((card) => (
               <div key={card.op_id} className="flex gap-4 flex-row">
                 <div className="w-10 h-10 shrink-0" />

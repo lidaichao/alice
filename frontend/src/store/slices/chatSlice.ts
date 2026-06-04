@@ -14,6 +14,23 @@ function loadRuntimeConfig(): Record<string, string> {
 }
 
 // ── 确认卡类型定义 ───────────────────────────
+export interface DraftCardItem {
+  index: number;
+  summary: string;
+  projectKey: string;
+  issueType: string;
+  description?: string;
+  assignee?: string;
+}
+
+export interface DraftCard {
+  draft_id: string;
+  event: 'draft_card';
+  items: DraftCardItem[];
+  preview?: string;
+  status?: 'pending' | 'submitted';
+}
+
 export interface ConfirmCard {
   op_id: string;
   event: 'confirm_card';
@@ -35,6 +52,7 @@ export interface ChatSlice {
   isGenerating: boolean;
   abortController: AbortController | null;
   pendingConfirmations: ConfirmCard[];
+  pendingDraftCards: DraftCard[];
   pendingJiraSupplements: JiraSearchSupplementCard[];
 
   initDB: () => Promise<void>;
@@ -56,6 +74,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
   isGenerating: false,
   abortController: null,
   pendingConfirmations: [],
+  pendingDraftCards: [],
   pendingJiraSupplements: [],
 
   initDB: async () => {
@@ -246,6 +265,34 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
                 // ── 确认卡 SSE 事件（confirm_card 或 legacy confirm_required）──
                 const isConfirmCard = data._event === 'confirm_card'
                   || data.custom_type === 'confirm_required';
+                if (data._event === 'draft_card') {
+                  const draftCard: DraftCard = {
+                    draft_id: data.draft_id || '',
+                    event: 'draft_card',
+                    items: Array.isArray(data.items) ? data.items : [],
+                    preview: data.preview || '',
+                    status: 'pending',
+                  };
+                  set((state) => ({
+                    pendingDraftCards: [...state.pendingDraftCards, draftCard],
+                    sessions: state.sessions.map((s) => {
+                      if (s.id !== activeSessionId) return s;
+                      const lastMsg = s.messages[s.messages.length - 1];
+                      if (lastMsg.id === aiMsgId) {
+                        return {
+                          ...s,
+                          messages: [
+                            ...s.messages.slice(0, -1),
+                            { ...lastMsg, draftCard, content: (lastMsg.content || '') + (data.preview || '') },
+                          ],
+                        };
+                      }
+                      return s;
+                    }),
+                  }));
+                  continue;
+                }
+
                 if (isConfirmCard) {
                   const rawOp = data.operation || {};
                   const card: ConfirmCard = {
