@@ -96,11 +96,27 @@ const CodeBlock = ({ inline, className, children, ...props }: any) => {
   const [copied, setCopied] = useState(false);
   const text = String(children).replace(/\n$/, '');
 
-  if (inline) return <code className="bg-muted px-1.5 py-0.5 rounded-md text-[0.875em] text-primary" {...props}>{children}</code>;
+  // 严格区分 inline vs block：
+  // 1) react-markdown 传入 inline=true → 行内
+  // 2) 无 language 且单行短文本 → 降级为行内（防误判为代码块）
+  const isSingleLine = text.indexOf('\n') === -1;
+  const isInline = inline || (!lang && isSingleLine && text.length < 200);
+
+  if (isInline) {
+    return (
+      <code
+        className="bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 rounded text-[0.875em] font-mono break-all"
+        {...props}
+      >
+        {children}
+      </code>
+    );
+  }
+
   if (lang === 'mermaid') return <MermaidBlock code={text} />;
 
   return (
-    <div className="relative group my-4 rounded-lg overflow-hidden bg-[#1E1E1E]">
+    <div className="relative group my-4 rounded-lg overflow-hidden bg-[#1E1E1E] border border-border/20">
       <div className="flex items-center justify-between px-4 py-1.5 bg-zinc-800/80 text-xs text-zinc-400">
         <span>{lang || 'text'}</span>
         <button onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }} className="hover:text-white transition-colors flex items-center gap-1.5">
@@ -166,9 +182,17 @@ export const MarkdownRenderer = memo(({ content, citations }: { content: string;
       <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:p-0">
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
           code: CodeBlock as any,
-          table: ({node, ...props}) => <div className="overflow-x-auto"><table className="border-collapse border border-border w-full" {...props} /></div>,
-          th: ({node, ...props}) => <th className="border border-border bg-muted/50 px-4 py-2 font-semibold text-left" {...props} />,
-          td: ({node, ...props}) => <td className="border border-border px-4 py-2" {...props} />,
+          table: ({node, ...props}) => (
+            <div className="overflow-x-auto my-4 rounded-lg border border-border">
+              <table className="w-full text-sm" {...props} />
+            </div>
+          ),
+          th: ({node, ...props}) => (
+            <th className="border-b border-border bg-muted/60 px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider" {...props} />
+          ),
+          td: ({node, ...props}) => (
+            <td className="border-b border-border/60 px-4 py-2.5 text-sm leading-relaxed" {...props} />
+          ),
           a: ({node, ...props}) => <a className="text-blue-500 hover:underline cursor-pointer" target="_blank" rel="noreferrer" {...props} />,
         }}>
           {cleanContent}

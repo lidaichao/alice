@@ -49,14 +49,18 @@
   }
 }
 
-/* ── 流式输出闪烁光标 ── */
+/* ── 流式输出光标：border 竖线，不再渲染黑色方块 ── */
 .blinking-cursor {
   display: inline-block;
-  width: 8px;
-  height: 18px;
-  background: currentColor;
+}
+.blinking-cursor::after {
+  content: '';
+  display: inline-block;
+  width: 0;
+  height: 1.1em;
   margin-left: 2px;
   vertical-align: text-bottom;
+  border-left: 2px solid theme('colors.blue.500');
   animation: blink 1s step-end infinite;
 }
 @keyframes blink {
