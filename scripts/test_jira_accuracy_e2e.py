@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 import os
 import re
 import sys
@@ -21,8 +20,11 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "backend"))
+sys.path.insert(0, os.path.join(ROOT, "eval"))
 
-BASE_URL = os.environ.get("ALICE_BASE_URL", "http://127.0.0.1:9099")
+from lib.sse_collect import DEFAULT_BASE_URL, stream_chat as _stream_chat_collect
+
+BASE_URL = os.environ.get("ALICE_BASE_URL", DEFAULT_BASE_URL)
 GREEN = "\033[92m"
 RED = "\033[91m"
 YELLOW = "\033[93m"
@@ -76,71 +78,8 @@ def offline_parse_suite():
 
 
 def stream_chat(query: str, config: dict | None = None) -> dict:
-    import requests
-
-    payload = {
-        "messages": [{"role": "user", "content": query}],
-        "config": config or {},
-    }
-    if os.environ.get("JIRA_PAT"):
-        payload["user_config"] = {"jira_pat": os.environ["JIRA_PAT"]}
-        payload["config"]["jira_pat"] = os.environ["JIRA_PAT"]
-    if os.environ.get("JIRA_PROJECTS"):
-        payload["config"]["jira_projects"] = os.environ["JIRA_PROJECTS"]
-
-    out = {
-        "content": "",
-        "lines": 0,
-        "structured_lane": False,
-        "weekly_lane": False,
-        "confirm_card": False,
-        "supplement": False,
-        "jql_in_stream": "",
-        "error": None,
-    }
-    try:
-        resp = requests.post(
-            f"{BASE_URL}/v1/chat/completions",
-            json=payload,
-            stream=True,
-            timeout=180,
-        )
-        if resp.status_code != 200:
-            out["error"] = f"HTTP {resp.status_code}"
-            return out
-    except Exception as e:
-        out["error"] = str(e)
-        return out
-
-    for raw in resp.iter_lines():
-        if not raw:
-            continue
-        out["lines"] += 1
-        decoded = raw.decode("utf-8", errors="replace")
-        if "data: [DONE]" in decoded:
-            break
-        if not decoded.startswith("data: "):
-            continue
-        try:
-            data = json.loads(decoded[6:])
-        except json.JSONDecodeError:
-            continue
-        if data.get("_event") == "confirm_card" or data.get("custom_type") == "confirm_required":
-            out["confirm_card"] = True
-        if data.get("_event") == "jira_search_supplement":
-            out["supplement"] = True
-        plugin = (data.get("custom_type") == "plugin_state" and data.get("plugin")) or {}
-        if isinstance(plugin, dict):
-            name = plugin.get("name", "")
-            if name == "jira_structured_search":
-                out["structured_lane"] = True
-                out["jql_in_stream"] = plugin.get("jql") or out["jql_in_stream"]
-            if name == "search_jira_issues" and plugin.get("status") == "running":
-                out["weekly_lane"] = True
-        delta = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
-        if delta:
-            out["content"] += delta
-    return out
+    """Thin wrapper around eval.lib.sse_collect for backward compatibility."""
+    return _stream_chat_collect(query, base_url=BASE_URL, config=config)
 
 
 def check_expect(name: str, result: dict, expect: dict) -> bool:

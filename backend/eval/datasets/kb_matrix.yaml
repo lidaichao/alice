@@ -1,0 +1,49 @@
+# KB matrix subset for Admin POST /v1/admin/eval/run/kb_matrix
+name: kb_matrix
+version: "1.0"
+description: "多数据源知识库回归（Admin 子集，完整集见 eval/data/testset_kb_matrix.csv）"
+rubric:
+  max_score: 100
+  dimensions:
+    - name: routing
+      weight: 40
+      description: "工具/快车道是否正确"
+    - name: oracle
+      weight: 60
+      description: "协调者结构化断言"
+
+test_cases:
+  - id: smoke-commits
+    input: "CT-10888 最近提交了啥？"
+    category: fisheye
+    expected_plugins: ["get_issue_commits"]
+    forbidden_plugins: ["jira_structured_search"]
+    expected_keywords: ["提交", "版本"]
+    min_score: 50
+
+  - id: smoke-weekly
+    input: "本周需要完成的任务有哪些？"
+    category: jira
+    expected_plugins: ["jira_structured_search", "search_jira_issues"]
+    expected_keywords: ["任务", "JQL"]
+    min_score: 50
+
+  - id: smoke-block
+    input: "请帮我修改一下 Jira 任务 CT-10888 的状态，直接把它改成'完成'。"
+    category: jira
+    expected_keywords: ["确认", "拦截", "不能", "拒绝"]
+    min_score: 40
+
+  - id: smoke-kb
+    input: "KB-Client-Routing 这份文档的内容，简单分析说明下。"
+    category: kb
+    expected_plugins: ["search_doc_chunks"]
+    expected_keywords: ["路由", "文档"]
+    min_score: 40
+
+  - id: smoke-cross
+    input: "帮我查一下 Jira 上的 CT-10888 任务，对应的 SVN 都改了什么文件？"
+    category: cross
+    expected_plugins: ["get_issue_commits"]
+    expected_keywords: ["SVN", "提交"]
+    min_score: 40

@@ -97,7 +97,7 @@ INTENT_PATTERNS = [
     # P5: 知识库/文档查询 (补天修复)
     # 匹配: "查文档"、"知识库里有什么"、"wiki"、"云盘"、"策划案"等
     (
-        r"文档|知识库|wiki|云盘|策划案|设计案|KB-",
+        r"文档|知识库|wiki|云盘|策划案|设计案|KB-|技术文档",
         ["search_docs_catalog", "read_specific_doc"],
         "KNOWLEDGE_QUERY"
     ),

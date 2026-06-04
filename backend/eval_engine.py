@@ -2,12 +2,22 @@
 Agent 评估引擎 — Benchmark + Dataset + Eval
 类似 LobeHub 的 agentEval 系统：运行测试用例，自动评分，产出报告
 """
-import os, re, json, time, yaml, logging, requests
+import os, re, json, time, yaml, logging, requests, sys
 
 logger = logging.getLogger(__name__)
 
 EVAL_DIR = os.path.join(os.path.dirname(__file__), 'eval')
 DATASETS_DIR = os.path.join(EVAL_DIR, 'datasets')
+_REPO_EVAL = os.path.join(os.path.dirname(__file__), '..', 'eval')
+if os.path.isdir(_REPO_EVAL) and _REPO_EVAL not in sys.path:
+    sys.path.insert(0, os.path.normpath(_REPO_EVAL))
+
+try:
+    from lib.sse_collect import stream_chat as _sse_stream_chat
+    from lib.oracle_assert import split_semicolon_list
+    _HAS_SSE_LIB = True
+except ImportError:
+    _HAS_SSE_LIB = False
 
 class EvalEngine:
     def __init__(self, base_url="http://127.0.0.1:9099"):
@@ -69,48 +79,93 @@ class EvalEngine:
         expected = tc.get("expected_keywords", [])
         min_score = tc.get("min_score", 50)
         category = tc.get("category", "general")
-        
-        # 发送到 Agent 获取回答
+        expected_plugins = tc.get("expected_plugins") or []
+        forbidden_plugins = tc.get("forbidden_plugins") or []
+        if isinstance(expected_plugins, str):
+            expected_plugins = split_semicolon_list(expected_plugins) if _HAS_SSE_LIB else [expected_plugins]
+        if isinstance(forbidden_plugins, str):
+            forbidden_plugins = split_semicolon_list(forbidden_plugins) if _HAS_SSE_LIB else [forbidden_plugins]
+
         start = time.time()
+        plugins_seen = []
         try:
-            r = requests.post(f"{self.base_url}/v1/chat/completions", json={
-                "messages": [{"role": "user", "content": question}],
-                "user_config": user_config or {}
-            }, stream=True, timeout=30)
-            answer = ""
-            for line in r.iter_lines():
-                if line and b'data:' in line[:10]:
-                    try:
-                        j = json.loads(line[6:].decode('utf-8','ignore'))
-                        c = j.get('choices',[{}])[0].get('delta',{}).get('content','')
-                        if c and '[DONE]' not in str(c):
-                            answer += c
-                    except: pass
-                if line == b'data: [DONE]':
-                    break
-            latency = round((time.time() - start) * 1000)
+            if _HAS_SSE_LIB:
+                stream = _sse_stream_chat(
+                    question,
+                    base_url=self.base_url,
+                    config=user_config or {},
+                    timeout=120,
+                )
+                answer = stream.get("content") or ""
+                plugins_seen = sorted(stream.get("plugins_seen") or [])
+                latency = round((time.time() - start) * 1000)
+                if stream.get("error"):
+                    return {
+                        "id": tc.get("id"),
+                        "passed": False,
+                        "score": 0,
+                        "answer": "",
+                        "error": stream["error"],
+                        "latency_ms": latency,
+                        "category": category,
+                    }
+            else:
+                r = requests.post(f"{self.base_url}/v1/chat/completions", json={
+                    "messages": [{"role": "user", "content": question}],
+                    "user_config": user_config or {}
+                }, stream=True, timeout=120)
+                answer = ""
+                for line in r.iter_lines():
+                    if line and b'data:' in line[:10]:
+                        try:
+                            j = json.loads(line[6:].decode('utf-8', 'ignore'))
+                            c = j.get('choices', [{}])[0].get('delta', {}).get('content', '')
+                            if c and '[DONE]' not in str(c):
+                                answer += c
+                            if j.get("custom_type") == "plugin_state":
+                                pname = (j.get("plugin") or {}).get("name")
+                                if pname and pname not in plugins_seen:
+                                    plugins_seen.append(pname)
+                        except Exception:
+                            pass
+                    if line == b'data: [DONE]':
+                        break
+                latency = round((time.time() - start) * 1000)
         except Exception as e:
-            return {"id": tc["id"], "passed": False, "score": 0, "answer": "", 
+            return {"id": tc.get("id"), "passed": False, "score": 0, "answer": "",
                     "error": str(e), "latency_ms": 0, "category": category}
-        
-        # 评分：关键词匹配
-        match_count = sum(1 for kw in expected if kw.lower() in answer.lower())
-        keyword_score = int(match_count / max(len(expected), 1) * 100)
-        
-        # 长度加分
+
+        plugin_ok = True
+        plugin_note = ""
+        if expected_plugins or forbidden_plugins:
+            seen = set(plugins_seen)
+            bad = [p for p in forbidden_plugins if p in seen]
+            if bad:
+                plugin_ok = False
+                plugin_note = f"forbidden: {bad}"
+            elif expected_plugins and not any(p in seen for p in expected_plugins):
+                plugin_ok = False
+                plugin_note = f"expected one of {expected_plugins}, got {plugins_seen}"
+
+        match_count = sum(1 for kw in expected if kw and kw.lower() in answer.lower())
+        keyword_score = int(match_count / max(len(expected), 1) * 100) if expected else 70
         length_bonus = min(len(answer.split()) / 20 * 10, 10) if len(answer) > 10 else 0
-        
         score = min(int(keyword_score + length_bonus), 100)
-        passed = score >= min_score
-        
+        if not plugin_ok:
+            score = min(score, 40)
+        passed = score >= min_score and plugin_ok
+
         return {
-            "id": tc["id"],
+            "id": tc.get("id"),
             "passed": passed,
             "score": score,
             "min_score": min_score,
             "answer": answer[:500],
             "answer_length": len(answer),
-            "matched_keywords": [kw for kw in expected if kw.lower() in answer.lower()],
+            "matched_keywords": [kw for kw in expected if kw and kw.lower() in answer.lower()],
+            "plugins_seen": plugins_seen,
+            "plugin_ok": plugin_ok,
+            "plugin_note": plugin_note,
             "latency_ms": latency,
             "category": category,
         }

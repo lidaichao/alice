@@ -1879,6 +1879,68 @@ def chat_completions():
                 yield f"data: {json.dumps({'choices':[{'delta':{'content':'⚠️ 系统底层数据服务暂不可用（SVN或知识库异常），请联系管理员或稍后重试。'}}]})}\n\n".encode('utf-8')
 
         # ══════════════════════════════════════════════════════════
+        #  VIP 知识库 / 文档 — catalog → read → 总结（须在 ReAct 之前）
+        # ══════════════════════════════════════════════════════════
+        try:
+            from knowledge_express_lane import (
+                should_use_knowledge_express_lane,
+                extract_catalog_query,
+            )
+            _early_commit_signal = bool(issue_keys_found) and bool(
+                re.search(
+                    r"提交|commit|diff|代码变更|改了什么代码|变更了哪些|改了哪些文件|提交记录|提交内容|改了.*什么",
+                    user_text or "",
+                    re.I,
+                )
+            )
+            if should_use_knowledge_express_lane(
+                user_text or "", intent_label, has_commit_intent=_early_commit_signal,
+            ):
+                _kq = extract_catalog_query(user_text or "")
+                logger.info(f"[VIP] Knowledge express lane (early): '{_kq[:80]}'")
+                yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'search_docs_catalog', 'status': 'running'}}, ensure_ascii=False)}\n\n".encode("utf-8")
+                _catalog_raw = _exec_search_docs_catalog({"query": _kq, "source": "all"})
+                yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'search_docs_catalog', 'status': 'done'}}, ensure_ascii=False)}\n\n".encode("utf-8")
+                _catalog_items = []
+                try:
+                    _cat_j = json.loads(_catalog_raw)
+                    _catalog_items = _cat_j.get("result") or []
+                except Exception:
+                    pass
+                _doc_block = ""
+                if _catalog_items:
+                    _pick = _catalog_items[0]
+                    _doc_id = _pick.get("doc_id", "")
+                    _doc_src = _pick.get("source", "notion")
+                    _doc_title = _pick.get("title", "")
+                    yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'read_specific_doc', 'status': 'running'}}, ensure_ascii=False)}\n\n".encode("utf-8")
+                    _read_raw = _exec_read_specific_doc({"doc_id": _doc_id, "source": _doc_src})
+                    yield f"data: {json.dumps({'custom_type': 'plugin_state', 'plugin': {'name': 'read_specific_doc', 'status': 'done'}}, ensure_ascii=False)}\n\n".encode("utf-8")
+                    try:
+                        _read_j = json.loads(_read_raw)
+                        _doc_block = _read_j.get("llm_text") or str(_read_j.get("result", ""))[:12000]
+                    except Exception:
+                        _doc_block = str(_read_raw)[:12000]
+                    if _doc_title:
+                        _doc_block = f"【{_doc_src}】{_doc_title}\n\n{_doc_block}"
+                else:
+                    _doc_block = (
+                        f"知识库目录检索「{_kq}」在 Notion / Google 云盘中未找到匹配文档。\n"
+                        "请用户确认文档标题或是否已完成同步。"
+                    )
+                _know_prompt = (
+                    "你是 Alice。请仅根据下方【真实文档数据】回答用户当前问题。\n"
+                    "禁止编造文档中不存在的人名、字段或规则；无数据时必须明确说明未找到。\n\n"
+                    f"【文档数据】\n{_doc_block[:12000]}\n\n"
+                    f"【用户问题】\n{user_text}"
+                )
+                yield from _vip_stream(_know_prompt, _doc_block or "（无文档数据）")
+                yield b"data: [DONE]\n\n"
+                return
+        except Exception as _know_lane_err:
+            logger.warning(f"[VIP] Knowledge express lane skipped: {_know_lane_err}")
+
+        # ══════════════════════════════════════════════════════════
         #  VIP 直通车: Pre-flight RAG — Python 层完成所有检索
         # ══════════════════════════════════════════════════════════
         _diff_rev = re.search(r'(?:r|版本\s*)\s*(\d{4,6})', user_text or "")

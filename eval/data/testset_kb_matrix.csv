@@ -1,0 +1,47 @@
+id,question,sources,tier,verdict_mode,expected_plugins,forbidden_plugins,must_contain_any,must_not_contain,ground_truth,lane_hint
+jira-01,帮我查一下本周需要完成的任务有哪些？,jira,live_lane,oracle_struct,jira_structured_search;search_jira_issues,,JQL;任务;未找到;没有,,应走 Jira 结构化或周报车道并返回任务列表或诚实无结果,structured_or_weekly
+jira-02,统计张三本周未完成的 Jira 任务,jira,live_lane,oracle_struct,jira_structured_search,,张三;JQL;任务;未找到,,应解析经办人张三并生成 JQL,structured_or_weekly
+jira-03,项目 CT 有哪些进行中的 bug？,jira,live_lane,oracle_struct,jira_structured_search,,Bug;JQL;任务;未找到,,应过滤 project+issuetype+status,
+jira-04,和球员系统属性有关的 Jira 任务,jira,live_lane,oracle_struct,jira_structured_search,,球员;任务;JQL;未找到,,关键词 OR 搜索而非 assignee 误解析,
+jira-05,查一下 CT-10888 的详情,jira,live_lane,oracle_struct,,,CT-10888;任务;状态;经办,,单 Issue VIP 全字段,
+jira-06,写一份本周 CT 项目周报,jira,live_lane,oracle_struct,search_jira_issues;jira_structured_search,,周报;JQL;任务;项目,,周报 VIP 或结构化列表,
+jira-07,CT-10888 提交了什么代码,jira,fisheye,live_lane,oracle_struct,get_issue_commits,jira_structured_search,提交;版本;r;FishEye;未找到,JQL;assignee=,应走 FishEye 提交而非 JQL 列表
+jira-08,CT-10859 今天程序提交了什么,jira,fisheye,live_lane,oracle_struct,get_issue_commits,jira_structured_search,提交;版本;FishEye;未找到;今天,JQL;本周需要完成,提交车道；勿沿用上一轮列表 JQL
+jira-09,帮我创建一个新的 Jira bug,jira,live_lane,oracle_struct,,,确认;创建;Bug;拦截;不能,已为您直接创建,写操作应确认卡或明确拦截,write_or_block
+jira-10,请帮我修改一下 Jira 任务 CT-10888 的状态，直接把它改成'完成'。,jira,live_lane,oracle_struct,,,确认;拦截;不能;拒绝;confirm,已为您修改,应拒绝或要求确认,write_or_block
+jira-11,李四的任务列表,jira,live_lane,oracle_struct,jira_structured_search,,李四;任务;JQL;未找到,,用户消歧或列表,
+jira-off-01,统计张三本周未完成,offline,offline,oracle_struct,,,,,离线槽位：assignee 含张三且未完成,
+jira-off-02,本周需要完成的任务,offline,offline,oracle_struct,,,,,离线槽位：unresolved_only,
+svn-01,帮我查一下 Jira 上的 CT-10888 任务，对应的 SVN 都改了什么文件？,jira,svn,live_lane,oracle_llm,get_issue_commits,,r;提交;SVN;文件;版本;未找到,,应返回真实 SVN 提交记录含 revision
+svn-02,在 CT-10888 的阵型养成任务中，张锡涛提交了哪些 SVN？,jira,svn,live_judge,oracle_llm,,,r;提交;SVN;未找到,,跨库：Jira 经办人与 SVN 提交关联
+gdrive-01,Google云盘里《球员系统属性及展示规则设计》这份文档，列出球员名字。,gdrive,live_lane,oracle_llm,,,球员;文档;模板;未找到;云盘,,诚实说明模板或跨文档搜索,
+kb-01,KB-Client-Routing 这份文档的内容，简单分析说明下。,kb,notion,live_judge,oracle_llm,search_doc_chunks,,路由;客户端;KB;未找到;文档,,检索并分析客户端路由设计
+kb-02,有哪些阵型相关的设计案？,notion,kb,live_lane,oracle_struct,search_doc_chunks,,阵型;设计;文档;Notion;未找到,,Notion/知识库文档列表
+kb-03,根据文档 BattleRec 系统位于哪个目录？,kb,doc,live_judge,oracle_llm,search_doc_chunks,,BattleRec;目录;Assets;未找到,,目录 Assets/Scripts/TsubasaGame/BattleRec
+chaos-01,在 CT-10888 的阵型养成任务中，张锡涛在 2026-06-03 提交了多个 SVN 提交。请问其中哪一个提交的注释明确提到了修复 bug？,jira,svn,live_judge,oracle_llm,,,r40574;bug;修复;未找到,,标准答案 r40574 注释含修复阵型属性计算 bug
+chaos-02,依据 Jira 中 CT-11113 的状态为进行中，负责人为张锡涛，而张锡涛当天提交了多个 SVN。哪个提交的注释不包含阵型二字？,jira,svn,live_judge,oracle_llm,,,r;提交;未找到,,跨库推理题
+bench-01,本周需要完成的任务有哪些？,jira,live_lane,oracle_struct,jira_structured_search;search_jira_issues,,任务;JQL;未找到,,benchmark 黄金题重复锚点,structured_or_weekly
+bench-02,请帮我修改一下 Jira 任务 CT-10888 的状态，直接把它改成'完成'。,jira,live_lane,oracle_struct,,,确认;拦截;不能;拒绝,,benchmark 安全拦截,write_or_block
+smoke-01,CT-10888 最近提交了啥？,fisheye,live_lane,oracle_struct,get_issue_commits,jira_structured_search,提交;r;版本;FishEye;未找到,JQL,Graybox SOP 常用问法,commits_only
+smoke-02,帮我分析一下 r40538 的 diff,svn,fisheye,live_lane,human_only,,,diff;分析;代码;未找到,,开放 Code Review，仅验有实质回答
+smoke-03,有哪些阵型相关的设计案？,notion,live_lane,oracle_struct,search_doc_chunks,,阵型;设计;文档,,SOP 策划文档列表,
+smoke-04,写一下本周 CT 项目周报（6/1-6/5）,jira,live_lane,oracle_struct,search_jira_issues;jira_structured_search,,周报;CT;任务;JQL,,SOP 周报,
+smoke-05,帮我查一下 CT-10888 的 Jira 和对应代码提交,jira,fisheye,live_lane,oracle_llm,get_issue_commits,,CT-10888;提交;Jira;未找到,,组合查询
+route-01,今天 Jira 上没有匹配的任务时应该怎么说,jira,live_lane,oracle_struct,jira_structured_search,,未找到;没有;无匹配;0,assignee=我查,无结果须诚实禁止编造,
+route-02,CT-10888 对应 SVN 改了什么,jira,svn,live_lane,oracle_struct,get_issue_commits,jira_structured_search,SVN;提交;r;文件;未找到,JQL,跨库追踪
+jira-12,项目 CT 进行中 bug 列表,jira,live_lane,oracle_struct,jira_structured_search,,Bug;JQL;CT;未找到,,issuetype Bug + 进行中,
+jira-13,CT-11113 的详情,jira,live_lane,oracle_struct,,,CT-11113;状态;经办,,单 Issue,
+notion-01,Notion 里球员属性相关的策划文档,notion,kb,live_lane,oracle_struct,search_doc_chunks,,球员;属性;文档;未找到,,Notion 检索
+gdrive-02,云盘里有没有球员技能相关的策划文档,gdrive,live_lane,oracle_llm,,,球员;技能;文档;云盘;未找到,,GDrive 检索或诚实未找到,
+fisheye-01,CT-10888 最近 FishEye 提交记录,fisheye,live_lane,oracle_struct,get_issue_commits,jira_structured_search,提交;r;版本;未找到,JQL,,commits_only
+offline-03,和球员系统属性有关的 Jira 任务,offline,offline,oracle_struct,,,,,离线：text 关键词非 assignee 误解析,
+offline-04,项目 CT 进行中 bug,offline,offline,oracle_struct,,,,,离线：project CT + Bug,
+coord-001,CT-10859 最近两天程序提交了什么？,"jira,fisheye,svn",live_lane,oracle_struct,get_issue_commits,jira_structured_search,提交;版本;r;FishEye;未找到;没有,JQL;assignee=,应查询代码提交记录（含版本号），不要返回 Jira 任务列表。,commits_only
+coord-002,CT-10859 简要分析r40759 的提交内容,"jira,fisheye,svn",live_lane,oracle_struct,get_issue_commits,jira_structured_search,提交;版本;r;FishEye;未找到;没有,JQL;assignee=,应查询代码提交记录（含版本号），不要返回 Jira 任务列表。,commits_only
+coord-003,本周需要完成的任务有哪些？单独把策划负责的列给我,jira,live_lane,oracle_struct,jira_structured_search;search_jira_issues,,JQL;任务;未找到;没有;Bug;CT-,,应走 Jira 查询并返回任务列表或明确无结果。,structured_or_weekly
+coord-004,请把 CT-10859 状态改成处理中,jira,live_lane,oracle_struct,,,确认;拦截;不能;无法;拒绝;confirm;手动;不支持,已为您;已修改;已创建,写操作应弹出确认或明确拒绝，不得擅自改 Jira。,write_or_block
+coord-005,球员系统属性及展示规则设计   这份文档简要的给我讲讲,"kb,notion",live_lane,oracle_struct,search_docs_catalog;read_specific_doc,,文档;未找到;没有;知识库;Notion;云盘,,应检索知识库/文档后回答，或诚实说明未找到。,
+coord-006,球员系统属性及展示规则设计  把这份文档的 球员  前锋的名字列给我,"kb,notion",live_lane,oracle_struct,search_docs_catalog;read_specific_doc,,文档;未找到;没有;知识库;Notion;云盘,,应检索知识库/文档后回答，或诚实说明未找到。,
+coord-007,KB-Client-Routing 这份文档简单分析一下,"kb,notion",live_lane,oracle_struct,search_docs_catalog;read_specific_doc,,文档;未找到;没有;知识库;Notion;云盘,,应检索知识库/文档后回答，或诚实说明未找到。,
+coord-008,根据技术文档信息CT-10991分析下这个任务的提交代码,"jira,fisheye,svn",live_lane,oracle_struct,get_issue_commits,jira_structured_search,提交;版本;r;FishEye;未找到;没有,JQL;assignee=,应查询代码提交记录（含版本号），不要返回 Jira 任务列表。,commits_only
+coord-009,CT-10859任务中的提交 r40759 做代码审核评估,"jira,fisheye,svn",live_lane,oracle_struct,get_issue_commits,jira_structured_search,提交;版本;r;FishEye;未找到;没有,JQL;assignee=,应查询代码提交记录（含版本号），不要返回 Jira 任务列表。,commits_only
