@@ -86,7 +86,7 @@ export const App: React.FC = () => {
       if (!res.ok) { setError(`HTTP ${res.status}`); return; }
       if (!res.body) { setError('ReadableStream 不可用'); return; }
 
-      // 5. 吐真剂协议：暴力接收后端原始数据，不做任何解析
+      // 5. SSE 逐行解析 — 严谨提取 content，错误隔离
       const reader = res.body.getReader();
       const decoder = new TextDecoder('utf-8');
       let aiContent = '';
@@ -94,17 +94,40 @@ export const App: React.FC = () => {
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
+
         const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
 
-        // 强行打印到浏览器控制台
-        console.log('📦 收到后端原始数据包:', chunk);
+        for (const line of lines) {
+          if (line.trim() === '' || !line.startsWith('data: ')) continue;
+          if (line.includes('[DONE]')) continue;
 
-        // 暴力塞进气泡（不做任何 parse！）
-        aiContent += chunk;
-        useSessionStore.getState().updateMessages(activeId, [
-          ...withUser,
-          { id: aiMsgId, role: 'assistant' as const, content: aiContent }
-        ]);
+          try {
+            const jsonStr = line.slice(6).trim();
+            if (!jsonStr) continue;
+
+            const data = JSON.parse(jsonStr);
+
+            // 1. 提取大模型回复文本
+            if (data.choices && data.choices[0]?.delta?.content) {
+              aiContent += data.choices[0].delta.content;
+            }
+
+            // 2. Agent 状态日志
+            if (data.custom_type === 'agent_step') {
+              console.log(`🤖 Agent 思考中: 步骤 ${data.step}/${data.max_steps}`);
+            }
+
+            // 3. 实时更新气泡
+            useSessionStore.getState().updateMessages(activeId, [
+              ...withUser,
+              { id: aiMsgId, role: 'assistant' as const, content: aiContent }
+            ]);
+
+          } catch {
+            // 非标准 JSON / 截断数据 → 静默跳过，不污染 UI
+          }
+        }
       }
     } catch (err: any) {
       if (err.name === 'AbortError') return; // 用户主动停止，不报错
