@@ -54,7 +54,20 @@ from chat_pipeline.dsml_cleaner import (
     sse_line_has_dsml_leak,
 )
 from saas_http import saas_request, get_http_proxies
-from chat_pipeline.vip_fastpath import VipFastpathContext, iter_vip_fastpath
+from chat_orchestrator import (
+    prepare_orchestrator_context,
+    iter_preflight_sse,
+    clean_chat_messages,
+    last_user_message_text as _orch_last_user_text,
+    build_chat_only_messages,
+    iter_llm_sse_messages,
+    CHAT_ONLY_SYSTEM,
+)
+from plugin_gateway import (
+    collect_draft_sse_chunks as _collect_draft_sse_chunks,
+    collect_jira_write_sse_chunks as _collect_jira_write_sse_chunks,
+    heuristic_issues_drafts as _heuristic_issues_drafts,
+)
 from knowledge_retriever import (
     BoundedCache, _CONTEXT_CACHE, _SEMANTIC_CACHE, _SVN_COMMIT_CACHE,
     CACHE_TTL, make_source_summary, classify_file_changes,
@@ -1579,110 +1592,9 @@ def _iter_jira_structured_read_lane(user_text, frontend_cfg, user_cfg, vip_strea
     yield from vip_stream_fn(_read_prompt, _fallback2)
 
 
-def _collect_jira_write_sse_chunks(user_text, user_cfg, intent_info) -> list:
-    """Jira 写操作直通车：返回 confirm_card SSE 块列表（避免空 generator 漏进 ReAct）。"""
-    from jira_search_engine import (
-        is_jira_transition_write_request,
-        parse_jira_transition_target,
-        ISSUE_KEY_RE,
-    )
-    from jira_operation_manager import (
-        create_transition_operation_card,
-        save_operation,
-        build_confirm_tool_response,
-    )
-
-    if not is_jira_transition_write_request(user_text, intent_info.get("route", "")):
-        return []
-
-    m = ISSUE_KEY_RE.search(user_text)
-    if not m:
-        return []
-    issue_key = m.group(1).upper()
-    target = parse_jira_transition_target(user_text)
-
-    op = create_transition_operation_card(
-        issue_key=issue_key,
-        target_status=target,
-        transition_id="",
-        transition_name="",
-        to_status="",
-    )
-    save_operation(op)
-    preview = (
-        f"【操作确认卡】已生成。即将把 **{issue_key}** 流转到「{target}」。\n"
-        f"请在确认卡上点击授权后执行；Alice 不会未经您确认直接修改 Jira。\n"
-        f"（您拥有完整改状态权限，系统仅做安全确认，并非无权限。）"
-    )
-    payload = build_confirm_tool_response(op, preview)
-    return [
-        f"data: {json.dumps({'_event': 'confirm_card', 'op_id': op['id'], 'operation': payload.get('operation'), 'preview': preview}, ensure_ascii=False)}\n\n".encode("utf-8"),
-        f"data: {json.dumps({'choices': [{'delta': {'content': preview}}]}, ensure_ascii=False)}\n\n".encode("utf-8"),
-    ]
-
-
 def _iter_jira_write_express_lane(user_text, user_cfg, intent_info):
     for chunk in _collect_jira_write_sse_chunks(user_text, user_cfg, intent_info):
         yield chunk
-
-
-def _heuristic_issues_drafts(user_text: str) -> list:
-    """无 LLM 时的批量草稿兜底（第四战役单测用）。"""
-    t = user_text or ""
-    count = 3
-    m = re.search(r"(\d+)\s*个", t)
-    if m:
-        try:
-            count = min(max(int(m.group(1)), 1), 20)
-        except ValueError:
-            count = 3
-    topic = "UI 优化"
-    m2 = re.search(r"关于(.+?)(?:的\s*)?(?:Jira|任务|issue|bug)?", t, re.I)
-    if m2 and m2.group(1).strip():
-        topic = m2.group(1).strip()[:60]
-    elif re.search(r"UI|界面|前端", t, re.I):
-        topic = "UI 优化"
-    return [
-        {
-            "summary": f"{topic} — {i + 1}",
-            "projectKey": "CT",
-            "issueType": "Task",
-            "description": f"草拟自用户描述：{t[:300]}",
-        }
-        for i in range(count)
-    ]
-
-
-def _collect_draft_sse_chunks(
-    user_text: str,
-    issues_list: list = None,
-    conversation_id: str = "",
-) -> list:
-    """草稿箱直通车：draft_card SSE，禁止直写 Jira。"""
-    from jira_operation_manager import (
-        create_issues_draft,
-        build_draft_tool_response,
-    )
-
-    items = issues_list if issues_list else _heuristic_issues_drafts(user_text)
-    draft = create_issues_draft(
-        items,
-        source_text=user_text,
-        conversation_id=conversation_id or "",
-    )
-    payload = build_draft_tool_response(draft)
-    preview = payload.get("result", "")
-    card_evt = {
-        "_event": "draft_card",
-        "draft_id": draft["id"],
-        "items": payload.get("items") or [],
-        "warnings": payload.get("warnings") or [],
-        "preview": preview,
-    }
-    return [
-        f"data: {json.dumps(card_evt, ensure_ascii=False)}\n\n".encode("utf-8"),
-        f"data: {json.dumps({'choices': [{'delta': {'content': preview}}]}, ensure_ascii=False)}\n\n".encode("utf-8"),
-    ]
 
 
 def execute_tool_call(tool_name: str, arguments_str, user_cfg=None, frontend_cfg=None) -> str:
@@ -1905,70 +1817,19 @@ def _last_user_message_text(messages: list) -> str:
     return ""
 
 
-CHAT_ONLY_SYSTEM = """你是 Alice，团队内的 Jira 与知识库 AI 工作助理。
-
-当前为闲聊模式：用户没有提出具体的查任务、搜文档或代码提交类需求。
-- 用自然、简短的中文回复（通常 2～4 句），像同事打招呼，不要机械罗列功能清单。
-- 禁止调用任何工具，禁止编造 Jira Issue、文档或提交记录。
-- 若用户顺便问你能做什么，可轻描淡写提一句可查任务/文档，不要展开成固定模板。"""
-
-
 def _build_chat_only_messages(user_text: str) -> list:
-    system = CHAT_ONLY_SYSTEM
-    try:
-        from memory_manager import format_memory_for_prompt
-
-        mem = format_memory_for_prompt()
-        if mem:
-            system += f"\n\n{mem}"
-    except Exception:
-        pass
-    return [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user_text},
-    ]
+    return build_chat_only_messages(user_text)
 
 
-def _iter_llm_sse_messages(
-    messages: list,
-    user_cfg: dict,
-    headers: dict,
-    *,
-    temperature: float = 0.65,
-):
-    """无 tools 的流式 LLM（闲聊道）。"""
-    try:
-        vip_resp = http.post(
-            DEEPSEEK_URL,
-            headers=headers,
-            json={
-                "model": user_cfg["deepseek_model"],
-                "messages": messages,
-                "stream": True,
-                "temperature": temperature,
-            },
-            stream=True,
-            timeout=90,
-        )
-        _yielded = False
-        for raw_line in vip_resp.iter_lines():
-            if raw_line:
-                decoded = raw_line.decode("utf-8", errors="replace")
-                if sse_line_has_dsml_leak(decoded):
-                    continue
-                _yielded = True
-                yield raw_line + b"\n"
-        if not _yielded:
-            fallback = "你好，我是 Alice。有需要查任务或文档时，直接告诉我就好。"
-            yield (
-                f"data: {json.dumps({'choices': [{'delta': {'content': fallback}}]}, ensure_ascii=False)}\n\n"
-            ).encode("utf-8")
-    except Exception as exc:
-        logger.error(f"[ChatOnly] Stream failed: {exc}")
-        err = "⚠️ 闲聊回复暂时不可用，请稍后重试。"
-        yield (
-            f"data: {json.dumps({'choices': [{'delta': {'content': err}}]}, ensure_ascii=False)}\n\n"
-        ).encode("utf-8")
+def _iter_llm_sse_messages(messages, user_cfg, headers, *, temperature=0.65):
+    return iter_llm_sse_messages(
+        messages,
+        user_cfg,
+        headers,
+        deepseek_url=DEEPSEEK_URL,
+        http_post=http.post,
+        temperature=temperature,
+    )
 
 
 @app.route("/v1/chat/completions", methods=["POST", "OPTIONS"])
@@ -2044,181 +1905,31 @@ def chat_completions():
         max_steps = frontend_cfg.get("max_steps", 5)
         step = 0
 
-        # ── 消息清洗 ─────────────────────────────────
-        cleaned_msgs = []
-        for msg in messages:
-            if isinstance(msg.get("content"), str):
-                cleaned_msgs.append(msg)
-            elif isinstance(msg.get("content"), list):
-                text = "".join(item.get("text","") for item in msg["content"]
-                              if item.get("type") == "text")
-                cleaned_msgs.append({"role": msg["role"], "content": text})
-
-        user_text = _last_user_message_text(cleaned_msgs)
-
-        intent_info = (
-            classify_intent(user_text)
-            if user_text
-            else {"route": "ordinary_chat", "reason": "empty_text"}
+        orch_ctx = prepare_orchestrator_context(
+            messages,
+            user_cfg,
+            frontend_cfg,
+            headers,
+            conversation_id,
+            intent_label,
+            active_tools,
+            deepseek_url=DEEPSEEK_URL,
+            http_post=http.post,
+            jira_client=jira,
+            exec_search_docs_catalog=_exec_search_docs_catalog,
+            exec_read_specific_doc=_exec_read_specific_doc,
+            build_weekly_jira_snapshot=_build_weekly_jira_snapshot,
+            iter_jira_structured_read_lane=_iter_jira_structured_read_lane,
         )
-        # ── 意图分类（Baize 风格：危险拦截 / 写操作提示）────────
-        if user_text and intent_info.get("route") == "dangerous":
-            block_msg = (
-                "【Alice】检测到高风险操作请求，已拦截。"
-                f"（{intent_info.get('reason', 'dangerous')}）"
-            )
-            yield f"data: {json.dumps({'choices': [{'delta': {'content': block_msg}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-            yield b"data: [DONE]\n\n"
+        cleaned_msgs = orch_ctx.cleaned_msgs
+        user_text = orch_ctx.user_text
+        intent_info = orch_ctx.intent_info
+        issue_keys_found = orch_ctx.issue_keys_found
+
+        for _chunk in iter_preflight_sse(orch_ctx):
+            yield _chunk
+        if orch_ctx.terminated:
             return
-
-        # ── 浅层记忆写入（「请记住…」）────────────────────────
-        if user_text:
-            try:
-                from memory_manager import try_capture_memory_from_message
-                _mem_entry = try_capture_memory_from_message(user_text)
-                if _mem_entry:
-                    _mem_ack = (
-                        f"【已记住】{_mem_entry.get('text', '')}\n"
-                        "该规则已写入团队浅层记忆，后续对话将自动注入上下文。"
-                    )
-                    yield f"data: {json.dumps({'choices': [{'delta': {'content': _mem_ack}}]}, ensure_ascii=False)}\n\n".encode("utf-8")
-                    yield b"data: [DONE]\n\n"
-                    return
-            except Exception as _mem_e:
-                logger.warning(f"[Memory] capture failed: {_mem_e}")
-
-        # ── 闲聊道：无工具 LLM，单轮上下文（不附带会话历史，避免续写上一轮关键词）──
-        if user_text and should_use_chat_only_lane(user_text, intent_info, intent_label):
-            logger.info("[ChatOnly] ordinary_chat → LLM stream (no tools, single-turn)")
-            yield from _iter_llm_sse_messages(
-                _build_chat_only_messages(user_text),
-                user_cfg,
-                headers,
-            )
-            yield b"data: [DONE]\n\n"
-            return
-
-        # ══════════════════════════════════════════════════════════
-        #  草稿箱直通车（draft_card → [DONE]，禁止直写 Jira）
-        # ══════════════════════════════════════════════════════════
-        if user_text:
-            try:
-                from intent_classifier import is_jira_draft_request
-                _is_draft = (
-                    intent_info.get("route") == "jira_draft"
-                    or is_jira_draft_request(user_text)
-                )
-            except ImportError:
-                _is_draft = intent_info.get("route") == "jira_draft"
-        else:
-            _is_draft = False
-        if user_text and _is_draft:
-            try:
-                _draft_chunks = _collect_draft_sse_chunks(
-                    user_text,
-                    conversation_id=conversation_id,
-                )
-                for _chunk in _draft_chunks:
-                    yield _chunk
-                if _draft_chunks:
-                    logger.info("[Plugin-Gateway] Jira draft express lane — draft_card sent, stream terminated")
-                    yield b"data: [DONE]\n\n"
-                    return
-            except Exception as _jde:
-                logger.warning(f"[DraftBox] express lane error: {_jde}")
-
-        # ══════════════════════════════════════════════════════════
-        #  Jira 写直通车 / 微型 Plugin-Gateway（确认卡后立即 [DONE]）
-        # ══════════════════════════════════════════════════════════
-        if user_text:
-            try:
-                from jira_search_engine import is_jira_transition_write_request as _is_jira_tr_write
-            except ImportError:
-                _is_jira_tr_write = lambda _t, _r="": False
-        if user_text and (
-            intent_info.get("route") == "jira_write"
-            or _is_jira_tr_write(user_text, intent_info.get("route", ""))
-        ):
-            try:
-                _write_chunks = _collect_jira_write_sse_chunks(user_text, user_cfg, intent_info)
-                for _chunk in _write_chunks:
-                    yield _chunk
-                if _write_chunks:
-                    logger.info("[Plugin-Gateway] Jira write express lane — confirm_card sent, stream terminated")
-                    yield b"data: [DONE]\n\n"
-                    return
-            except Exception as _jwe:
-                logger.warning(f"[JiraWrite] express lane error: {_jwe}")
-                _werr = f"【Alice】Jira 写操作处理失败：{str(_jwe)[:150]}"
-                yield f"data: {json.dumps({'choices': [{'delta': {'content': _werr}}]}, ensure_ascii=False)}\n\n".encode("utf-8")
-                yield b"data: [DONE]\n\n"
-                return
-
-        # ── Issue Key 预检测 ────────────────────────
-        issue_keys_found = set()
-        if user_text:
-            found = re.findall(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])', user_text)
-            issue_keys_found.update(found)
-        
-        # ══════════════════════════════════════════════════════════
-        #  VIP 共享: 流式输出辅助函数 (Diff VIP 和 Catalog VIP 共用)
-        # ══════════════════════════════════════════════════════════
-        def _vip_stream(prompt: str, fallback_text: str = ""):
-            """VIP 直通车: 纯 prompt → LLM stream (无 tools, 不经过 ReAct)"""
-            _msgs = [{"role": "user", "content": prompt}]
-            logger.info(f"[VIP] Direct stream ({len(prompt)} chars), no tools, no ReAct")
-            try:
-                vip_resp = http.post(DEEPSEEK_URL, headers=headers, json={
-                    "model": user_cfg["deepseek_model"],
-                    "messages": _msgs,
-                    "stream": True,
-                    "temperature": 0.1
-                }, stream=True, timeout=90)
-                _yielded = False
-                for raw_line in vip_resp.iter_lines():
-                    if raw_line:
-                        decoded = raw_line.decode('utf-8', errors='replace')
-                        if sse_line_has_dsml_leak(decoded):
-                            continue
-                        _yielded = True
-                        yield raw_line + b"\n"
-                if not _yielded and fallback_text:
-                    yield f"data: {json.dumps({'choices':[{'delta':{'content': fallback_text}}]}, ensure_ascii=False)}\n\n".encode('utf-8')
-            except Exception as _ve:
-                logger.error(f"[VIP] Stream failed: {_ve}")
-                yield f"data: {json.dumps({'choices':[{'delta':{'content':'⚠️ 系统底层数据服务暂不可用（SVN或知识库异常），请联系管理员或稍后重试。'}}]})}\n\n".encode('utf-8')
-
-        # ══════════════════════════════════════════════════════════
-        #  VIP 快车道 Pipeline（知识库 / Diff RAG / 周报 / Issue / Jira 结构化）
-        # ══════════════════════════════════════════════════════════
-        try:
-            _vip_ctx = VipFastpathContext(
-                user_text=user_text or "",
-                issue_keys_found=issue_keys_found,
-                intent_label=intent_label,
-                intent_route=intent_info.get("route", ""),
-                user_cfg=user_cfg,
-                frontend_cfg=frontend_cfg,
-                vip_stream=_vip_stream,
-                exec_search_docs_catalog=_exec_search_docs_catalog,
-                exec_read_specific_doc=_exec_read_specific_doc,
-                build_weekly_jira_snapshot=_build_weekly_jira_snapshot,
-                iter_jira_structured_read_lane=_iter_jira_structured_read_lane,
-                jira_http=jira,
-            )
-            _vip_gen = iter_vip_fastpath(_vip_ctx)
-            _vip_handled = False
-            while True:
-                try:
-                    yield next(_vip_gen)
-                except StopIteration as _vip_stop:
-                    _vip_handled = bool(_vip_stop.value)
-                    break
-            if _vip_handled:
-                yield b"data: [DONE]\n\n"
-                return
-        except Exception as _vip_err:
-            logger.warning(f"[VIP] Fastpath pipeline skipped: {_vip_err}")
 
         # ══════════════════════════════════════════════════════════
         #  V2.0 LangGraph Plan-and-Execute 大脑 (优先)
