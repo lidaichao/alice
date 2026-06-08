@@ -15,3 +15,7 @@
 
 - 改动 `backend/ai_bridge.py` 后需重启 `python ai_bridge.py`（9099）。
 - 不提交 `global_config.json`、`.env` 及含密钥文件。
+
+## 架构宪法 C9（最高红线）
+
+禁止在任何路由或检索代码中硬编码业务名词。项目差异必须通过 Admin 或 `tenant_synonyms.json` 解决。

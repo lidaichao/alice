@@ -1229,30 +1229,96 @@ except ImportError:
 #  所有工具通过标准 DeepSeek API Tool Calling 协议调用,
 #  LLM 自主决策工具的选择、顺序和参数,Python 代码只负责执行。
 # ═══════════════════════════════════════════════════════════════
+def _strip_html(text: str) -> str:
+    """移除 HTML 标签和实体，返回纯文本"""
+    if not text:
+        return ""
+    import re
+    # 移除 HTML 标签
+    text = re.sub(r"<[^>]+>", " ", text)
+    # 常见 HTML 实体
+    text = (
+        text.replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", '"')
+        .replace("&#39;", "'")
+        .replace("&rsquo;", "'")
+        .replace("&ldquo;", '"')
+        .replace("&rdquo;", '"')
+        .replace("&#x27;", "'")
+    )
+    # 压缩多余空白
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
 
 def _exec_query_jira_metadata(args: dict, user_pat: str = "", **kwargs) -> str:
-    """工具1: 获取 Jira 任务元数据 (仅标题/状态/经办人 — 轻量级)"""
+    """工具: 获取 Jira 任务详情（优先用 simplify_issue + 描述摘要 + 最新评论）"""
     issue_key = args.get("issue_key", "").strip()
     if not issue_key:
         return json.dumps({"status": "error", "result": "缺少 issue_key 参数"})
     try:
         resp = jira.jira_get(
-            f"{jira.api_url}/issue/{issue_key}?fields=summary,issuetype,status,assignee",
-            timeout=10, user_pat=user_pat
+            f"{jira.api_url}/issue/{issue_key}"
+            "?fields=summary,issuetype,status,assignee,priority,created,updated,duedate,description,project,comment"
+            "&expand=renderedFields",
+            timeout=10, user_pat=user_pat,
         )
         if resp.status_code == 200:
-            f = resp.json().get("fields", {})
-            return json.dumps({"status": "ok", "result": {
-                "key": issue_key,
-                "title": f.get("summary", ""),
-                "type": f.get("issuetype", {}).get("name", ""),
-                "status": f.get("status", {}).get("name", ""),
-                "assignee": (f.get("assignee") or {}).get("displayName", "未分配"),
-                "url": f"{jira.base_url}/browse/{issue_key}"
-            }}, ensure_ascii=False)
-        return json.dumps({"status": "error", "result": f"Issue {issue_key} 查询失败 (HTTP {resp.status_code})"})
+            data = resp.json()
+            from jira_search_engine import simplify_issue
+            simplified = simplify_issue(data)
+
+            fields = data.get("fields", {})
+
+            # 描述摘要（尝试 renderedFields，降级到纯文本）
+            desc = ""
+            rendered = data.get("renderedFields", {})
+            if rendered.get("description"):
+                desc = _strip_html(rendered["description"])[:500]
+            elif fields.get("description"):
+                desc_raw = fields["description"]
+                if isinstance(desc_raw, dict):
+                    desc = _strip_html(str(desc_raw.get("content", desc_raw)))[:500]
+                elif isinstance(desc_raw, str):
+                    desc = _strip_html(desc_raw)[:500]
+
+            # 最新评论摘要（最近 3 条，每条 ≤200 字）
+            comments = []
+            comment_data = fields.get("comment") or {}
+            raw_comments = comment_data.get("comments", [])
+            if isinstance(raw_comments, list) and raw_comments:
+                for c in raw_comments[-3:]:
+                    body = _strip_html(c.get("body", ""))[:200]
+                    author = (c.get("author") or {}).get("displayName", "未知")
+                    comments.append({
+                        "author": author,
+                        "body": body,
+                        "created": c.get("created"),
+                    })
+
+            result = {
+                "key": simplified.get("key", issue_key),
+                "title": simplified.get("summary", ""),
+                "type": simplified.get("issueType", ""),
+                "status": simplified.get("status", ""),
+                "assignee": simplified.get("assignee"),
+                "priority": simplified.get("priority", ""),
+                "created": simplified.get("created"),
+                "updated": simplified.get("updated"),
+                "duedate": simplified.get("duedate"),
+                "description": desc,
+                "comments": comments,
+                "url": f"{jira.base_url}/browse/{issue_key}",
+            }
+            return json.dumps({"status": "ok", "result": result}, ensure_ascii=False)
+        return json.dumps({"status": "error",
+                           "result": f"Issue {issue_key} 查询失败 (HTTP {resp.status_code})"})
     except Exception as e:
-        return json.dumps({"status": "error", "result": f"Jira 查询异常: {str(e)[:200]}"})
+        return json.dumps({"status": "error",
+                           "result": f"Jira 查询异常: {str(e)[:200]}"})
 
 
 def _exec_get_issue_commits(args: dict, **kwargs) -> str:
@@ -1284,6 +1350,9 @@ def _exec_get_single_commit_diff(args: dict, **kwargs) -> str:
         return json.dumps({"status": "ok", "result": f"版本 {revision_id} 暂无 Diff 内容"})
     except Exception as e:
         return json.dumps({"status": "error", "result": f"Diff 检索异常: {str(e)[:200]}"})
+
+
+from workspace_tools import _exec_read_file, _exec_search_code, _exec_svn_log, _exec_list_directory
 
 
 def _exec_search_docs_catalog(args: dict, user_text: str = "", **kwargs) -> str:
@@ -1621,7 +1690,41 @@ def _exec_search_jira_issues(args: dict, user_pat: str = "", frontend_cfg: dict 
         from jira_runtime_config import load_jira_runtime_config
 
         rt_cfg = load_jira_runtime_config(frontend_cfg or {})
-        query = parse_query_from_natural_language(keyword, rt_cfg)
+
+        # ── P1-1: LLM 结构化查询优先（失败降级 regex 规则槽位）──
+        query = None
+        try:
+            from jira_query_builder import parse_query_llm
+            structured = parse_query_llm(keyword)
+            if structured:
+                query = JiraSearchQuery(max_results=rt_cfg.max_search_results)
+                if structured.get("assignee"):
+                    query.assignees = [structured["assignee"]]
+                if structured.get("status"):
+                    query.statuses = [structured["status"]]
+                if structured.get("projectKey"):
+                    query.project_key = structured["projectKey"]
+                if structured.get("issueType"):
+                    query.issue_types = [structured["issueType"]]
+                if structured.get("text"):
+                    query.text = structured["text"]
+                if structured.get("updatedAfter"):
+                    query.updated_after = structured["updatedAfter"]
+                if structured.get("updatedBefore"):
+                    query.updated_before = structured["updatedBefore"]
+                if structured.get("maxResults"):
+                    query.max_results = int(structured["maxResults"])
+                if structured.get("orderBy"):
+                    query.order_by = structured["orderBy"]
+                logger.info(
+                    "[search_jira_issues] LLM parsed: %s",
+                    json.dumps(structured, ensure_ascii=False),
+                )
+        except Exception as _ql_e:
+            logger.warning("[search_jira_issues] LLM query builder failed: %s", _ql_e)
+
+        if query is None:
+            query = parse_query_from_natural_language(keyword, rt_cfg)
         if not query.text and not query.assignees:
             query.text = keyword
         if args.get("project_key"):
@@ -1659,6 +1762,10 @@ _ATOMIC_TOOLS = {
     "search_docs_catalog":  ("search_docs_catalog",  _exec_search_docs_catalog),
     "read_specific_doc":    ("read_specific_doc",    _exec_read_specific_doc),
     "search_jira_issues":   ("search_jira_issues",   _exec_search_jira_issues),
+    "read_file":            ("read_file",            _exec_read_file),
+    "search_code":          ("search_code",          _exec_search_code),
+    "svn_log":              ("svn_log",              _exec_svn_log),
+    "list_directory":       ("list_directory",       _exec_list_directory),
 }
 
 def _rag_search(args: dict) -> str:
@@ -1678,6 +1785,10 @@ _TOOL_EXECUTORS = {
     "read_specific_doc": _exec_read_specific_doc,
     "search_jira_issues": _exec_search_jira_issues,
     "search_doc_chunks": lambda args: _rag_search(args),  # RAG 工具
+    "read_file": _exec_read_file,
+    "search_code": _exec_search_code,
+    "svn_log": _exec_svn_log,
+    "list_directory": _exec_list_directory,
 }
 
 
@@ -1778,6 +1889,12 @@ def execute_tool_call(
                 return json.dumps(build_draft_tool_response(draft), ensure_ascii=False)
             except Exception as e:
                 return json.dumps({"status": "error", "result": f"草稿箱失败: {str(e)[:200]}"})
+
+        # ── P1-4 受控代码分析工具（只读）─────────────────────
+        elif tool_name in ("read_file", "search_code", "svn_log", "list_directory"):
+            fn = _TOOL_EXECUTORS.get(tool_name)
+            if fn:
+                return fn(args)
 
         # 向后兼容: Jira 写操作确认卡 / 批量 → 草稿箱
         elif tool_name in ("add_jira_comment", "create_jira_issues", "create_issue"):

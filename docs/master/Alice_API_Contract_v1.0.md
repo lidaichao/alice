@@ -266,8 +266,8 @@ GET /operations/pending
 
 | 端点 | 方法 | 用途 |
 |------|------|------|
-| `/v1/admin/tasks/batch-analysis` | POST | 创建批量分析任务 |
-| `/v1/admin/tasks/<task_id>/status` | GET | 查询任务状态 |
+| `/v1/admin/tasks/batch-analysis` | POST | 创建批量分析任务（M2.8：返回 `admin_batch_task_id`） |
+| `/v1/admin/tasks/<admin_batch_task_id>/status` | GET | 查询任务状态 |
 
 ### 4.6 管理面板
 
@@ -300,23 +300,341 @@ GET /operations/pending
 
 ---
 
-## 六、API 全量汇总
+## 六、Mailbox 异步任务队列 (M2)
+
+> **存储**：SQLite `backend/data/mailbox.db`（宪法 **C8**：禁止 Redis / 重量级中间件）。
+>
+> **边界（C4 / M2.6）**：Mailbox **不存储** HITL 审批状态；`mailbox_task_id` 与 `operation_id` 必须区分使用。
+
+### 6.1 三种任务 ID 对照
+
+| 字段 | 用途 | 存储 | 状态机 |
+|------|------|------|--------|
+| `operation_id` | HITL Jira 写操作审批（确认卡） | `jira_operation_manager` / `operations.json` | `awaiting_confirmation` → `running` → `created` / `failed` / `rejected` |
+| `mailbox_task_id` | Agent 异步派工队列（Mailbox） | `mailbox_store` / SQLite `mailbox_tasks` | `pending` → `claimed` → `done` / `failed` |
+| `admin_batch_task_id` | Admin 批量分析（内存队列，M2.8 重命名） | `ai_bridge` 进程内 | 管理后台专用 |
+
+- `operation_id` 格式示例：`jira-op-<12 hex>`
+- `mailbox_task_id` 格式示例：`mbox-<12 hex>`
+- Mailbox 表中 `operation_id` 列仅为**可选引用**（例如任务完成后需关联某次审批），**不得**用其表达 Mailbox 或审批状态。
+
+### 6.2 任务结构体 `MailboxTask`
+
+```typescript
+interface MailboxTask {
+  id: string;                    // 同 mailbox_task_id
+  mailbox_task_id: string;       // 响应字段别名
+  status: "pending" | "claimed" | "done" | "failed";
+  assignee: string;              // 执行方标识（Agent / Worker 名）
+  payload: Record<string, unknown>;  // 派工负载（JSON 对象）
+  result?: unknown;              // 回报结果（M2.5 report 写入）
+  operation_id?: string | null;  // 可选：关联 HITL operation，非审批状态
+  created_at: string;            // ISO-like "YYYY-MM-DDTHH:MM:SS"
+  updated_at: string;
+}
+```
+
+**状态机**：`pending` → `claimed` → `done` | `failed`（非法转移返回 **409**，M2.5 实现）。
+
+### 6.3 派工 API（M2.3）
+
+```
+POST /v1/mailbox/dispatch
+```
+
+| 属性 | 值 |
+|------|-----|
+| **用途** | Agent / 编排器投递异步任务，获取 `mailbox_task_id` |
+| **Content-Type** | `application/json` |
+
+**Request Body**:
+
+```typescript
+interface MailboxDispatchRequest {
+  assignee: string;                        // 必填：拉取方标识
+  payload: Record<string, unknown>;        // 必填：任务负载
+  operation_id?: string;                   // 可选：关联已有 HITL operation
+}
+```
+
+**Response 200**:
+
+```json
+{
+  "ok": true,
+  "mailbox_task_id": "mbox-a1b2c3d4e5f6",
+  "task": {
+    "id": "mbox-a1b2c3d4e5f6",
+    "status": "pending",
+    "assignee": "cursor-agent",
+    "payload": { "kind": "kb_sync", "doc_id": "..." },
+    "operation_id": null,
+    "created_at": "2026-06-08T18:00:00",
+    "updated_at": "2026-06-08T18:00:00"
+  }
+}
+```
+
+**错误**：`400` — `assignee` 或 `payload` 缺失/非法。
+
+### 6.4 拉取 API（M2.4）
+
+```
+GET /v1/mailbox/tasks?status=pending&assignee=cursor-agent&limit=50
+```
+
+| Query | 说明 |
+|-------|------|
+| `status` | 可选：`pending` \| `claimed` \| `done` \| `failed` |
+| `assignee` | 可选：按执行方过滤 |
+| `limit` | 可选，默认 50，最大 200 |
+
+**Response 200**:
+
+```json
+{
+  "ok": true,
+  "tasks": [
+    {
+      "id": "mbox-a1b2c3d4e5f6",
+      "mailbox_task_id": "mbox-a1b2c3d4e5f6",
+      "status": "pending",
+      "assignee": "cursor-agent",
+      "payload": { "kind": "kb_sync" },
+      "result": null,
+      "operation_id": null,
+      "created_at": "2026-06-08T18:00:00",
+      "updated_at": "2026-06-08T18:00:00"
+    }
+  ]
+}
+```
+
+**错误**：`400` — 非法 `status` 或 `limit`。
+
+### 6.5 领取（claim）与回报 API（M2.5）
+
+**标准 Worker 流程**：`dispatch` → `GET tasks?status=pending` → **`POST .../claim`** → 执行负载 → **`POST .../report`**
+
+#### 领取 `pending` → `claimed`
+
+```
+POST /v1/mailbox/tasks/<mailbox_task_id>/claim
+```
+
+**Response 200**: `{ "ok": true, "task": { ..., "status": "claimed" } }`
+
+**错误**：`404` 任务不存在；`409` 非法状态转移（如已 `claimed`）。
+
+#### 回报 `claimed` → `done` | `failed`
+
+```
+POST /v1/mailbox/tasks/<mailbox_task_id>/report
+```
+
+**Request Body**:
+
+```typescript
+interface MailboxReportRequest {
+  status: "done" | "failed";
+  result?: Record<string, unknown>;  // status=done 时必填
+}
+```
+
+**Response 200**:
+
+```json
+{
+  "ok": true,
+  "task": {
+    "id": "mbox-a1b2c3d4e5f6",
+    "status": "done",
+    "result": { "ok": true, "rows": 3 },
+    "updated_at": "2026-06-08T18:05:00"
+  }
+}
+```
+
+**错误**：`400` — `status` 非法或 `done` 缺 `result`；`404` — 任务不存在；`409` — 非法状态转移（如 `pending` 直接 `report`）。
+
+### 6.6 MCP Mailbox Worker 工具（M2.7）
+
+通过 `GET /mcp/v1/tools` 与 `POST /mcp/v1/tools/<name>` 调用；实现委托 `mailbox_store`（与 REST 同 Store，无重复 SQL）。`risk: worker`，审计 `origin=mcp`，**非** jira_write 路径。
+
+| 工具名 | 参数 | 成功返回 |
+|--------|------|----------|
+| `mailbox_list_tasks` | `assignee?`, `status?`, `limit?` | `{ ok, tasks: MailboxTask[] }` |
+| `mailbox_claim_task` | `mailbox_task_id` | `{ ok, task }` — `pending→claimed` |
+| `mailbox_report_task` | `mailbox_task_id`, `status`(done\|failed), `result?` | `{ ok, task }` — `claimed→done\|failed` |
+
+**HTTP 错误码**：`400` 参数非法；`404` 任务不存在；`409` 非法状态转移。
+
+**调用示例**：
+
+```bash
+POST /mcp/v1/tools/mailbox_list_tasks
+{ "arguments": { "assignee": "cursor-agent", "status": "pending", "limit": 10 } }
+
+POST /mcp/v1/tools/mailbox_claim_task
+{ "arguments": { "mailbox_task_id": "mbox-abc123" } }
+
+POST /mcp/v1/tools/mailbox_report_task
+{ "arguments": { "mailbox_task_id": "mbox-abc123", "status": "done", "result": { "ok": true } } }
+```
+
+---
+
+## 七、用户身份与审批审计（M4.1–M4.3）
+
+客户端向 Hub 透传操作者身份，用于草稿/确认卡创建绑定与 confirm/reject 审批落盘。**禁止**各 Route 自行解析 header；统一 `user_identity.parse_user_id_from_request`。
+
+### 7.1 请求头与 Body（M4.1）
+
+| 通道 | 字段 | 说明 |
+|------|------|------|
+| Header | `X-Alice-User-Id` | 优先；前端经 `runtimeConfig.buildAliceUserHeaders()` 注入 |
+| Body | `user_id` | 次选；`buildJiraWriteRequestBody()` 同步写入 |
+| Body | `user_config.user_id` / `config.user_id` | 聊天 SSE `/v1/chat/completions` 兼容 |
+
+空 `user_id` 允许降级（内网 Hub 过渡期），Hub 打 info 日志。
+
+### 7.2 创建绑定（M4.2）
+
+`POST /drafts`、`create_issues_draft` / `create_operation_card`（tool、plugin_gateway、聊天快车道）将解析到的 `user_id` 写入草稿或 operation 的 `user_id` 字段（creator）。
+
+**`POST /drafts` 响应** 含 `user_id`；**`GET /drafts`** 列表项含 `user_id`。
+
+### 7.3 审批落盘（M4.3）
+
+| 动作 | 写入字段 |
+|------|----------|
+| `POST /operations/<id>/confirm` | `confirmed_by`（审批人 user_id）、`confirmed_at`（`YYYY-MM-DDTHH:MM:SS`） |
+| `POST /operations/<id>/reject` | `rejected_by`、`rejected_at` |
+
+**`GET /operations`** 与 **`GET /operations/<id>`** 响应含 creator + approver：
+
+```json
+{
+  "id": "jira-op-abc123",
+  "status": "rejected",
+  "user_id": "rabbit",
+  "confirmed_by": null,
+  "confirmed_at": null,
+  "rejected_by": "pm-alice",
+  "rejected_at": "2026-06-08T14:30:00"
+}
+```
+
+存储仅经 `jira_operation_manager` 状态机（C2：禁止第二套审批状态存储）。
+
+### 7.4 列表/UI 字段（M4.4）
+
+**`GET /operations`** 每条 operation 行含 `operation_audit_fields`：
+
+| 字段 | 含义 |
+|------|------|
+| `user_id` | 创建者（creator） |
+| `confirmed_by` / `confirmed_at` | 审批放行人与时间 |
+| `rejected_by` / `rejected_at` | 审批拒绝人与时间 |
+
+管控台 `OperationsConsole` 在待审批/失败列表展示上述字段。
+
+**列表响应片段**：
+
+```json
+{
+  "ok": true,
+  "operations": [
+    {
+      "id": "jira-op-abc123",
+      "status": "awaiting_confirmation",
+      "kind": "jira_bulk_create",
+      "user_id": "rabbit",
+      "confirmed_by": null,
+      "confirmed_at": null,
+      "rejected_by": null,
+      "rejected_at": null,
+      "operation": { "type": "bulk_create", "drafts_count": 1 }
+    }
+  ]
+}
+```
+
+### 7.5 审批权限（M4.5）
+
+配置来源：`backend/skills/registry.yaml` → `operation_approval`（`enabled`、`approver_user_ids`、`approver_roles`）。
+
+`POST /operations/<id>/confirm|reject` 解析 `X-Alice-User-Id` 后校验白名单；未授权返回 **403**：
+
+```json
+{ "ok": false, "error": "用户「xxx」无权执行操作审批（confirm），请联系管理员加入审批白名单" }
+```
+
+deny 须写入持久审计（见 §7.6）。
+
+### 7.6 持久审计 API（M4.6）
+
+append-only：`backend/data/audit.log`（JSONL，一行一条；重启不丢；禁止 LangGraph checkpoint 存审计）。
+
+**`GET /v1/audit/logs`**（Hub 内网只读）
+
+| 参数 | 说明 |
+|------|------|
+| `limit` | 默认 50，最大 500 |
+| `operation_id` | 可选，按操作 ID 过滤 |
+
+**响应 200**：
+
+```json
+{
+  "ok": true,
+  "count": 2,
+  "logs": [
+    {
+      "timestamp": "2026-06-08T18:30:00",
+      "actor": "e2e-audit-pm",
+      "action": "operation_reject",
+      "decision": "allow",
+      "operation_id": "jira-op-abc123",
+      "origin": "http",
+      "tool_id": "operation_approval",
+      "reason": ""
+    }
+  ]
+}
+```
+
+MCP mailbox 等工具调用经 `audit_and_log` 同样落盘 `audit.log`。
+
+---
+
+## 八、API 全量汇总
 
 ```
 核心业务:
   POST /v1/chat/completions    SSE — 对话主入口
   POST /v1/chat/orchestrate    SSE — 编排对话
 
+Mailbox (M2):
+  POST /v1/mailbox/dispatch              派工 → mailbox_task_id
+  GET  /v1/mailbox/tasks                拉取（?status=&assignee=&limit=）
+  POST /v1/mailbox/tasks/<id>/claim      领取 pending → claimed
+  POST /v1/mailbox/tasks/<id>/report     回报 claimed → done|failed
+
+审计 (M4):
+  GET  /v1/audit/logs             持久审计日志（?limit=&operation_id=）
+
 Jira 操作:
   GET  /operations/<id>           确认卡详情
-  POST /operations/<id>/confirm   确认操作（body 含 jira_pat）
-  POST /operations/<id>/reject    拒绝操作
+  POST /operations/<id>/confirm   确认操作（body 含 jira_pat；未授权 403）
+  POST /operations/<id>/reject    拒绝操作（未授权 403）
   GET  /operations/pending        待确认列表（?conversation_id=）
   GET  /operations                管控台列表（?status= 逗号分隔）
 
-MCP（中期 M1，只读）:
-  GET  /mcp/v1/tools              只读工具清单（registry.yaml risk=readonly）
-  POST /mcp/v1/tools/<name>       调用只读工具 { "arguments": {...} }
+MCP（M1 readonly + M2.7 mailbox worker）:
+  GET  /mcp/v1/tools              工具清单（readonly + worker）
+  POST /mcp/v1/tools/<name>       调用工具 { "arguments": {...} }
+  # worker: mailbox_list_tasks | mailbox_claim_task | mailbox_report_task
 
 Jira 草稿箱:
   GET  /drafts/<id>               草稿详情
@@ -351,3 +669,170 @@ Jira 草稿箱:
 ```
 
 **总计**：1 个 SSE 核心 + 3 个确认卡 + 9 个代理透传 + 14 个管理 + 3 个系统 = **30 个端点**
+
+---
+
+## 八、Workflow 工作流模板（M5.2 执行器）
+
+> M5.1 注册表 + 引擎骨架；M5.2 填充 version-day-check steps + execute_template() 执行器。
+
+### 8.1 模板列表
+
+**`GET /v1/workflow/templates`** — 返回所有已注册模板摘要。
+
+**响应 200**：
+
+```json
+{
+  "ok": true,
+  "templates": [
+    {
+      "id": "version-day-check",
+      "name": "版本日检查",
+      "description": "版本发布日自动拉取待验证 Issue 清单并生成检查报告（只读）"
+    },
+    {
+      "id": "design-to-subtasks",
+      "name": "策划→子任务",
+      "description": "将策划案父 Issue 拆解为多个子任务草稿，经 HITL 确认后批量创建"
+    }
+  ]
+}
+```
+
+### 8.2 模板详情
+
+**`GET /v1/workflow/templates/<template_id>`** — 返回完整模板（含 steps + params_schema）。
+
+**响应 200**：
+
+```json
+{
+  "ok": true,
+  "template": {
+    "id": "version-day-check",
+    "name": "版本日检查",
+    "description": "版本发布日自动拉取待验证 Issue 清单并生成检查报告（只读）",
+    "steps": [
+      {"id": "jql_query", "tool": "jira_search", "description": "JQL 查询版本日相关 Issue"},
+      {"id": "format_checklist", "tool": "format", "description": "格式化为检查清单"},
+      {"id": "summarize", "tool": "llm_summarize", "description": "LLM 汇总检查报告"}
+    ]
+  }
+}
+```
+
+**错误**：`404` — `template_id` 不存在或校验未通过。
+
+### 8.3 模板执行（M5.2 新增）
+
+**`GET /v1/workflow/execute?template_id=version-day-check&jql=...`**  
+**`POST /v1/workflow/execute`** — 执行工作流模板（JSON 响应，流式留给 M5.4）。
+
+**POST 请求**：
+
+```json
+{
+  "template_id": "version-day-check",
+  "context": {
+    "jql": "project=CT AND labels=version-day AND status!=Done",
+    "jira_pat": "your-pat",
+    "jira_url": "https://your-jira.atlassian.net"
+  }
+}
+```
+
+**响应 200（成功）**：
+
+```json
+{
+  "ok": true,
+  "template_id": "version-day-check",
+  "template_name": "版本日检查",
+  "steps": [
+    {"id": "jql_query", "tool": "jira_search", "status": "done", "result": "JQL 查询... → 共 3 条\n1. CT-101..."},
+    {"id": "format_checklist", "tool": "format", "status": "done", "result": "## 版本日检查清单\n| # | Issue | 状态 | 负责人 |\n..."},
+    {"id": "summarize", "tool": "llm_summarize", "status": "done", "result": "待处理 2 项，已完成 1 项..."}
+  ],
+  "execution_log": [
+    {"step_id": "jql_query", "tool": "jira_search", "status": "done", "output": "JQL 查询...→ 共 3 条\n..."},
+    {"step_id": "format_checklist", "tool": "format", "status": "done", "output": "## 版本日检查清单\n|..."},
+    {"step_id": "summarize", "tool": "llm_summarize", "status": "done", "output": "待处理 2 项，已完成 1 项..."}
+  ]
+}
+```
+
+**响应 422（步骤失败）**：
+
+```json
+{
+  "ok": false,
+  "template_id": "version-day-check",
+  "failed_step": "jql_query",
+  "error": "JQL 查询语句为空，请在 context.jql 中提供或从 Admin 配置读取",
+  "steps": [
+    {"id": "jql_query", "tool": "jira_search", "status": "failed"},
+    {"id": "format_checklist", "tool": "format", "status": "pending"},
+    {"id": "summarize", "tool": "llm_summarize", "status": "pending"}
+  ],
+  "execution_log": [
+    {"step_id": "jql_query", "tool": "jira_search", "status": "failed", "error": "JQL 查询语句为空..."}
+  ]
+}
+```
+
+**错误**：`400` — 缺少 `template_id`；`500` — 引擎异常。
+
+### 8.4 模板注册表格式
+
+定义文件：`backend/data/workflow_templates.yaml`。每个模板含 `id`（kebab-case 唯一）、`name`、`description`、`steps`（数组，每步含 `id`/`tool`/`description`/`params_schema`（可选））。
+
+Step tool 类型（M5.3 实现）：
+- `jira_search` — 执行 JQL 查询 Jira REST API（M5.2）
+- `kb_search` — FAISS 语义检索优先，降级 catalog 关键词（M5.3）
+- `jira_create_drafts` — 逐条调 `create_issues_draft` 创建草稿；单条失败不停全局，记录 `partial_failures`（M5.3）
+- `format` — 纯 Python 格式化（检查清单 / draft 列表）
+- `llm_summarize` — 调 DeepSeek LLM 汇总 / 提取子任务
+
+### 8.5 特殊上下文参数（M5.3）
+
+design-to-subtasks 模板支持的 context 参数：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `parent_issue_key` | string | 是 | 父 Issue Key，用于定位策划文档 |
+| `doc_query` | string | 否 | 搜索策划文档的关键词（优先级高于 parent_issue_key） |
+| `project_key` | string | 否 | Jira 项目 Key（默认从 Admin global_config 读取） |
+| `issue_type` | string | 否 | 子任务 issueType（默认 Task） |
+| `auto_confirm` | boolean | 否 | 调试用，自动 confirm drafts（**仅 ALICE_DEBUG=1 生效**） |
+| `user_id` | string | 否 | 创建者 ID |
+| `conversation_id` | string | 否 | 会话 ID |
+
+### 8.6 design-to-subtasks 响应示例（M5.3）
+
+```json
+{
+  "ok": true,
+  "template_id": "design-to-subtasks",
+  "template_name": "策划→子任务",
+  "steps": [
+    {"id": "read_design_doc", "tool": "kb_search", "status": "done"},
+    {"id": "identify_subtasks", "tool": "llm_summarize", "status": "done"},
+    {"id": "create_drafts", "tool": "jira_create_drafts", "status": "done",
+     "partial_failures": []},
+    {"id": "return_draft_list", "tool": "format", "status": "done"}
+  ],
+  "execution_log": [
+    {"step_id": "read_design_doc", "tool": "kb_search", "status": "done",
+     "output": "【FAISS 语义检索结果】\n查询: 策划案\n\n[策划案-球员系统.xlsx] (相似度:0.95)\n..."},
+    {"step_id": "identify_subtasks", "tool": "llm_summarize", "status": "done",
+     "output": "[{\"summary\":\"实现球员属性系统\",\"issueType\":\"Task\"},{\"summary\":\"实现球员位置管理器\",\"issueType\":\"Task\"}]"},
+    {"step_id": "create_drafts", "tool": "jira_create_drafts", "status": "done",
+     "output": "{\"total\":2,\"success\":2,\"failed\":0,\"drafts\":[{\"draft_id\":\"draft-abc123\",\"summary\":\"实现球员属性系统\",\"issueType\":\"Task\",\"projectKey\":\"CT\"},{\"draft_id\":\"draft-def456\",\"summary\":\"实现球员位置管理器\",\"issueType\":\"Task\",\"projectKey\":\"CT\"}],\"partial_failures\":[]}"},
+    {"step_id": "return_draft_list", "tool": "format", "status": "done",
+     "output": "## 策划→子任务 · 草稿列表（待 HITL 审批）\n| # | Draft ID | Summary | Status |\n|---|---|---|---|\n| 1 | `draft-abc123` | 实现球员属性系统 | [确认](/v1/drafts/draft-abc123/confirm) |"}
+  ]
+}
+```
+
+**注意**：`create_drafts` 步骤中 `partial_failures` 非空时 workflow 仍返回 `ok: true`，需逐条检查 failures 列表。**drafts 创建后不自动 confirm**，需人工通过 `/v1/drafts/{draft_id}/confirm` 审批（HITL 闭环）。

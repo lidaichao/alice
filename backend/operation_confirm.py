@@ -36,10 +36,12 @@ def execute_operation_confirm(
     execute_confirmed_operation,
 ) -> Tuple[int, dict]:
     """Run confirm; returns (http_status, json_payload)."""
-    from jira_operation_manager import resolve_transition_for_target
+    from jira_operation_manager import operation_audit_fields, resolve_transition_for_target
+    from user_identity import parse_user_id_from_request
 
     op_id = op["id"]
     user_pat = _resolve_user_pat(body)
+    approver_id = parse_user_id_from_request(body=body)
     skip_labels = _skip_labels_from_body(op, body)
 
     try:
@@ -76,14 +78,29 @@ def execute_operation_confirm(
             jira_client, op, user_pat=user_pat, skip_labels=skip_labels
         )
         created = result.get("created_issues") or []
-        op = mark_created(op, created) if created else mark_created(op, [])
+        op = (
+            mark_created(op, created, confirmed_by=approver_id)
+            if created
+            else mark_created(op, [], confirmed_by=approver_id)
+        )
         op["last_result_message"] = result.get("message", "")
         save_operation(op)
+        from audit_gateway import record_operation_audit
+
+        record_operation_audit(
+            actor=approver_id,
+            action="operation_confirm",
+            operation_id=op_id,
+            decision="allow",
+            origin="http",
+            context={"created_count": len(created)},
+        )
         logger.info(
-            "[OpCard] Executed: %s | kind=%s | created=%s",
+            "[OpCard] Executed: %s | kind=%s | created=%s | confirmed_by=%s",
             op_id,
             op.get("kind"),
             len(created),
+            approver_id or "-",
         )
         return 200, {
             "ok": True,
@@ -93,6 +110,7 @@ def execute_operation_confirm(
                 "status": op["status"],
                 "kind": op.get("kind"),
                 "created_issues": op.get("created_issues", []),
+                **operation_audit_fields(op),
             },
         }
     except Exception as e:

@@ -121,6 +121,68 @@ tools:
           description: "草稿列表，每项为 {summary, projectKey, issueType, description?, assignee?}"
           required: true
 
+  # ── M2.7 Mailbox worker tools (SQLite queue; not HITL approval state) ──
+  - name: mailbox_list_tasks
+    display: "Mailbox 拉取任务"
+    description: >
+      按 assignee / status 拉取 Mailbox 异步任务列表（pending/claimed/done/failed）。
+      不存储审批状态；与 operation_id 无关。
+    category: mailbox
+    icon: "📬"
+    risk: worker
+    function:
+      parameters:
+        assignee:
+          type: string
+          description: "执行方标识（可选，与 dispatch 时一致）"
+          required: false
+        status:
+          type: string
+          enum: ["pending", "claimed", "done", "failed"]
+          description: "按状态过滤（可选）"
+          required: false
+        limit:
+          type: integer
+          description: "返回条数上限，默认 50，最大 200"
+          default: 50
+
+  - name: mailbox_claim_task
+    display: "Mailbox 领取任务"
+    description: >
+      将 pending 任务领取为 claimed（Worker 执行前标准步骤）。
+    category: mailbox
+    icon: "📥"
+    risk: worker
+    function:
+      parameters:
+        mailbox_task_id:
+          type: string
+          description: "Mailbox 任务 ID（mbox- 前缀）"
+          required: true
+
+  - name: mailbox_report_task
+    display: "Mailbox 回报任务"
+    description: >
+      将 claimed 任务回报为 done 或 failed，并写入 result 对象。
+    category: mailbox
+    icon: "📤"
+    risk: worker
+    function:
+      parameters:
+        mailbox_task_id:
+          type: string
+          description: "Mailbox 任务 ID"
+          required: true
+        status:
+          type: string
+          enum: ["done", "failed"]
+          description: "终态：done 或 failed"
+          required: true
+        result:
+          type: object
+          description: "执行结果 JSON（status=done 时建议提供）"
+          required: false
+
   - name: search_jira_issues
     display: "Jira 关键词搜索"
     description: >
@@ -136,3 +198,96 @@ tools:
           type: string
           description: "搜索关键词。⚠️关键词必须是你从文档内容或上下文中提取的最具区分度的业务术语，而非用户原话！例如：文档中提到'展示系数'、'命名规范'，就用这些词搜索，而不是用文档标题。每次只传1-2个核心术语。"
           required: true
+
+  - name: search_doc_chunks
+    display: "知识库语义检索"
+    description: >
+      通过语义相似度在知识库文档中检索最相关的片段。
+      当你需要查询特定主题、概念或业务术语的内容（而非精确标题匹配）时，优先使用此工具。
+      返回 Top-K 文档片段及其相似度分数。
+    category: kb
+    icon: "🧠"
+    risk: readonly
+    function:
+      parameters:
+        query:
+          type: string
+          description: "要检索的语义查询文本"
+          required: true
+        doc_id:
+          type: string
+          description: "限定文档 ID（可选，不传则全局检索）"
+          required: false
+        top_k:
+          type: integer
+          description: "返回片段数量，默认 3，最大 5"
+          default: 3
+
+  - name: read_file
+    display: "读文件"
+    description: 读取工作区内的文件内容（只读）。读取范围限制在已授权的工作区目录内。不能读取 .env 等敏感配置文件。
+    category: workspace
+    icon: "📄"
+    risk: readonly
+    function:
+      parameters:
+        path:
+          type: string
+          description: "文件的相对路径或绝对路径（必须在已授权工作区内）"
+          required: true
+        max_lines:
+          type: integer
+          description: "最大读取行数（默认 200）"
+          required: false
+
+  - name: search_code
+    display: "代码搜索"
+    description: 使用 ripgrep 在工作区内搜索代码内容。支持正则表达式和文件类型过滤。只读，不修改文件。
+    category: workspace
+    icon: "🔍"
+    risk: readonly
+    function:
+      parameters:
+        pattern:
+          type: string
+          description: "搜索的正则表达式或关键词"
+          required: true
+        path:
+          type: string
+          description: "搜索路径（默认为当前工作区根目录）"
+          required: false
+        glob:
+          type: string
+          description: "文件类型过滤，例如 '*.py' 或 '*.{js,ts}'"
+          required: false
+
+  - name: svn_log
+    display: "SVN日志"
+    description: 查看工作区内 SVN 仓库的提交历史（只读）。不修改 SVN 状态。
+    category: workspace
+    icon: "📜"
+    risk: readonly
+    function:
+      parameters:
+        path:
+          type: string
+          description: "工作区内的文件或目录路径"
+          required: true
+        limit:
+          type: integer
+          description: "返回最近 N 条提交记录（默认 20）"
+          required: false
+
+  - name: list_directory
+    display: "列目录"
+    description: 列出工作区内的目录结构（只读）。不修改文件。
+    category: workspace
+    icon: "📁"
+    risk: readonly
+    function:
+      parameters:
+        path:
+          type: string
+          description: "要列出的目录路径（必须在已授权工作区内）"
+          required: true
+

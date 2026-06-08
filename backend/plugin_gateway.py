@@ -59,12 +59,14 @@ def collect_jira_write_sse_chunks(user_text, user_cfg, intent_info) -> list:
     issue_key = m.group(1).upper()
     target = parse_jira_transition_target(user_text)
 
+    creator_id = (user_cfg or {}).get("user_id", "")
     op = create_transition_operation_card(
         issue_key=issue_key,
         target_status=target,
         transition_id="",
         transition_name="",
         to_status="",
+        user_id=creator_id,
     )
     save_operation(op)
     preview = (
@@ -83,6 +85,7 @@ def collect_draft_sse_chunks(
     user_text: str,
     issues_list: list = None,
     conversation_id: str = "",
+    user_id: str = "",
 ) -> list:
     """草稿箱直通车：draft_card SSE，禁止直写 Jira。"""
     from jira_operation_manager import (
@@ -95,6 +98,7 @@ def collect_draft_sse_chunks(
         items,
         source_text=user_text,
         conversation_id=conversation_id or "",
+        user_id=user_id or "",
     )
     payload = build_draft_tool_response(draft)
     preview = payload.get("result", "")
@@ -138,13 +142,19 @@ def try_express_lanes(
     intent_info: dict,
     user_cfg: dict,
     conversation_id: str = "",
+    user_id: str = "",
 ) -> Optional[list]:
     """
     若命中草稿或写操作快车道，返回 SSE chunk 列表；否则 None。
     """
     route = intent_info.get("route", "")
     if is_draft_request(user_text, route):
-        chunks = collect_draft_sse_chunks(user_text, conversation_id=conversation_id)
+        uid = user_id or (user_cfg or {}).get("user_id", "")
+        chunks = collect_draft_sse_chunks(
+            user_text,
+            conversation_id=conversation_id,
+            user_id=uid,
+        )
         return chunks if chunks else None
     if is_jira_write_request(user_text, route):
         chunks = collect_jira_write_sse_chunks(user_text, user_cfg, intent_info)

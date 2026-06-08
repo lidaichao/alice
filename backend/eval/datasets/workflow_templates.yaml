@@ -1,0 +1,40 @@
+# M5.5 — 工作流模板 Eval 金标（每模板 ≥1 条）
+# 不依赖 Jira 真实环境；验证模板执行结构和 execution_log，不验证真实 Issue 创建。
+name: workflow_templates
+version: '1.0'
+description: M5.5 工作流模板 eval（workflow_trigger 命中 + version-day-check / design-to-subtasks）
+rubric:
+  max_score: 100
+  dimensions:
+    - name: trigger_routing
+      weight: 40
+      description: [WORKFLOW:xxx] 是否命中并正确路由
+    - name: execution_structure
+      weight: 60
+      description: execution_log 步骤是否完整
+test_cases:
+  - id: wf-01
+    input: "[WORKFLOW:version-day-check]"
+    category: workflow
+    min_score: 40
+    description: 版本日检查模板触发 → execution_log 含 jql_query step
+    expected_tools:
+      - execute_workflow
+    expected_keywords:
+      - jql_query
+      - format_checklist
+      - summarize
+      - version-day-check
+  - id: wf-02
+    input: "[WORKFLOW:design-to-subtasks]"
+    category: workflow
+    min_score: 40
+    description: 策划→子任务模板触发 → execution_log 含 create_drafts step
+    expected_tools:
+      - execute_workflow
+    expected_keywords:
+      - create_drafts
+      - read_design_doc
+      - identify_subtasks
+      - design-to-subtasks
+      - draft

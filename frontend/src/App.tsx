@@ -9,9 +9,9 @@ import ConfirmCard from '@/components/ConfirmCard';
 import DraftCard from '@/components/DraftCard';
 import JiraSearchSupplement from '@/components/JiraSearchSupplement';
 import type { DraftCardItem } from '@/store/slices/chatSlice';
-import { buildJiraWriteRequestBody } from '@/lib/runtimeConfig';
+import { buildAliceUserHeaders, buildJiraWriteRequestBody } from '@/lib/runtimeConfig';
 import { buildConfirmCardFromApi, formatOperationResultMessage } from '@/lib/jiraConfirm';
-import { confirmOperationWithProgress } from '@/lib/operationConfirmStream';
+import { useOperationActions } from '@/hooks/useOperationActions';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { PluginToolCard } from '@/components/MarkdownRenderer';
 import { OperationsConsole } from '@/components/OperationsConsole';
@@ -55,7 +55,6 @@ export const App: React.FC = () => {
   const [commandFilter, setCommandFilter] = useState('');
   const [selectedCmdIndex, setSelectedCmdIndex] = useState(0);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
-  const [confirmProgress, setConfirmProgress] = useState<Record<string, string>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -109,12 +108,22 @@ export const App: React.FC = () => {
 
   const appendAssistantMessage = useChatStore((s) => s.appendAssistantMessage);
 
+  const { confirm: handleConfirm, reject: handleReject, progressByOpId: confirmProgress } =
+    useOperationActions({
+      onConfirmSuccess: async (data) => {
+        await appendAssistantMessage(formatOperationResultMessage(data));
+      },
+      onRejectSuccess: async () => {
+        await appendAssistantMessage('已拒绝该 Jira 写操作，未对 Jira 做任何修改。');
+      },
+    });
+
   const handleDraftSubmit = useCallback(
     async (draftId: string, items: DraftCardItem[]) => {
       const res = await fetch(`/drafts/${draftId}/confirm`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items }),
+        headers: buildAliceUserHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(buildJiraWriteRequestBody({ items })),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.ok === false) {
@@ -145,7 +154,7 @@ export const App: React.FC = () => {
   const handleDraftCancel = useCallback(async (draftId: string) => {
     const res = await fetch(`/drafts/${draftId}/reject`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: buildAliceUserHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(buildJiraWriteRequestBody()),
     });
     const data = await res.json().catch(() => ({}));
@@ -157,53 +166,29 @@ export const App: React.FC = () => {
     }));
   }, []);
 
-  const handleConfirm = useCallback(
+  const onConfirmResolved = useCallback((opId: string) => {
+    useChatStore.setState((s) => ({
+      pendingConfirmations: s.pendingConfirmations.filter((c) => c.op_id !== opId),
+    }));
+  }, []);
+
+  const wrappedHandleConfirm = useCallback(
     async (
       opId: string,
       opts?: { recoveryAction?: string; supplement?: Record<string, string> },
     ) => {
-      const extra: Record<string, unknown> = {};
-      if (opts?.recoveryAction) extra.recovery_action = opts.recoveryAction;
-      if (opts?.supplement) extra.supplement = opts.supplement;
-      const body = buildJiraWriteRequestBody(extra);
-      setConfirmProgress((p) => ({ ...p, [opId]: '开始执行…' }));
-      const data = await confirmOperationWithProgress(opId, body, (ev) => {
-        setConfirmProgress((p) => ({ ...p, [opId]: ev.message || ev.phase }));
-      });
-      setConfirmProgress((p) => {
-        const next = { ...p };
-        delete next[opId];
-        return next;
-      });
-      const msg = formatOperationResultMessage(data);
-      await appendAssistantMessage(msg);
-      if (data.ok === false) {
-        throw new Error(data.error || '操作失败');
-      }
-      useChatStore.setState((s) => ({
-        pendingConfirmations: s.pendingConfirmations.filter((c) => c.op_id !== opId),
-      }));
+      await handleConfirm(opId, opts);
+      onConfirmResolved(opId);
     },
-    [appendAssistantMessage],
+    [handleConfirm, onConfirmResolved],
   );
 
-  const handleReject = useCallback(
+  const wrappedHandleReject = useCallback(
     async (opId: string) => {
-      const res = await fetch(`/operations/${opId}/reject`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildJiraWriteRequestBody()),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.ok === false) {
-        throw new Error(data.error || '拒绝失败');
-      }
-      await appendAssistantMessage('已拒绝该 Jira 写操作，未对 Jira 做任何修改。');
-      useChatStore.setState((s) => ({
-        pendingConfirmations: s.pendingConfirmations.filter((c) => c.op_id !== opId),
-      }));
+      await handleReject(opId);
+      onConfirmResolved(opId);
     },
-    [appendAssistantMessage],
+    [handleReject, onConfirmResolved],
   );
 
   // ── 命令面板 ──
@@ -348,8 +333,8 @@ export const App: React.FC = () => {
                   <ConfirmCard
                     card={card}
                     progressMessage={confirmProgress[card.op_id]}
-                    onConfirm={handleConfirm}
-                    onReject={handleReject}
+                    onConfirm={wrappedHandleConfirm}
+                    onReject={wrappedHandleReject}
                   />
                 </div>
               </div>

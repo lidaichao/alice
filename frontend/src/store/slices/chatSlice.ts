@@ -5,7 +5,7 @@ import { AGENTS } from '../useChatStore';
 import type { JiraSearchSupplementCard } from '@/components/JiraSearchSupplement';
 import { buildConfirmCardFromApi } from '@/lib/jiraConfirm';
 
-import { loadRuntimeConfig } from '@/lib/runtimeConfig';
+import { buildAliceUserHeaders, loadRuntimeConfig } from '@/lib/runtimeConfig';
 
 async function restorePendingOperations(sessionId: string, set: (fn: (s: ChatSlice) => Partial<ChatSlice>) => void) {
   if (!sessionId) return;
@@ -345,21 +345,25 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
     try {
       const res = await fetch('/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildAliceUserHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           messages: messagesPayload,
           conversation_id: activeSessionId,
           config: (() => {
             const rc = loadRuntimeConfig();
-            return {
+            const cfg: Record<string, string> = {
               jira_pat: rc.jira_pat || '',
               jira_projects: rc.jira_projects || rc.JIRA_PROJECTS || 'CT',
               jira_url: rc.jira_url || '',
             };
+            if (rc.user_id) cfg.user_id = rc.user_id;
+            return cfg;
           })(),
           user_config: (() => {
             const rc = loadRuntimeConfig();
-            return { jira_pat: rc.jira_pat || '' };
+            const uc: Record<string, string> = { jira_pat: rc.jira_pat || '' };
+            if (rc.user_id) uc.user_id = rc.user_id;
+            return uc;
           })(),
         }),
         signal: ctrl.signal

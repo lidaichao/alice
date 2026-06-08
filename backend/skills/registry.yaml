@@ -150,3 +150,24 @@ audit_rules:
   svn_code:
     # SVN 只读，默认不需要审计
     require_confirmation: false
+
+  mailbox_worker:
+    require_confirmation: false
+    rate_limit:
+      per_minute: 120
+      per_hour: 2000
+
+# ══════════════════════════════════════════════════════════
+#  操作审批权限（M4.5）— confirm/reject 白名单
+# ══════════════════════════════════════════════════════════
+
+operation_approval:
+  enabled: true
+  approver_user_ids:
+    - pm
+    - lead
+    - rabbit
+    - e2e-audit-pm
+  approver_roles:
+    - pm
+    - lead

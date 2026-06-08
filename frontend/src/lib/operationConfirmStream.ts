@@ -1,3 +1,5 @@
+import { buildAliceUserHeaders } from '@/lib/runtimeConfig';
+
 /** POST /operations/:id/confirm?stream=1 — operation_progress SSE (E2.2) */
 
 export type OperationProgress = {
@@ -21,10 +23,10 @@ export async function confirmOperationWithProgress(
 ): Promise<ConfirmStreamResult> {
   const res = await fetch(`/operations/${opId}/confirm?stream=1`, {
     method: 'POST',
-    headers: {
+    headers: buildAliceUserHeaders({
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
-    },
+    }),
     body: JSON.stringify({ ...body, stream: true }),
   });
 

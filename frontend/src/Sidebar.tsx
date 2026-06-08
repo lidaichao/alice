@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useChatStore } from '@/store/useChatStore';
 import { Button } from '@/components/ui/button';
 import { useTheme } from 'next-themes';
-import { Sun, Moon, Monitor, Plus, Trash2, Edit2, Wifi, Bug, ClipboardList, LayoutDashboard } from 'lucide-react';
+import { Sun, Moon, Monitor, Plus, Trash2, Edit2, Wifi, Bug, ClipboardList, LayoutDashboard, Workflow, Zap } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { TeamMemoryPanel } from '@/components/TeamMemoryPanel';
 
@@ -17,12 +17,38 @@ export const Sidebar: React.FC = () => {
   const pendingDraftCards = useChatStore((s) => s.pendingDraftCards);
   const mainView = useChatStore((s) => s.mainView);
   const setMainView = useChatStore((s) => s.setMainView);
+  const sendMessage = useChatStore((s) => s.sendMessage);
   const { theme, setTheme } = useTheme();
 
   const pendingTotal = pendingConfirmations.length + pendingDraftCards.length;
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [wfTemplates, setWfTemplates] = useState<Array<{id: string; name: string; description: string}>>([]);
+  const [wfOpen, setWfOpen] = useState(false);
+  const [wfLoading, setWfLoading] = useState(false);
+
+  // M5.4 — 加载工作流模板列表
+  const loadWorkflowTemplates = async () => {
+    setWfLoading(true);
+    try {
+      const res = await fetch('/v1/workflow/templates');
+      if (res.ok) {
+        const data = await res.json();
+        setWfTemplates(data?.templates || []);
+      }
+    } catch {
+      // 端点可能未就绪，静默降级
+    } finally {
+      setWfLoading(false);
+    }
+  };
+
+  const triggerWorkflow = (templateId: string) => {
+    const msg = `[WORKFLOW:${templateId}]`;
+    sendMessage(msg);
+    setWfOpen(false);
+  };
 
   const handleRename = (id: string, title: string) => {
     setEditingId(id);
@@ -51,7 +77,7 @@ export const Sidebar: React.FC = () => {
         </Button>
       </div>
 
-      <div className="px-2 pt-2">
+      <div className="px-2 pt-2 space-y-1.5">
         <Button
           variant={mainView === 'operations' ? 'secondary' : 'outline'}
           size="sm"
@@ -64,6 +90,55 @@ export const Sidebar: React.FC = () => {
             <span className="ml-auto rounded-full bg-amber-500/20 px-1.5 text-[10px]">{pendingTotal}</span>
           )}
         </Button>
+
+        {/* M5.4 — 工作流启动器 */}
+        <Popover open={wfOpen} onOpenChange={(open) => { setWfOpen(open); if (open) loadWorkflowTemplates(); }}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full justify-start gap-2 text-xs"
+            >
+              <Workflow size={14} />
+              工作流
+              {wfTemplates.length > 0 && (
+                <span className="ml-auto rounded-full bg-blue-500/20 px-1.5 text-[10px]">{wfTemplates.length}</span>
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-60 p-2" align="start" side="right">
+            <div className="text-xs font-semibold text-muted-foreground mb-1.5">可用工作流模板</div>
+            {wfLoading && (
+              <div className="text-[11px] text-muted-foreground py-2">加载中...</div>
+            )}
+            {!wfLoading && wfTemplates.length === 0 && (
+              <div className="text-[11px] text-muted-foreground py-2">
+                暂无可用模板（Hub 端点 /v1/workflow/templates 未就绪）
+              </div>
+            )}
+            {wfTemplates.map((tpl) => (
+              <button
+                key={tpl.id}
+                onClick={() => triggerWorkflow(tpl.id)}
+                className="w-full text-left px-2 py-2 rounded hover:bg-muted text-xs flex items-start gap-2 group"
+              >
+                <Zap size={12} className="mt-0.5 shrink-0 text-blue-500" />
+                <div className="min-w-0">
+                  <div className="font-medium text-foreground truncate">{tpl.name}</div>
+                  <div className="text-[10px] text-muted-foreground truncate">{tpl.description}</div>
+                </div>
+              </button>
+            ))}
+            {wfTemplates.length > 0 && (
+              <div className="mt-2 border-t border-border pt-1.5">
+                <div className="text-[10px] text-muted-foreground mb-1">或手动输入：</div>
+                <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded block text-center font-mono">
+                  [WORKFLOW:template-id]
+                </code>
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
       </div>
 
       {pendingTotal > 0 && mainView === 'chat' && (

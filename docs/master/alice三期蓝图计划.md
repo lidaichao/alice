@@ -410,7 +410,7 @@ flowchart LR
 | B7 | L3 多轮再检索 | orchestrator / ReAct prompt | 换条件追问强制再 catalog+read | [x] v1.0.9 |
 | B8 | C9 静态检查 | `scripts/check_kb_domain_hardcode.py` | intent 文件无业务实体词；ci 可选 | [x] v1.0.9 |
 | B9 | 文档验收 | §2.2 + C9 | 与实现一致 | [x] v1.0.9 |
-| B10 | Wave 0 解除 | 本节暂停说明 | B1–B9 全 [x] | [ ] |
+| B10 | Wave 0 解除 | 本节暂停说明 | B1–B9 全 [x] | [x] v1.0.26 |
 
 **备注**：曾用领域 regex 使 gsheet-001 中锋通过，属临时债，**不得以 B2 临时方案为终态**；须完成 B2a/B2b。
 
@@ -469,10 +469,30 @@ flowchart LR
 
 ---
 
+### 5.12 调试期增强（Phase C）
+
+> 调试期（RABBIT_ROADMAP.md §4）排队的优化和增强项，补齐 Alice 的 Jira 准确度、回答深度、工程分析能力。
+
+| ID | 任务 | 交付物 | DoD | 状态 |
+|----|------|--------|-----|:--:|
+| C1 | P0 解除阻塞 | `intent_router.py` L266-297 + `react_runner.py` L251-294 | CI_GATE_OK + 13/14 验证剧本 | [x] v1.0.24 |
+| C2 | P1-1 NL→结构化 | `jira_query_builder.py` | 8/8 单测 | [x] v1.0.25 |
+| C3 | P1-2 单 Issue 增强 | `ai_bridge.py` L1233-1255 重写 | 7/7 单测 | [x] v1.0.26 |
+| C4 | P1-3 写审计闸门 | `jira_operation_manager.py` audit_jira_operation + create_operation_card_with_audit | 8/8 单测 | [x] v1.0.27 |
+| C5 | P1-4 受控代码分析 | `workspace_manager.py` + `tools/registry.yaml` 4 工具 + `workspace_tools.py` 4 执行器（v1.0.28-1 从 ai_bridge 抽离，遵守 E1.3） | 4/4 单测 + CI_GATE_OK | [x] v1.0.28 |
+
+---
+
 ## 修订记录
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| v1.0.28-1 | 2026-06-09 | P1-4 架构收口：4 个 workspace 执行器从 `ai_bridge.py` 抽离到 `workspace_tools.py`（4043→3928 行，净减 115 行），遵守 E1.3（ai_bridge 仅路由，禁止堆新逻辑） |
+| v1.0.28 | 2026-06-09 | P1-4 受控代码分析：新增 `workspace_manager.py` 工作区授权模块 + `tools/registry.yaml` 4 个只读工具（read_file/search_code/svn_log/list_directory）+ `ai_bridge.py` 4 个执行器 + `test_workspace_manager.py` 4 条单测；蓝图新增 §5.12 调试期增强（Phase C）C1–C5 |
+| v1.0.27 | 2026-06-09 | P1-3 Jira 写操作审计闸门：`jira_operation_manager.py` 新增 `audit_jira_operation()` 三态决策（allow/require_confirmation/deny）+ `create_operation_card_with_audit()` 包装函数 + `test_jira_audit.py` 8 条单测；对标 Baize audit-rules/jira.js |
+| v1.0.26-check | 2026-06-09 | 自检对齐：B10 Wave 0 解除（B1–B9 全 [x] 满足条件，[x] v1.0.26）、CURRENT_SPRINT 下一波/排队修正（P1-3 写操作确认增强 + P1-4 受控代码分析）、全量测试验证（jira_query_builder 8/8 + jira_metadata_enhanced 7/7 + react_runner_empty_probe 6/6 + CI_GATE_OK） |
+| v1.0.26 | 2026-06-09 | P1-2 单 Issue 详情增强：`_exec_query_jira_metadata` 扩展 fields（+priority/created/updated/duedate/description/project/comment + renderFields）+ `simplify_issue()` 提取基础字段 + `_strip_html()` 清理 + 描述截断 ≤500 字 + 评论最近 3 条 ≤200 字；`test_jira_metadata_enhanced.py` 7 条单测 |
+| v1.0.25 | 2026-06-09 | P1-1 Jira 聪明度第一弹：新增 `jira_query_builder.py`（DeepSeek NL→结构化查询 JSON 层，temperature=0.0）+ `_exec_search_jira_issues` 注入（LLM 优先 / regex 降级）+ `test_jira_query_builder.py` 8 条单测 |
 | v1.0.24 | 2026-06-08 | 修复：ReAct `tool_choice=required` 2 工具集空响应兜底——空 `finish_reason`/空 `content`/无 `tool_calls` 时 retry `tool_choice="auto"` 再试，不再 break 丢回答；`test_react_runner_empty_probe.py` 6 条单测 |
 | v1.0.23 | 2026-06-08 | 修复：Issue Key fast-path 硬编码词表炸弹——借鉴 Baize 路由分离，读/写判断下沉到通道内部（Issue Key + 写关键词→jira_write，其余→jira_search）；`jira_search` 新增 `query_jira_metadata` 工具；`test_intent_router.py` 新增 4 条路由测试 |
 | v1.0.22 | 2026-06-08 | O2 调试优化：KB 上下文缓存（conversation_id 粒度 + 关键词重叠命中/清空）+ FAISS top_k 3→5 + 对比查询信号检测（对比/差异/vs/不同/区别/比较）+ SVN/FishEye 3 条验证（SVN-1/2/3）+ `test_kb_context_cache.py` 4 条单测 |

@@ -43,6 +43,98 @@ STATUS_TRANSITIONS = {
 }
 
 # ══════════════════════════════════════════════════════════════
+#  审计闸门（P1-3 对标 Baize audit-rules/jira.js 三态决策）
+# ══════════════════════════════════════════════════════════════
+
+READ_KINDS = frozenset(["jira_search", "jira_read"])
+COMMENT_KINDS = frozenset(["jira_add_comment", "jira_delete_comment"])
+ISSUE_WRITE_KINDS = frozenset([
+    "jira_bulk_create", "jira_update_issue", "jira_transition_issue", "jira_delete_issue",
+])
+
+
+def audit_jira_operation(
+    kind: str,
+    issue_keys: list = None,
+    trigger_source: str = "client",
+    ai_created: bool = False,
+) -> dict:
+    """预执行审计决策 — 三态：allow / require_confirmation / deny"""
+    # 只读 — 免确认
+    if kind in READ_KINDS:
+        return {"decision": "allow", "reason": "只读操作，无需确认",
+                "kind": kind, "per_issue": []}
+
+    # Issue 写操作
+    if kind in ISSUE_WRITE_KINDS:
+        if kind == "jira_bulk_create":
+            return {"decision": "require_confirmation",
+                    "reason": "批量创建 Issue 必须人工确认",
+                    "kind": kind, "per_issue": []}
+        if not ai_created:
+            return {"decision": "deny",
+                    "reason": "非 AI 创建的 Issue 不允许被 AI 修改",
+                    "kind": kind, "per_issue": []}
+        if trigger_source == "scheduled":
+            return {"decision": "allow",
+                    "reason": "AI 创建 + 定时任务，免确认直行",
+                    "kind": kind, "per_issue": []}
+        return {"decision": "require_confirmation",
+                "reason": "AI 创建的 Issue 需人工确认后执行",
+                "kind": kind, "per_issue": []}
+
+    # 评论操作
+    if kind in COMMENT_KINDS:
+        if trigger_source == "scheduled":
+            return {"decision": "allow",
+                    "reason": "定时任务评论，免确认直行",
+                    "kind": kind, "per_issue": []}
+        if not ai_created:
+            return {"decision": "require_confirmation",
+                    "reason": "非 AI 创建的 Issue 允许评论但需确认",
+                    "kind": kind, "per_issue": []}
+        return {"decision": "require_confirmation",
+                "reason": "AI 创建的 Issue 评论需确认",
+                "kind": kind, "per_issue": []}
+
+    # 未知操作类别
+    return {"decision": "deny",
+            "reason": f"不支持的操作类型: {kind}",
+            "kind": kind, "per_issue": []}
+
+
+def create_operation_card_with_audit(
+    drafts: list,
+    conversation_id: str = "",
+    client_id: str = "",
+    user_id: str = "",
+    kind: str = "jira_bulk_create",
+    trigger_source: str = "client",
+    ai_created: bool = False,
+) -> dict:
+    """带审计前置检查的确认卡创建（包装 create_operation_card）"""
+    audit = audit_jira_operation(
+        kind=kind, trigger_source=trigger_source, ai_created=ai_created,
+    )
+    if audit["decision"] == "deny":
+        return {"status": "denied", "reason": audit["reason"]}
+    if audit["decision"] == "allow":
+        return {
+            "status": "auto_allowed",
+            "reason": audit["reason"],
+            "operation": create_operation_card(
+                drafts, conversation_id, client_id, user_id, kind,
+            ),
+        }
+    return {
+        "status": "awaiting_confirmation",
+        "reason": audit["reason"],
+        "operation": create_operation_card(
+            drafts, conversation_id, client_id, user_id, kind,
+        ),
+    }
+
+# ══════════════════════════════════════════════════════════════
 #  错误分类（移植自 Baize classifyJiraApiError / buildFailureContext）
 # ══════════════════════════════════════════════════════════════
 
@@ -261,6 +353,17 @@ def get_ai_created_count() -> int:
 #  OperationCard 生成
 # ══════════════════════════════════════════════════════════════
 
+def operation_audit_fields(operation: dict) -> dict:
+    """M4.3/M4.4 — creator + approver 审计字段（单一来源，供 GET /operations 复用）。"""
+    return {
+        "user_id": operation.get("user_id") or "",
+        "confirmed_by": operation.get("confirmed_by"),
+        "confirmed_at": operation.get("confirmed_at"),
+        "rejected_by": operation.get("rejected_by"),
+        "rejected_at": operation.get("rejected_at"),
+    }
+
+
 def operation_to_confirm_ui(operation: dict) -> dict:
     """将操作卡转为前端 ConfirmCard.operation 结构"""
     kind = operation.get("kind", "")
@@ -441,7 +544,15 @@ def create_operation_card(
         "created_at": now,
         "updated_at": now,
     }
-    logger.info(f"[OpCard] Created: {operation['id']} | {len(drafts)} drafts | warnings: {len(operation['warnings'])}")
+    if not user_id:
+        logger.info(
+            "[OpCard] create_operation_card without user_id: %s (hub transition)",
+            operation["id"],
+        )
+    logger.info(
+        f"[OpCard] Created: {operation['id']} | {len(drafts)} drafts | "
+        f"user_id={user_id or '-'} | warnings: {len(operation['warnings'])}"
+    )
     return operation
 
 
@@ -548,8 +659,14 @@ def create_issues_draft(
     with _lock:
         _draft_box[draft["id"]] = draft
         _persist_draft_box()
+    if not user_id:
+        logger.info(
+            "[DraftBox] create_issues_draft without user_id: %s (hub transition)",
+            draft["id"],
+        )
     logger.info(
         f"[DraftBox] draft_card created: {draft['id']} | items={len(items)} | "
+        f"user_id={user_id or '-'} | "
         f"summaries={[x['summary'][:40] for x in items[:3]]}"
     )
     return draft
@@ -658,12 +775,16 @@ def mark_running(operation: dict) -> dict:
     return transition(operation, "running")
 
 
-def mark_created(operation: dict, created_issues: list) -> dict:
-    return transition(operation, "created", {
+def mark_created(operation: dict, created_issues: list, *, confirmed_by: str = "") -> dict:
+    extra = {
         "created_issues": created_issues,
         "error": None,
         "failure": None,
-    })
+    }
+    if confirmed_by:
+        extra["confirmed_by"] = confirmed_by
+        extra["confirmed_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    return transition(operation, "created", extra)
 
 
 def mark_failed(operation: dict, error_msg: str, context: dict = None) -> dict:
@@ -692,8 +813,12 @@ def mark_failed(operation: dict, error_msg: str, context: dict = None) -> dict:
     return operation
 
 
-def mark_rejected(operation: dict) -> dict:
-    return transition(operation, "rejected")
+def mark_rejected(operation: dict, *, rejected_by: str = "") -> dict:
+    extra = {}
+    if rejected_by:
+        extra["rejected_by"] = rejected_by
+        extra["rejected_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    return transition(operation, "rejected", extra or None)
 
 
 def apply_supplement_to_operation(operation: dict, supplement: dict) -> dict:

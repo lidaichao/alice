@@ -1,6 +1,15 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, ArrowLeft, Activity } from 'lucide-react';
+import { RefreshCw, ArrowLeft, Activity, CheckCircle, XCircle, Link2 } from 'lucide-react';
+import { useOperationActions } from '@/hooks/useOperationActions';
+import {
+  buildAliceUserHeaders,
+  getAliceUserId,
+  loadRuntimeConfig,
+  saveRuntimeConfig,
+} from '@/lib/runtimeConfig';
+import { useChatStore } from '@/store/useChatStore';
+import type { RecoveryAction, RecoveryInfo } from '@/store/slices/chatSlice';
 
 type OpRow = {
   id: string;
@@ -9,9 +18,16 @@ type OpRow = {
   conversation_id?: string;
   created_at?: string;
   updated_at?: string;
+  drafts_count?: number;
   warnings?: string[];
   error?: string | null;
-  operation?: { issue_key?: string; type?: string };
+  recovery?: RecoveryInfo;
+  operation?: { issue_key?: string; type?: string; summary?: string };
+  user_id?: string;
+  rejected_by?: string;
+  rejected_at?: string;
+  confirmed_by?: string;
+  confirmed_at?: string;
 };
 
 type HealthPayload = {
@@ -20,30 +36,70 @@ type HealthPayload = {
   integrations?: Record<string, { status?: string; detail?: string }>;
 };
 
+function actionNeedsForm(action: RecoveryAction): boolean {
+  return (
+    action.id === 'submit_supplement' ||
+    (Array.isArray(action.inputs) && action.inputs.length > 0)
+  );
+}
+
 export const OperationsConsole: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [ops, setOps] = useState<OpRow[]>([]);
   const [health, setHealth] = useState<HealthPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchSummary, setBatchSummary] = useState('');
+  const [userId, setUserId] = useState(() => getAliceUserId());
+
+  const setActiveSession = useChatStore((s) => s.setActiveSession);
+  const setMainView = useChatStore((s) => s.setMainView);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setErr('');
     try {
+      const headers = buildAliceUserHeaders();
       const [hRes, oRes] = await Promise.all([
-        fetch('/health'),
-        fetch('/operations?limit=80'),
+        fetch('/health', { headers }),
+        fetch('/operations?limit=80', { headers }),
       ]);
       if (hRes.ok) setHealth(await hRes.json());
       if (!oRes.ok) throw new Error(`operations HTTP ${oRes.status}`);
       const data = await oRes.json();
       setOps(data.operations || []);
+      setSelectedIds(new Set());
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const {
+    confirm,
+    reject,
+    confirmBatch,
+    rejectBatch,
+    progressByOpId,
+    busyOpId,
+    lastError,
+    batchProgress,
+    batchBusy,
+  } = useOperationActions({
+    onConfirmSuccess: () => refresh(),
+    onRejectSuccess: () => refresh(),
+    onBatchComplete: (results) => {
+      const ok = results.filter((r) => r.ok).length;
+      const fail = results.length - ok;
+      setBatchSummary(
+        fail > 0
+          ? `批量完成：成功 ${ok} 条，失败 ${fail} 条`
+          : `批量完成：全部 ${ok} 条成功`,
+      );
+      refresh();
+    },
+  });
 
   useEffect(() => {
     refresh();
@@ -52,8 +108,77 @@ export const OperationsConsole: React.FC<{ onBack: () => void }> = ({ onBack }) 
   const pending = ops.filter((o) =>
     ['awaiting_confirmation', 'recovery_required'].includes(o.status),
   );
+  const batchEligible = useMemo(
+    () => pending.filter((o) => o.status === 'awaiting_confirmation'),
+    [pending],
+  );
   const active = ops.filter((o) => o.status === 'running');
   const failed = ops.filter((o) => o.status === 'failed');
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllBatch = () => {
+    setSelectedIds(new Set(batchEligible.map((o) => o.id)));
+  };
+
+  const invertSelection = () => {
+    setSelectedIds((prev) => {
+      const next = new Set<string>();
+      for (const o of batchEligible) {
+        if (!prev.has(o.id)) next.add(o.id);
+      }
+      return next;
+    });
+  };
+
+  const selectedList = useMemo(
+    () => batchEligible.filter((o) => selectedIds.has(o.id)).map((o) => o.id),
+    [batchEligible, selectedIds],
+  );
+
+  const handleBatchConfirm = async () => {
+    if (selectedList.length === 0 || batchBusy) return;
+    setBatchSummary('');
+    await confirmBatch(selectedList);
+  };
+
+  const handleBatchReject = async () => {
+    if (selectedList.length === 0 || batchBusy) return;
+    setBatchSummary('');
+    await rejectBatch(selectedList);
+  };
+
+  const handleConfirm = async (opId: string, recoveryAction?: string) => {
+    try {
+      await confirm(opId, recoveryAction ? { recoveryAction } : undefined);
+    } catch {
+      /* error surfaced via lastError */
+    }
+  };
+
+  const handleReject = async (opId: string) => {
+    try {
+      await reject(opId);
+    } catch {
+      /* error surfaced via lastError */
+    }
+  };
+
+  const jumpToConversation = (conversationId?: string) => {
+    if (!conversationId) return;
+    setActiveSession(conversationId);
+    setMainView('chat');
+    onBack();
+  };
+
+  const anyBusy = batchBusy || busyOpId !== null;
 
   return (
     <div className="flex flex-col h-full min-w-0 bg-background">
@@ -65,7 +190,25 @@ export const OperationsConsole: React.FC<{ onBack: () => void }> = ({ onBack }) 
           <h1 className="text-sm font-semibold">审批管控台</h1>
           <p className="text-[11px] text-muted-foreground">待确认 · 进行中 · 失败 · 链路健康</p>
         </div>
-        <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
+        <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+          <span>用户 ID</span>
+          <input
+            className="h-7 w-28 rounded border border-border bg-background px-2 text-xs font-mono"
+            value={userId}
+            placeholder="rabbit"
+            onChange={(e) => {
+              const v = e.target.value;
+              setUserId(v);
+              saveRuntimeConfig({ user_id: v });
+            }}
+            onBlur={() => {
+              const rc = loadRuntimeConfig();
+              setUserId(rc.user_id || '');
+            }}
+            title="M4.1 审批身份（写入 X-Alice-User-Id）"
+          />
+        </label>
+        <Button variant="outline" size="sm" onClick={refresh} disabled={loading || anyBusy}>
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           <span className="ml-1">刷新</span>
         </Button>
@@ -96,22 +239,133 @@ export const OperationsConsole: React.FC<{ onBack: () => void }> = ({ onBack }) 
           )}
         </section>
 
-        <OpSection title={`待审批 (${pending.length})`} rows={pending} empty="暂无待确认操作" />
-        <OpSection title={`进行中 (${active.length})`} rows={active} empty="暂无进行中操作" />
-        <OpSection title={`失败 (${failed.length})`} rows={failed} empty="暂无失败记录" />
+        {batchEligible.length > 0 && (
+          <section className="rounded-lg border border-border px-3 py-2 flex flex-wrap items-center gap-2 text-[11px]">
+            <span className="font-semibold">批量操作</span>
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="checkbox"
+                className="rounded"
+                checked={selectedList.length === batchEligible.length && batchEligible.length > 0}
+                onChange={(e) => (e.target.checked ? selectAllBatch() : setSelectedIds(new Set()))}
+                disabled={anyBusy}
+              />
+              全选
+            </label>
+            <Button variant="ghost" size="sm" className="h-7 text-[10px]" onClick={invertSelection} disabled={anyBusy}>
+              反选
+            </Button>
+            <span className="text-muted-foreground">已选 {selectedList.length} 条</span>
+            {batchProgress && (
+              <span className="text-blue-600">
+                {batchProgress.action === 'confirm' ? '批量放行' : '批量拒绝'}{' '}
+                {batchProgress.current}/{batchProgress.total}
+              </span>
+            )}
+            <Button
+              variant="default"
+              size="sm"
+              className="h-7 text-[10px]"
+              disabled={selectedList.length === 0 || anyBusy}
+              onClick={handleBatchConfirm}
+            >
+              批量放行
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-[10px] text-red-600"
+              disabled={selectedList.length === 0 || anyBusy}
+              onClick={handleBatchReject}
+            >
+              批量拒绝
+            </Button>
+            {batchSummary && <span className="text-muted-foreground">{batchSummary}</span>}
+          </section>
+        )}
+
+        <OpSection
+          title={`待审批 (${pending.length})`}
+          rows={pending}
+          empty="暂无待确认操作"
+          actionable
+          batchEligibleIds={new Set(batchEligible.map((o) => o.id))}
+          selectedIds={selectedIds}
+          onToggleSelect={toggleSelect}
+          busyOpId={busyOpId}
+          batchBusy={batchBusy}
+          progressByOpId={progressByOpId}
+          lastError={lastError}
+          onConfirm={handleConfirm}
+          onReject={handleReject}
+          onJumpToSession={jumpToConversation}
+        />
+        <OpSection title={`进行中 (${active.length})`} rows={active} empty="暂无进行中操作" onJumpToSession={jumpToConversation} />
+        <OpSection title={`失败 (${failed.length})`} rows={failed} empty="暂无失败记录" onJumpToSession={jumpToConversation} />
       </div>
     </div>
   );
 };
 
+function AuditTrail({ row }: { row: OpRow }) {
+  const hasCreator = !!row.user_id;
+  const hasApprover = !!(row.confirmed_by || row.rejected_by);
+  if (!hasCreator && !hasApprover) return null;
+  return (
+    <div className="text-[10px] text-muted-foreground space-y-0.5 pt-0.5">
+      {hasCreator && (
+        <div>
+          创建者 <span className="font-mono text-foreground">{row.user_id}</span>
+        </div>
+      )}
+      {row.confirmed_by && (
+        <div>
+          审批放行{' '}
+          <span className="font-mono text-green-700">{row.confirmed_by}</span>
+          {row.confirmed_at ? ` · ${row.confirmed_at}` : ''}
+        </div>
+      )}
+      {row.rejected_by && (
+        <div>
+          审批拒绝{' '}
+          <span className="font-mono text-red-600">{row.rejected_by}</span>
+          {row.rejected_at ? ` · ${row.rejected_at}` : ''}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OpSection({
   title,
   rows,
   empty,
+  actionable,
+  batchEligibleIds,
+  selectedIds,
+  onToggleSelect,
+  busyOpId,
+  batchBusy,
+  progressByOpId,
+  lastError,
+  onConfirm,
+  onReject,
+  onJumpToSession,
 }: {
   title: string;
   rows: OpRow[];
   empty: string;
+  actionable?: boolean;
+  batchEligibleIds?: Set<string>;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  busyOpId?: string | null;
+  batchBusy?: boolean;
+  progressByOpId?: Record<string, string>;
+  lastError?: Record<string, string>;
+  onConfirm?: (opId: string, recoveryAction?: string) => void;
+  onReject?: (opId: string) => void;
+  onJumpToSession?: (conversationId?: string) => void;
 }) {
   return (
     <section className="rounded-lg border border-border">
@@ -121,21 +375,137 @@ function OpSection({
       ) : (
         <ul className="divide-y divide-border">
           {rows.map((o) => (
-            <li key={o.id} className="px-3 py-2 text-[11px] space-y-0.5">
-              <div className="flex justify-between gap-2">
-                <span className="font-mono truncate">{o.id}</span>
-                <span className="shrink-0 text-muted-foreground">{o.status}</span>
+            <li key={o.id} className="px-3 py-2 text-[11px] space-y-1">
+              <div className="flex items-start gap-2">
+                {actionable && batchEligibleIds?.has(o.id) && onToggleSelect && (
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 rounded shrink-0"
+                    checked={selectedIds?.has(o.id) ?? false}
+                    onChange={() => onToggleSelect(o.id)}
+                    disabled={batchBusy || busyOpId === o.id}
+                  />
+                )}
+                <div className="flex-1 min-w-0 space-y-0.5">
+                  <div className="flex justify-between gap-2">
+                    <span className="font-mono truncate">{o.id}</span>
+                    <span className="shrink-0 text-muted-foreground">{o.status}</span>
+                  </div>
+                  <div className="text-muted-foreground truncate">
+                    {o.kind}
+                    {o.operation?.issue_key ? ` · ${o.operation.issue_key}` : ''}
+                    {o.operation?.summary ? ` · ${o.operation.summary}` : ''}
+                    {o.conversation_id ? ` · ${o.conversation_id.slice(0, 8)}…` : ''}
+                  </div>
+                  <AuditTrail row={o} />
+                </div>
               </div>
-              <div className="text-muted-foreground truncate">
-                {o.kind}
-                {o.operation?.issue_key ? ` · ${o.operation.issue_key}` : ''}
-                {o.conversation_id ? ` · ${o.conversation_id.slice(0, 8)}…` : ''}
-              </div>
+              {o.drafts_count != null && o.drafts_count > 0 && (
+                <div className="text-muted-foreground">草稿 {o.drafts_count} 条</div>
+              )}
+              {(o.warnings || []).map((w, i) => (
+                <div key={i} className="text-amber-600 truncate">{w}</div>
+              ))}
               {o.error && <div className="text-red-500 truncate">{o.error}</div>}
+              {o.recovery?.summary && (
+                <div className="text-amber-700">{o.recovery.summary}</div>
+              )}
+              {o.conversation_id && onJumpToSession && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-[10px] gap-1 px-2"
+                  onClick={() => onJumpToSession(o.conversation_id)}
+                >
+                  <Link2 size={12} />
+                  查看原会话
+                </Button>
+              )}
+              {actionable && onConfirm && onReject && (
+                <PendingActions
+                  row={o}
+                  busy={busyOpId === o.id || !!batchBusy}
+                  progress={progressByOpId?.[o.id]}
+                  error={lastError?.[o.id]}
+                  onConfirm={onConfirm}
+                  onReject={onReject}
+                />
+              )}
             </li>
           ))}
         </ul>
       )}
     </section>
+  );
+}
+
+function PendingActions({
+  row,
+  busy,
+  progress,
+  error,
+  onConfirm,
+  onReject,
+}: {
+  row: OpRow;
+  busy: boolean;
+  progress?: string;
+  error?: string;
+  onConfirm: (opId: string, recoveryAction?: string) => void;
+  onReject: (opId: string) => void;
+}) {
+  const recoveryActions = (row.recovery?.actions || []).filter(
+    (a) => a.id !== 'cancel' && !actionNeedsForm(a),
+  );
+  const hasFormAction = (row.recovery?.actions || []).some(actionNeedsForm);
+
+  return (
+    <div className="pt-1 space-y-1.5">
+      {progress && (
+        <div className="text-[10px] text-blue-600">{progress}</div>
+      )}
+      {error && (
+        <div className="text-[10px] text-red-500">{error}</div>
+      )}
+      {hasFormAction && (
+        <p className="text-[10px] text-muted-foreground">
+          需补充信息的操作请在聊天会话中使用确认卡处理。
+        </p>
+      )}
+      <div className="flex flex-wrap gap-1.5">
+        {recoveryActions.map((a) => (
+          <Button
+            key={a.id}
+            variant="outline"
+            size="sm"
+            className="h-7 text-[10px]"
+            disabled={busy}
+            onClick={() => onConfirm(row.id, a.id)}
+          >
+            {a.label || a.id}
+          </Button>
+        ))}
+        <Button
+          variant="default"
+          size="sm"
+          className="h-7 text-[10px] gap-1"
+          disabled={busy}
+          onClick={() => onConfirm(row.id)}
+        >
+          <CheckCircle size={12} />
+          授权放行
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-[10px] gap-1 text-red-600 hover:text-red-700"
+          disabled={busy}
+          onClick={() => onReject(row.id)}
+        >
+          <XCircle size={12} />
+          拒绝拦截
+        </Button>
+      </div>
+    </div>
   );
 }

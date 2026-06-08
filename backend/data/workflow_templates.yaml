@@ -1,0 +1,76 @@
+# ════════════════════════════════════════════════════════════
+#  Alice M5 工作流模板注册表
+#
+#  Schema（必检）:
+#    templates:
+#      - id: <kebab-case, 唯一>
+#        name: <中文名称>
+#        description: <一句话描述>
+#        steps:
+#          - id: <step id, 模板内唯一>
+#            tool: <工具名, 如 search_jira_issues | create_issues_draft>
+#            description: <步骤说明>
+#            params_schema:  # 可选, 参数 schema（JSON Schema 风格）
+#              type: object
+#              properties: {}
+#
+#  M5.1 仅注册表 + 引擎骨架; M5.2/M5.3 填充 steps 并实现执行。
+# ════════════════════════════════════════════════════════════
+
+templates:
+  - id: version-day-check
+    name: "版本日检查"
+    description: "版本发布日自动拉取待验证 Issue 清单并生成检查报告（只读）"
+    steps:
+      - id: jql_query
+        tool: jira_search
+        description: "JQL 查询版本日相关的待验证 Issue（project 从 global_config 读取，不硬编码）"
+        params_schema:
+          type: object
+          properties:
+            jql:
+              type: string
+              description: "JQL 查询语句，例如 project=XX AND labels=version-day AND status!=Done"
+      - id: format_checklist
+        tool: format
+        description: "将 Jira 查询结果格式化为检查清单（Issue Key + 标题 + 状态 + 负责人）"
+      - id: summarize
+        tool: llm_summarize
+        description: "LLM 汇总检查清单，输出待处理 N 项、已完成 M 项"
+
+  - id: design-to-subtasks
+    name: "策划→子任务"
+    description: "将策划案父 Issue 拆解为多个子任务草稿，经 HITL 确认后批量创建"
+    params_schema:
+      type: object
+      properties:
+        parent_issue_key:
+          type: string
+          description: "父 Issue Key（如 CT-10000），读取策划文档定位用"
+        project_key:
+          type: string
+          description: "Jira 项目 Key（可选，默认从 Admin global_config 读取）"
+        issue_type:
+          type: string
+          description: "子任务 issueType（可选，默认 Task）"
+      required:
+        - parent_issue_key
+    steps:
+      - id: read_design_doc
+        tool: kb_search
+        description: "读取策划文档正文（FAISS 语义检索优先，降级 catalog 关键词）"
+        params_schema:
+          type: object
+          properties:
+            doc_query:
+              type: string
+              description: "搜索策划文档的关键词或文档 ID"
+      - id: identify_subtasks
+        tool: llm_summarize
+        description: "LLM 从策划文档中提取可执行的子任务列表（每项含 summary、issueType）"
+      - id: create_drafts
+        tool: jira_create_drafts
+        description: "将子任务列表逐条调 create_issues_draft 创建草稿（单条失败不停全局）"
+      - id: return_draft_list
+        tool: format
+        description: "整理 draft 列表供用户 HITL 审批（含 draft_id + confirm URL）"

@@ -235,3 +235,37 @@ test_cases:
   - JQL
   - 任务
   - 项目
+- id: kb-faiss-01
+  input: 后卫名单有哪些人
+  category: kb
+  min_score: 40
+  description: M5.x KB 优化令 — 语义匹配（问法不含文档标题关键词，依赖 FAISS 向量召回）
+  expected_plugins:
+  - search_docs_catalog
+  expected_keywords:
+  - 后卫
+  - 名单
+  - 球员
+- id: kb-faiss-02
+  input: 前锋打什么位置
+  category: kb
+  min_score: 40
+  description: M5.x KB 优化令 — 同表不同语义问法
+  expected_plugins:
+  - search_docs_catalog
+  expected_keywords:
+  - 前锋
+  - 位置
+  - 球员
+- id: kb-faiss-03
+  input: 最近更新的策划案是哪个文档
+  category: kb
+  min_score: 40
+  description: M5.x KB 优化令 — catalog 按时间排序兜底
+  expected_plugins:
+  - search_docs_catalog
+  expected_keywords:
+  - 策划
+  - 文档
+  - 更新
+  - 时间

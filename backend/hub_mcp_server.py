@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Alice Hub MCP Server (stdio) — exposes readonly tools from tools/registry.yaml.
+Alice Hub MCP Server (stdio) — readonly + mailbox worker tools from tools/registry.yaml.
 
 Usage:
   cd backend && py -3 hub_mcp_server.py
@@ -18,7 +18,12 @@ os.environ.setdefault("NO_PROXY", "*")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ai_bridge import load_global_config, parse_user_config  # noqa: E402
-from mcp_registry import get_readonly_tools, invoke_readonly_tool  # noqa: E402
+from mcp_registry import (  # noqa: E402
+    get_readonly_tools,
+    get_worker_tools,
+    invoke_mailbox_tool,
+    invoke_readonly_tool,
+)
 
 _cfg = load_global_config()
 for k, env in (
@@ -41,7 +46,7 @@ except ImportError:
 mcp = FastMCP("alice-hub")
 
 
-def _register_tools() -> None:
+def _register_readonly_tools() -> None:
     for spec in get_readonly_tools():
         tool_name = spec["name"]
         tool_desc = (spec.get("description") or tool_name).strip()
@@ -55,7 +60,22 @@ def _register_tools() -> None:
         _bind(tool_name, tool_desc)
 
 
-_register_tools()
+def _register_worker_tools() -> None:
+    for spec in get_worker_tools():
+        tool_name = spec["name"]
+        tool_desc = (spec.get("description") or tool_name).strip()
+
+        def _bind(name: str, desc: str):
+            @mcp.tool(name=name, description=desc[:800])
+            def _tool(**kwargs) -> str:
+                out = invoke_mailbox_tool(name, kwargs, origin="mcp_stdio")
+                return json.dumps(out, ensure_ascii=False)
+
+        _bind(tool_name, tool_desc)
+
+
+_register_readonly_tools()
+_register_worker_tools()
 
 
 if __name__ == "__main__":

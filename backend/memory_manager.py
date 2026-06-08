@@ -151,6 +151,8 @@ _INTENT_MEMORY_HINTS: dict[str, tuple[str, ...]] = {
     "JIRA_STRUCTURED_SEARCH": ("Jira", "任务", "项目", "CT-", "筛选"),
     "JIRA_WRITE": ("Jira", "创建", "流转", "状态", "确认"),
     "DOC_SEARCH": ("文档", "策划", "KB-", "Notion", "设计"),
+    "KNOWLEDGE_QUERY": ("文档", "策划", "KB-", "方案", "设计", "知识"),
+    "WORKFLOW_TRIGGER": ("模板", "检查", "子任务", "工作流"),
     "CODE_COMMIT_LIST": ("提交", "commit", "SVN", "revision", "代码"),
     "WEEKLY_REPORT": ("周报", "日报", "总结"),
 }

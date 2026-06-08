@@ -15,6 +15,26 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE = os.environ.get("ALICE_BASE_URL", "http://127.0.0.1:9099")
 
 
+def extract_sse_answer_text(stream: str) -> str:
+    """Concatenate chat completion deltas from SSE (Unicode may split across chunks)."""
+    parts: list[str] = []
+    for block in stream.split("\n\n"):
+        for line in block.split("\n"):
+            if not line.startswith("data: ") or "[DONE]" in line:
+                continue
+            try:
+                data = json.loads(line[6:])
+            except json.JSONDecodeError:
+                continue
+            choice = (data.get("choices") or [{}])[0]
+            delta = choice.get("delta") or {}
+            msg = choice.get("message") or {}
+            chunk = delta.get("content") or msg.get("content") or ""
+            if chunk:
+                parts.append(str(chunk))
+    return "".join(parts)
+
+
 def post_chat_sse(content: str) -> str:
     body = json.dumps(
         {"messages": [{"role": "user", "content": content}], "config": {}}
@@ -90,10 +110,12 @@ def main() -> int:
             print(f"FAIL {cid}: no KB tool in SSE stream")
             ok_all = False
             continue
-        if expect and expect not in stream:
-            print(f"FAIL {cid}: missing expected {expect!r} in stream")
-            ok_all = False
-            continue
+        if expect:
+            answer_text = extract_sse_answer_text(stream)
+            if expect not in answer_text and expect not in stream:
+                print(f"FAIL {cid}: missing expected {expect!r} in answer")
+                ok_all = False
+                continue
         print(f"OK {cid} chat path KB tools + content check")
 
     if not ok_all:
