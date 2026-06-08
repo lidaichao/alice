@@ -154,6 +154,14 @@ jira = JiraClient(
     pat_token=config["jira_pat"] or None,
 )
 
+def _hub_only_jira_enabled() -> bool:
+    return os.environ.get("ALICE_HUB_ONLY_JIRA", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
 # ── 前端配置解析（支持用户级 Key 注入）───────────────────────
 def parse_user_config(data: dict) -> dict:
     """
@@ -163,11 +171,7 @@ def parse_user_config(data: dict) -> dict:
     uc = data.get("user_config", {}) or {}
     frontend_cfg = data.get("config", {}) or {}
     global_cfg = load_global_config()
-    hub_only = os.environ.get("ALICE_HUB_ONLY_JIRA", "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
+    hub_only = _hub_only_jira_enabled()
     hub_pat = config["jira_pat"] or global_cfg.get("JIRA_PAT", "") or os.getenv("JIRA_PAT", "")
     client_pat = (
         uc.get("user_jira_pat")
@@ -2343,6 +2347,62 @@ def list_pending_ops():
     } for o in ops]})
 
 
+@app.route("/operations", methods=["GET"])
+def list_ops_console():
+    """M3 管控台：按状态列出操作（默认待确认+恢复+进行中+失败）。"""
+    from jira_operation_manager import list_operations, operation_to_confirm_ui
+
+    conv_id = request.args.get("conversation_id", "")
+    raw_status = request.args.get("status", "")
+    limit = int(request.args.get("limit", "50") or 50)
+    if raw_status:
+        statuses = [s.strip() for s in raw_status.split(",") if s.strip()]
+    else:
+        statuses = [
+            "awaiting_confirmation",
+            "recovery_required",
+            "running",
+            "failed",
+            "created",
+        ]
+    ops = list_operations(statuses=statuses, conversation_id=conv_id, limit=limit)
+    return jsonify({
+        "ok": True,
+        "operations": [{
+            "id": o["id"],
+            "status": o["status"],
+            "kind": o.get("kind"),
+            "conversation_id": o.get("conversation_id"),
+            "drafts_count": len(o.get("drafts", [])),
+            "warnings": o.get("warnings", []),
+            "error": o.get("error"),
+            "failure": o.get("failure"),
+            "recovery": o.get("recovery"),
+            "created_at": o.get("created_at"),
+            "updated_at": o.get("updated_at"),
+            "operation": operation_to_confirm_ui(o),
+        } for o in ops],
+    })
+
+
+@app.route("/mcp/v1/tools", methods=["GET"])
+def mcp_list_tools():
+    from mcp_registry import list_mcp_tools_payload
+
+    return jsonify({"ok": True, "api_version": "1.0", "tools": list_mcp_tools_payload()})
+
+
+@app.route("/mcp/v1/tools/<tool_name>", methods=["POST"])
+def mcp_invoke_tool(tool_name: str):
+    from mcp_registry import invoke_readonly_tool
+
+    body = request.get_json(silent=True) or {}
+    user_cfg = parse_user_config(body)
+    out = invoke_readonly_tool(tool_name, body.get("arguments") or body.get("args") or {}, user_cfg)
+    code = 200 if out.get("ok") else 400
+    return jsonify(out), code
+
+
 # ── 代理端点 ──────────────────────────────────────────────────
 @app.route("/proxy/notion/test", methods=["POST"])
 def proxy_notion_test():
@@ -2595,6 +2655,8 @@ def health():
         return jsonify({
             "status": "degraded" if degraded else "ok",
             "service": "ai-bridge-v5",
+            "api_version": "1.0",
+            "hub_only_jira": _hub_only_jira_enabled(),
             "engine": _resolved_deepseek_model(load_global_config()),
             "active_requests": _active_requests,
             "max_threads": 10,

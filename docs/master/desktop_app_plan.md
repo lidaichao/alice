@@ -14,7 +14,7 @@
 | 二 | 鉴权与参数动态化 | ✅ |
 | 三 | 桌面壳 + IPC 桥接 | ✅ |
 | 四 | Admin API + Web 面板 | ✅ |
-| 五 | 安全测试 + 打包分发 | ⏳ 待启动 |
+| 五 | 安全测试 + 打包分发 | ✅ 脚本就绪：`scripts/build_release.ps1` / `build_release.sh`；打包环境执行 `npm run dist:win` |
 
 ---
 

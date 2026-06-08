@@ -43,7 +43,7 @@ function spawnPythonBackend() {
     pythonProcess = spawn(bin, [], {
       cwd: path.dirname(bin),
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env }
+      env: { ...process.env, ALICE_HUB_ONLY_JIRA: '1' }
     });
 
     pythonProcess.stdout?.on('data', (d) => console.log(`[Backend] ${d.toString().trim()}`));

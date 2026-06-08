@@ -1,6 +1,6 @@
 # Alice AI Bridge — API 契约文档 (v1.0)
 
-> 版本：v1.1 | 日期：2026-06-05 | 作者：可达鸭 (Psyduck)
+> 版本：**v1.0（已冻结）** | 日期：2026-06-08 | 作者：可达鸭 (Psyduck)
 >
 > 本文档通过逆向读取 `backend/ai_bridge.py` 中的 Flask 路由装饰器生成。
 > ⚠️ SSE 接口标记为 `stream: text/event-stream`。
@@ -8,6 +8,19 @@
 **相关文档**：[三期蓝图计划（开发校准）](alice三期蓝图计划.md) · [Master 架构](Alice_Master_Architecture_v1.0.md) · [前端组件树](Alice_Frontend_Component_Tree_v1.0.md) · [灰盒 SOP](Alice_Graybox_SOP_v1.0.md)
 
 > `intent_disambiguation` 已合入（蓝图 E5.2）。
+
+---
+
+## 零、v1.0 兼容策略（冻结）
+
+| 规则 | 说明 |
+|------|------|
+| **版本号** | `GET /health` 返回 `api_version: "1.0"` |
+| **Additive-only** | v1.0 客户端可忽略未知 JSON 字段与 SSE `_event` |
+| **冻结标识** | `operation_id`、`draft_id`、`conversation_id` 语义与格式不变 |
+| **冻结 SSE** | `_event`: `confirm_card`、`draft_card`、`operation_progress`、`intent_disambiguation`、`jira_search_supplement` |
+| **Hub-only Jira** | `hub_only_jira: true` 时请求体 **不得** 依赖 `jira_pat`（E4） |
+| **破坏性变更** | 须升 `api_version` 主版本并更新本文档 |
 
 ---
 
@@ -281,7 +294,7 @@ GET /operations/pending
 
 | 端点 | 方法 | 用途 |
 |------|------|------|
-| `/health` | GET | 健康检查 `{"status":"ok","engine":"deepseek-chat"}` |
+| `/health` | GET | 健康检查 `{"status":"ok","api_version":"1.0","hub_only_jira":true,...}` |
 | `/cache/stats` | GET | 缓存命中统计 |
 | `/test` | GET | 基础连通性测试 |
 
@@ -299,6 +312,11 @@ Jira 操作:
   POST /operations/<id>/confirm   确认操作（body 含 jira_pat）
   POST /operations/<id>/reject    拒绝操作
   GET  /operations/pending        待确认列表（?conversation_id=）
+  GET  /operations                管控台列表（?status= 逗号分隔）
+
+MCP（中期 M1，只读）:
+  GET  /mcp/v1/tools              只读工具清单（registry.yaml risk=readonly）
+  POST /mcp/v1/tools/<name>       调用只读工具 { "arguments": {...} }
 
 Jira 草稿箱:
   GET  /drafts/<id>               草稿详情

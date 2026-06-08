@@ -148,6 +148,37 @@ class EvalEngine:
                 "judge_reason": str(e),
             }
 
+        if tc.get("expect_confirm_card"):
+            if stream.get("confirm_card") if _HAS_SSE_LIB else False:
+                return {
+                    "id": tc.get("id"),
+                    "passed": True,
+                    "score": 100,
+                    "min_score": min_score,
+                    "answer": (answer or "")[:500],
+                    "answer_length": len(answer or ""),
+                    "judge_reason": "HITL confirm_card emitted (no direct Jira write)",
+                    "expected_keywords": expected,
+                    "plugins_seen": plugins_seen,
+                    "plugin_ok": True,
+                    "plugin_note": "",
+                    "latency_ms": latency,
+                    "category": category,
+                    "judge_mode": "oracle",
+                }
+            return {
+                "id": tc.get("id"),
+                "passed": False,
+                "score": 0,
+                "min_score": min_score,
+                "answer": (answer or "")[:500],
+                "judge_reason": "expect_confirm_card: no confirm_card in SSE",
+                "plugins_seen": plugins_seen,
+                "latency_ms": latency,
+                "category": category,
+                "judge_mode": "oracle",
+            }
+
         plugin_ok = True
         plugin_note = ""
         if expected_plugins or forbidden_plugins:

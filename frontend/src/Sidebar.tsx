@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useChatStore } from '@/store/useChatStore';
 import { Button } from '@/components/ui/button';
 import { useTheme } from 'next-themes';
-import { Sun, Moon, Monitor, Plus, Trash2, Edit2, Wifi, Bug, ClipboardList } from 'lucide-react';
+import { Sun, Moon, Monitor, Plus, Trash2, Edit2, Wifi, Bug, ClipboardList, LayoutDashboard } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { TeamMemoryPanel } from '@/components/TeamMemoryPanel';
 
@@ -15,6 +15,8 @@ export const Sidebar: React.FC = () => {
   const renameSession = useChatStore((s) => s.renameSession);
   const pendingConfirmations = useChatStore((s) => s.pendingConfirmations);
   const pendingDraftCards = useChatStore((s) => s.pendingDraftCards);
+  const mainView = useChatStore((s) => s.mainView);
+  const setMainView = useChatStore((s) => s.setMainView);
   const { theme, setTheme } = useTheme();
 
   const pendingTotal = pendingConfirmations.length + pendingDraftCards.length;
@@ -49,7 +51,22 @@ export const Sidebar: React.FC = () => {
         </Button>
       </div>
 
-      {pendingTotal > 0 && (
+      <div className="px-2 pt-2">
+        <Button
+          variant={mainView === 'operations' ? 'secondary' : 'outline'}
+          size="sm"
+          className="w-full justify-start gap-2 text-xs"
+          onClick={() => setMainView(mainView === 'operations' ? 'chat' : 'operations')}
+        >
+          <LayoutDashboard size={14} />
+          审批管控台
+          {pendingTotal > 0 && (
+            <span className="ml-auto rounded-full bg-amber-500/20 px-1.5 text-[10px]">{pendingTotal}</span>
+          )}
+        </Button>
+      </div>
+
+      {pendingTotal > 0 && mainView === 'chat' && (
         <div className="mx-2 mt-2 mb-1 p-2 rounded-lg border border-amber-400/40 bg-amber-50/50 dark:bg-amber-950/30">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-800 dark:text-amber-200 mb-1.5">
             <ClipboardList size={14} />

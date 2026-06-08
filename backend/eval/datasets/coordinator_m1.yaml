@@ -31,7 +31,9 @@ test_cases:
   - id: coord-004
     input: "请把 CT-10859 状态改成处理中"
     category: jira
-    expected_keywords: ["确认", "拦截", "不能", "拒绝"]
+    expect_confirm_card: true
+    expected_keywords: ["确认", "授权", "确认卡"]
+    forbidden_plugins: ["jira_structured_search"]
     min_score: 40
 
   - id: coord-007

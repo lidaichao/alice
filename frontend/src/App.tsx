@@ -14,6 +14,8 @@ import { buildConfirmCardFromApi, formatOperationResultMessage } from '@/lib/jir
 import { confirmOperationWithProgress } from '@/lib/operationConfirmStream';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { PluginToolCard } from '@/components/MarkdownRenderer';
+import { OperationsConsole } from '@/components/OperationsConsole';
+import { syncHubConfigFromHealth } from '@/lib/hubConfig';
 import { ThemeProvider } from '@lobehub/ui';
 import { Square } from 'lucide-react';
 
@@ -29,6 +31,8 @@ export const App: React.FC = () => {
   const pendingConfirmations = useChatStore((s) => s.pendingConfirmations);
   const pendingDraftCards = useChatStore((s) => s.pendingDraftCards);
   const pendingJiraSupplements = useChatStore((s) => s.pendingJiraSupplements);
+  const mainView = useChatStore((s) => s.mainView);
+  const setMainView = useChatStore((s) => s.setMainView);
 
   const currentSession = sessions.find((s) => s.id === activeSessionId);
   const messages = currentSession?.messages || [];
@@ -36,6 +40,7 @@ export const App: React.FC = () => {
   // ── 初始化：加载 DB + 首次启动自动建会话 ──
   useEffect(() => {
     initDB();
+    syncHubConfigFromHealth();
   }, []); // initDB ref stable from zustand
 
   useEffect(() => {
@@ -279,6 +284,11 @@ export const App: React.FC = () => {
     <ThemeProvider themeMode="dark">
       <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
         <Sidebar />
+        {mainView === 'operations' ? (
+          <main className="flex-1 flex flex-col min-w-0 border-r border-border">
+            <OperationsConsole onBack={() => setMainView('chat')} />
+          </main>
+        ) : (
         <main className="flex-1 flex flex-col min-w-0 bg-muted/10 relative border-r border-border">
           <Header />
 
@@ -405,6 +415,7 @@ export const App: React.FC = () => {
           </div>
         </main>
         <RightPanel />
+        )}
       </div>
     </ThemeProvider>
   );

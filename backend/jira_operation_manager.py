@@ -786,6 +786,25 @@ def get_pending_operations(conversation_id: str = "") -> list:
         return sorted(ops, key=lambda o: o["created_at"], reverse=True)
 
 
+def list_operations(
+    statuses: list[str] | None = None,
+    conversation_id: str = "",
+    limit: int = 50,
+) -> list:
+    """按状态列出操作（M3 管控台）。"""
+    want = set(statuses or [])
+    with _lock:
+        ops = []
+        for op in _store.values():
+            if want and op.get("status") not in want:
+                continue
+            if conversation_id and op.get("conversation_id") != conversation_id:
+                continue
+            ops.append(op)
+        ops.sort(key=lambda o: o.get("updated_at") or o.get("created_at") or "", reverse=True)
+        return ops[: max(1, min(limit, 200))]
+
+
 def execute_confirmed_operation(jira_client, operation: dict, user_pat: str = "",
                                 skip_labels: bool = False) -> dict:
     """

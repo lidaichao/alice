@@ -30,6 +30,14 @@ set ALICE_HUB_ONLY_JIRA=1
 
 ## 验收
 
-- [ ] 客户端空 `jira_pat` 下可完成 Jira 搜索（经 Hub）
-- [ ] 确认卡 `POST /operations/<id>/confirm` 成功
-- [ ] 无浏览器直连 `*.atlassian.net` 请求（网络面板）
+- [x] 客户端空 `jira_pat` 下可完成 Jira 搜索（经 Hub）— `scripts/e2e_e4_hub_only.py`
+- [x] 草稿/拒绝路径无 `jira_pat` — 同上
+- [ ] 无浏览器直连 `*.atlassian.net` 请求（网络面板，客户端手测）
+
+启动 Hub（推荐）：
+
+```powershell
+.\scripts\start_hub.ps1   # 含 ALICE_HUB_ONLY_JIRA=1
+```
+
+集成：`ALICE_RUN_INTEGRATION=1 ALICE_RUN_E4=1 py -3 scripts/ci_gate.py`
