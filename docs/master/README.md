@@ -6,7 +6,7 @@
 
 | 文档 | 用途 |
 |------|------|
-| **[alice三期蓝图计划.md](alice三期蓝图计划.md)** | 近/中/远 WBS、架构宪法、发布门禁 — **路径与顺序唯一依据** |
+| **[alice三期蓝图计划.md](alice三期蓝图计划.md)** | 近/中/远 WBS、架构宪法、发布门禁 — **路径与顺序唯一依据**；知识库多项目见 **§2.2** |
 | [AGENTS.md](../../AGENTS.md) | 仓库根 Agent 入口 |
 | `.cursor/rules/alice-roadmap-calibration.mdc` | Cursor 自动加载的校准规则 |
 

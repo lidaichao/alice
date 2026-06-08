@@ -76,10 +76,11 @@ flowchart TB
 | C2 | 单一 Operation 状态机 | 审批/草稿/恢复以 `jira_operation_manager` 为唯一真相源；**禁止**用 LangGraph checkpoint 存审批 |
 | C3 | 单一编排入口 | 新逻辑进 `chat_orchestrator`；`ai_bridge.py` 仅路由（绞杀者迁移） |
 | C4 | 契约优先 | SSE / REST / MCP 共用 `operation_id`、`draft_id`、`conversation_id` |
-| C5 | 确定性优先 | JQL、Issue Key、KB-id、revision 由代码处理；LLM 填槽与总结 |
+| C5 | 确定性优先（管道） | **管道确定性**：JQL、Issue Key、KB-id、revision、工具契约、防编造由代码保证；**语义与业务槽位**由 LLM 从用户句抽取后总结。**不等于**把知识库正文写进代码 |
 | C6 | Eval 门禁 | 发布前必跑 §6.1 所列评测 |
 | C7 | OSS-only | 新基础设施依赖须开源可自托管；MIT/Apache-2.0 优先；AGPL 须审查 |
 | C8 | 近一期存储 | **仅** JSON 文件 + SQLite（按需）；**不引入** Redis / Temporal（中期再评估） |
+| C9 | 知识库多项目 | 见 §2.2；**禁止**在代码中硬编码某一项目的业务名词用于路由/检索；项目差异走 Admin、eval、可选 `tenant_synonyms.json` |
 
 ### 2.1 非目标（近一期）
 
@@ -88,6 +89,54 @@ flowchart TB
 - Cursor 无审批自动写 Jira
 - 多租户 SaaS
 - 商业软件采购（Camunda 企业版、Glean、LangSmith SaaS、LlamaParse 等）
+
+### 2.2 知识库答题设计（多项目）
+
+Alice 面向**多种项目**复用同一套 Hub：用户自然语言 → AI **理解语义** → 系统 **逐层检索**（catalog → read）→ 基于真实文档回答。
+
+**红线（C9）**：`backend/`、`frontend/` **不得**写入某一项目的业务实体词（如具体系统名、位置枚举、名单）来锁定检索或路由。  
+**允许**：读 GDrive/Notion、文件名匹配、表头识别、Issue Key 格式、多轮是否再调工具。
+
+```mermaid
+flowchart LR
+  Q[用户自然语言]
+  L1[L1_是否查库]
+  L2[L2_catalog_then_read]
+  L3[L3_LLM总结]
+  Q --> L1
+  L1 -->|作业通道| L2
+  L2 --> L3
+  subgraph config [项目级_可换]
+    Admin[Admin_GDrive_Notion]
+    Eval[eval金标]
+    Syn[tenant_synonyms可选]
+  end
+  config --> L2
+```
+
+| 层 | 职责 | 主要实现 | 换项目是否改代码 |
+|----|------|----------|------------------|
+| L1 | 闲聊 vs 查库；工具子集 | `chat_orchestrator`、`intent_classifier`（通用）、`intent_router`（LLM） | 否 |
+| L2 | 找文档、读表、按槽位筛行 | `search_docs_catalog`、`read_specific_doc`、`gdrive_knowledge` | 否 |
+| L3 | 组织答案、引用来源 | ReAct + 反幻觉 prompt | 否 |
+| 知识内容 | 文档正文与名单 | GDrive / Notion | **不进代码** |
+
+**换项目检查清单**（例：足球 → 乒乓球）：(1) Admin 换目录 (2) 换 `eval/datasets` 金标 (3) 可选 `tenant_synonyms.json` (4) 跑 eval；(5) 若失败只修**通用** L2/L3，禁止在 regex 写「乒乓球」。
+
+**内测案例归属**：原话 → `eval/reports/user_test_feedback.md`；金标 → `eval/datasets/gdrive_sheet_cases.yaml`（如 gsheet-001/002）；**不进** `intent_classifier`。
+
+**明确不做**：为每个位置/项目加 Python `if`；用硬编码名单代替 `read_specific_doc`；为单条内测通过堆领域 regex。
+
+#### C9 细则
+
+| 子项 | 规则 |
+|------|------|
+| C9.1 | 禁止业务名词、名单、位置枚举硬编码于路由/检索代码 |
+| C9.2 | 项目差异：Admin 配置、eval 金标、可选 `backend/data/tenant_synonyms.json` |
+| C9.3 | L1：通用作业信号 + `intent_router` LLM；禁止为单用例加领域 regex |
+| C9.4 | L2：筛选来自 LLM 槽位或表头识别，非写死列含义 |
+| C9.5 | L3：多轮换条件须再调 catalog+read |
+| C9.6 | PR 改动 `intent_classifier` 新模式须通过 `scripts/check_kb_domain_hardcode.py` 或说明例外 |
 
 ---
 
@@ -245,35 +294,92 @@ flowchart TB
 
 ### 5.9 中期计划（4–10 月）WBS
 
+**中期出口里程碑**：M3 控制台可审批 · M2 Mailbox 派工/拉取/回报 E2E 绿 · M4 审批可追溯 · M5 两模板可触发。
+
+**执行纪律**（§6.2 补充）：每个 `M*.n` 须单独交付——代码 + 契约（若涉 API）+ 自动化（单测/e2e/eval）+ 本表 `[x]`；禁止无测试标完成。
+
+#### Epic 总表
+
 | Epic | 关键任务 | DoD | 状态 |
 |------|----------|-----|------|
-| M1 MCP Server | `registry.yaml` → MCP HTTP + stdio；审计 | `cursor_e2e_mcp.py` 3 条只读 | [x] v1.0.7 骨架 |
-| M2 Mailbox | SQLite 任务表；`task_id` 协议 | 派工/拉取/回报 | [ ] |
-| M3 HITL 控制台 v1 | 审批台 + `/operations` | 侧栏入口非仅聊天 | [-] v1.0.7 骨架 |
-| M4 角色 | user_id 绑定审批 | 审批可追溯 | [ ] |
-| M5 工作流模板 | 版本日检查、策划→子任务 | 2 模板 | [ ] |
-| M6 API v1 冻结 | 契约版本 + additive-only | `Alice_API_Contract_v1.0` §零 | [x] v1.0.7 |
+| M1 MCP Server | registry → HTTP/stdio MCP；只读审计 | `cursor_e2e_mcp.py` 3 条绿 | [x] v1.0.7 |
+| M2 Mailbox | SQLite 任务表 + `mailbox_task_id` 协议 | 派工/拉取/回报 + `e2e_mailbox.py` | [ ] |
+| M3 HITL 控制台 v1 | 审批台 + `/operations` | 侧栏入口 + 控制台内可审批 | [-] v1.0.7 骨架 |
+| M4 角色与审计 | `user_id` 绑定 + 审批人落盘 | confirm/reject 可追溯 + audit API | [ ] |
+| M5 工作流模板 | 版本日检查、策划→子任务 | 2 模板 + eval 金标 | [ ] |
+| M6 API v1 冻结 | additive-only | 契约 §零 + `/health` api_version | [x] v1.0.7 |
 
-#### M1 明细
+**中期存储**：Mailbox 用 **SQLite**（`backend/data/mailbox.db`）；仅当瓶颈明确再评估 Redis（须过 C7/C8 变更）。
+
+**ID 命名约定**（避免与现有代码冲突）：
+
+| 字段 | 用途 | 模块 |
+|------|------|------|
+| `operation_id` | HITL Jira 写审批 | `jira_operation_manager` |
+| `mailbox_task_id` | Agent 派工队列（M2） | `mailbox_store`（新建） |
+| `admin_batch_task_id` | Admin 批量分析（现有内存队列，M2.8 重命名） | `ai_bridge` |
+
+#### M1 明细（已完成）
 
 | ID | 任务 | 交付物 | DoD | 状态 |
 |----|------|--------|-----|------|
 | M1.1 | MCP registry | `mcp_registry.py` | readonly 工具清单 | [x] |
-| M1.2 | HTTP  shim | `GET/POST /mcp/v1/tools` | Cursor 可调 | [x] |
+| M1.2 | HTTP shim | `GET/POST /mcp/v1/tools` | Cursor 可调 | [x] |
 | M1.3 | stdio Server | `hub_mcp_server.py` | FastMCP 启动 | [x] |
 | M1.4 | 审计 | `audit_gateway` on invoke | 写工具拒绝 | [x] |
 | M1.5 | E2E | `scripts/cursor_e2e_mcp.py` | 3 只读绿 | [x] |
 
-#### M3 明细（Phase C 主线）
+#### M2 明细 — Mailbox
 
-| ID | 任务 | 交付物 | DoD | 状态 |
-|----|------|--------|-----|------|
-| M3.1 | 操作列表 API | `GET /operations` | 按 status 过滤 | [x] |
-| M3.2 | 前端管控台 | `OperationsConsole.tsx` | 健康+待审批+失败 | [x] |
-| M3.3 | 默认入口 | 侧栏「审批管控台」 | 可切换聊天 | [x] |
-| M3.4 | PM 批量操作 | 控制台内 confirm/reject | 待迭代 | [ ] |
+| ID | 任务 | 交付物 | 依赖 | DoD | KB 影响 | 状态 |
+|----|------|--------|------|-----|---------|------|
+| M2.1 | 数据模型 | `mailbox_schema.sql` + `mailbox_store.py` | — | 表 `mailbox_tasks`：id, status, assignee, payload_json, result_json, created_at, updated_at, operation_id(可选) | 无 | [ ] |
+| M2.2 | `mailbox_task_id` 契约 | `Alice_API_Contract_v1.0.md` §Mailbox | M2.1 | 文档区分三种 ID；状态机 pending → claimed → done / failed | 无 | [ ] |
+| M2.3 | 派工 API | `POST /v1/mailbox/dispatch` | M2.1 | 创建任务并返回 `mailbox_task_id`；payload 校验 | 无 | [ ] |
+| M2.4 | 拉取 API | `GET /v1/mailbox/tasks` | M2.1 | 按 assignee/status 拉取；`?status=pending&limit=` | 无 | [ ] |
+| M2.5 | 回报 API | `POST /v1/mailbox/tasks/<id>/report` | M2.1 | 写入 result_json；状态 done/failed；非法转移 409 | 无 | [ ] |
+| M2.6 | 与 Operation SM 边界 | `mailbox_store.py` + 注释 | M2.1, C2 | Mailbox 不存审批状态；`operation_id` 仅引用 | 无 | [ ] |
+| M2.7 | MCP 工具 | `mcp_registry` 增 pull/report | M2.3–M2.5 | `e2e_mailbox_mcp.py` 或扩展现有 MCP e2e ≥1 条绿 | 无 | [ ] |
+| M2.8 | 清理命名冲突 | `ai_bridge.py` 内存队列 | — | `task_id` 改名为 `admin_batch_task_id`；契约 §4.5 同步 | 无 | [ ] |
+| M2.9 | E2E | `scripts/e2e_mailbox.py` | M2.3–M2.5 | dispatch → pull → report 全链路 | 无 | [ ] |
+| M2.10 | 控制台可见性（P2） | OperationsConsole 或 Admin | M2.9 | 只读任务列表 | 无 | [ ] |
 
-**中期存储**：Mailbox 用 **SQLite**；仅当瓶颈明确再评估 Redis（须过 C7/C8 变更）。
+#### M3 明细 — HITL 控制台
+
+| ID | 任务 | 交付物 | 依赖 | DoD | KB 影响 | 状态 |
+|----|------|--------|------|-----|---------|------|
+| M3.1 | 操作列表 API | `GET /operations` | — | 按 status 过滤 | 无 | [x] |
+| M3.2 | 前端管控台 | `OperationsConsole.tsx` | M3.1 | 健康 + 待审批 + 失败列表 | 无 | [x] |
+| M3.3 | 侧栏入口 | `Sidebar.tsx` + `uiSlice` | M3.2 | 「审批管控台」可切换 | 无 | [x] |
+| M3.4 | 控制台内 confirm/reject | `OperationsConsole.tsx` | M3.2 | 单条审批；复用 `POST /operations/<id>/confirm\|reject` | 无 | [ ] |
+| M3.5 | 批量审批 | 多选 UI | M3.4 | PM 勾选 N 条依次确认 | 无 | [ ] |
+| M3.6 | 跳转会话 | Console → chat | M3.4 | 带 `conversation_id` 回聊天 | 无 | [ ] |
+| M3.7 | E2E | `scripts/e2e_operations_console.py` | M3.4 | 控制台 confirm → 状态变 created | 无 | [ ] |
+
+#### M4 明细 — 角色与审批可追溯
+
+| ID | 任务 | 交付物 | 依赖 | DoD | KB 影响 | 状态 |
+|----|------|--------|------|-----|---------|------|
+| M4.1 | 客户端身份 | `runtimeConfig.ts` + 请求头 | — | SSE 带 `user_id` | 无 | [ ] |
+| M4.2 | 创建时绑定 | `ai_bridge` / `plugin_gateway` | M4.1 | 所有 create operation/draft 写入 `user_id` | 无 | [ ] |
+| M4.3 | 审批人落盘 | `jira_operation_manager` + `operation_confirm.py` | M4.2 | `confirmed_by` / `rejected_by` + 时间戳 | 无 | [ ] |
+| M4.4 | 列表暴露身份 | `GET /operations` 响应 | M4.3 | 含 creator + approver；契约更新 | 无 | [ ] |
+| M4.5 | 角色配置 | `global_config` 或 `skills/registry.yaml` | M4.3 | PM 可审批；未授权 403 | 无 | [ ] |
+| M4.6 | 持久审计 | `audit_gateway` + `data/audit.log` | M4.3 | `GET /v1/audit/logs`；重启不丢 | 无 | [ ] |
+| M4.7 | 加载 audit_rules | `audit_gateway.py` | — | 读 `skills/registry.yaml` | 无 | [ ] |
+| M4.8 | 单测 + E2E | `tests/test_audit_trace.py` | M4.3–M4.6 | confirm 后 audit 含 user_id | 无 | [ ] |
+
+#### M5 明细 — 工作流模板
+
+| ID | 任务 | 交付物 | 依赖 | DoD | KB 影响 | 状态 |
+|----|------|--------|------|-----|---------|------|
+| M5.1 | 模板注册表 | `workflow_templates.yaml` + `workflow_engine.py` | — | 加载、校验、列出模板 ID | 无 | [ ] |
+| M5.2 | 模板 A：版本日检查 | YAML + orchestrator 入口 | M5.1 | JQL 清单 + 检查项；只读 | 无 | [ ] |
+| M5.3 | 模板 B：策划→子任务 | YAML + draft 集成 | M5.1, M4.2 | 父 Issue → `create_issues_draft`；HITL | 调用 `search_docs_catalog`（依赖 Phase B） | [ ] |
+| M5.4 | 触发入口 | Sidebar 或 `[WORKFLOW:xxx]` | M5.2, M5.3 | 用户可显式触发 | L1 需覆盖 workflow 信号 | [ ] |
+| M5.5 | Eval 金标 | `eval/datasets/workflow_templates.yaml` | M5.2, M5.3 | 每模板 ≥1 条 | 无 | [ ] |
+
+**建议开工顺序**：M3.4 → M3.5–M3.7 → M2.1–M2.9 → M4.1–M4.8 → M5.1–M5.5（M5 依赖 Phase B 与 M4）。
 
 ---
 
@@ -288,7 +394,27 @@ flowchart TB
 | A5 | Hub 配置同步 | `hubConfig.ts` | 读 health.hub_only_jira | [x] |
 | A6 | GDrive 表格热修 | `gdrive_knowledge.py` + H1–H3 | `test_gdrive_knowledge` + 可选 `e2e_gdrive_sheet` | [x] |
 
-**暂停**：Wave 0 全员发布、M3.4（见 [user_test_feedback.md](../../eval/reports/user_test_feedback.md)）。
+#### Phase B — KB 准确性门禁（内测 P0，阻塞 Wave 0，遵守 C9）
+
+**目标**：内测 P0 全绿 + 清偿领域 regex 技术债（§2.2）。
+
+| ID | 任务 | 交付物 | DoD | 状态 |
+|----|------|--------|-----|------|
+| B1 | 内测原话归档 | [user_test_feedback.md](../../eval/reports/user_test_feedback.md) | 只记原话/期望 | [x] v1.0.9 |
+| B2a | 重构 L1 路由 | `intent_classifier.py` | 删除球员/中锋/门将等；通用文档/知识库/列出/名单/表格/KB-id | [x] v1.0.9 |
+| B2b | L1 LLM 兜底 | `intent_router.py` | 文档名+列举 → doc_search；fast-path 不依赖领域 classify | [x] v1.0.9 |
+| B3 | 聊天路径 e2e | `scripts/e2e_gdrive_chat.py` | gsheet-001 SSE 调 KB 工具 | [x] v1.0.9 |
+| B4 | 项目金标 | `gdrive_sheet_cases.yaml` | gsheet-001 + gsheet-002；用例在 eval 不在代码 | [x] v1.0.9 |
+| B5 | ci_gate | `scripts/ci_gate.py` | `ALICE_RUN_GDRIVE_E2E=1` 含 gsheet-001/002 | [x] v1.0.9 |
+| B6 | L2 表结构筛选 | `gdrive_knowledge.py` + `tenant_synonyms.json` | 表头识别 + 槽位筛行 + 同义词配置 | [x] v1.0.9 |
+| B7 | L3 多轮再检索 | orchestrator / ReAct prompt | 换条件追问强制再 catalog+read | [x] v1.0.9 |
+| B8 | C9 静态检查 | `scripts/check_kb_domain_hardcode.py` | intent 文件无业务实体词；ci 可选 | [x] v1.0.9 |
+| B9 | 文档验收 | §2.2 + C9 | 与实现一致 | [x] v1.0.9 |
+| B10 | Wave 0 解除 | 本节暂停说明 | B1–B9 全 [x] | [ ] |
+
+**备注**：曾用领域 regex 使 gsheet-001 中锋通过，属临时债，**不得以 B2 临时方案为终态**；须完成 B2a/B2b。
+
+**暂停**：Wave 0 全员发布（B10）；M3.4 可与 Phase B 并行，见 §5.9。
 
 ---
 
@@ -347,6 +473,8 @@ flowchart TB
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| v1.0.9 | 2026-06-08 | §2.2 知识库多项目设计 + C5/C9；Phase B 重写 B1–B10 |
+| v1.0.8 | 2026-06-08 | §5.9 中期 WBS 细拆（M2/M3/M4/M5 任务级）；§5.11 增补 Phase B |
 | v1.0.7 | 2026-06-08 | 近期出口收口 + M1 MCP + M3 管控台骨架 |
 | v1.0.6 | 2026-06-05 | 里程碑债务收口：submit_supplement UI、E6.5 hybrid、发版纪要 |
 | v1.0.5 | 2026-06-05 | M3 骨架：E4 Hub 凭据 + E6 上下文；M2 收尾 E5 路由消歧 |

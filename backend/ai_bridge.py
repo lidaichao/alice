@@ -1285,11 +1285,12 @@ def _exec_get_single_commit_diff(args: dict, **kwargs) -> str:
         return json.dumps({"status": "error", "result": f"Diff 检索异常: {str(e)[:200]}"})
 
 
-def _exec_search_docs_catalog(args: dict, **kwargs) -> str:
+def _exec_search_docs_catalog(args: dict, user_text: str = "", **kwargs) -> str:
     """工具3: 知识库目录检索 — 仅返回标题+摘要候选列表
     【复刻 LlamaIndex "查目录" 阶段: 获取所有 summary_ids → 格式化批次】
     不返回全文！获取候选列表后请用 read_specific_doc 读详情。"""
     query = args.get("query", "").strip()
+    catalog_query = (user_text or "").strip() or query
     source = args.get("source", "all")
     # E6.2：Issue Key 穿透 — 检索词前置 Key 提高目录命中
     _ik = re.search(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])", query)
@@ -1374,7 +1375,7 @@ def _exec_search_docs_catalog(args: dict, **kwargs) -> str:
                         snippet = f"type={mf.get('mimeType', '')}"
                         if is_spreadsheet_mime(mf.get("mimeType", "")):
                             row_snip = enrich_spreadsheet_snippets(
-                                [mf], extract_catalog_keywords(query), GK, saas_request, proxies, max_scan=1
+                                [mf], extract_catalog_keywords(catalog_query), GK, saas_request, proxies, max_scan=1
                             ).get(direct_id, "")
                             if row_snip:
                                 snippet = row_snip
@@ -1397,7 +1398,7 @@ def _exec_search_docs_catalog(args: dict, **kwargs) -> str:
                         if gr.status_code == 200:
                             for f in gr.json().get("files", []):
                                 all_files[f["id"]] = f
-                    kws = extract_catalog_keywords(query)
+                    kws = extract_catalog_keywords(catalog_query)
                     row_map: dict = {}
                     matched = match_files_by_name(all_files, kws, query)
                     if not matched and kws:
@@ -1481,7 +1482,7 @@ def _exec_search_docs_catalog(args: dict, **kwargs) -> str:
     return json.dumps({"status": "ok", "result": catalog, "llm_text": llm_text}, ensure_ascii=False)
 
 
-def _exec_read_specific_doc(args: dict, **kwargs) -> str:
+def _exec_read_specific_doc(args: dict, user_text: str = "", **kwargs) -> str:
     """工具4: 按文档 ID 读取全文 — 复刻 LlamaIndex docstore.get_nodes()"""
     doc_id = args.get("doc_id", "").strip()
     source = args.get("source", "").strip()
@@ -1542,7 +1543,10 @@ def _exec_read_specific_doc(args: dict, **kwargs) -> str:
             from gdrive_knowledge import read_gdrive_file_content
 
             proxies = get_http_proxies()
-            ok, content, err = read_gdrive_file_content(doc_id, GK, saas_request, proxies)
+            uq = (user_text or kwargs.get("user_text") or args.get("user_query") or "").strip()
+            ok, content, err = read_gdrive_file_content(
+                doc_id, GK, saas_request, proxies, user_query=uq
+            )
             if ok:
                 return json.dumps({"status": "ok", "llm_text": content}, ensure_ascii=False)
             return json.dumps({
@@ -1679,7 +1683,13 @@ def _iter_jira_write_express_lane(user_text, user_cfg, intent_info):
         yield chunk
 
 
-def execute_tool_call(tool_name: str, arguments_str, user_cfg=None, frontend_cfg=None) -> str:
+def execute_tool_call(
+    tool_name: str,
+    arguments_str,
+    user_cfg=None,
+    frontend_cfg=None,
+    user_text: str = "",
+) -> str:
     """Alice V2.0 工具调度器 — 支持 4 原子工具 + 向后兼容"""
     try:
         args = json.loads(arguments_str) if isinstance(arguments_str, str) else (arguments_str or {})
@@ -1694,6 +1704,8 @@ def execute_tool_call(tool_name: str, arguments_str, user_cfg=None, frontend_cfg
             name, fn = _ATOMIC_TOOLS[tool_name]
             if name in ("query_jira_metadata", "search_jira_issues"):
                 return fn(args, user_pat=user_pat, frontend_cfg=frontend_cfg, user_cfg=user_cfg)
+            if name in ("search_docs_catalog", "read_specific_doc"):
+                return fn(args, user_text=user_text or "")
             return fn(args)
 
         elif tool_name == "create_issues_draft":
@@ -1863,6 +1875,9 @@ CORE_SYSTEM_PROMPT_V2 = """你是 Alice V2.0，Jira 项目和知识库管理 AI 
 5. 禁止知识库幻觉：100% 来源工具结果，没搜到就说没搜到。
 6. 无数据绝对熔断：无工具返回数据 = 禁止输出任何数值/表格/Issue列表。
 7. 搜索结果必须展示：工具返回了任务列表就必须以表格列出前5-10条，不能因为"没有精确匹配"就跳过不展示！
+
+【知识库多轮追问 — C9.5】
+当用户在后续消息中更换筛选条件（如不同位置、类别、范围）但仍查文档/表格时，必须重新调用 search_docs_catalog 与 read_specific_doc，禁止仅凭上一轮回答推断或否认数据存在。
 
 【Jira 写操作 — 操作确认卡协议】
 - 你拥有修改 Jira 状态、创建任务的能力；系统会在执行前自动生成「操作确认卡」供用户审核。

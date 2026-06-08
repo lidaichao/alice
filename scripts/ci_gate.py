@@ -41,6 +41,7 @@ def main() -> int:
     _run([py, os.path.join("backend", "tests", "test_catalog_hybrid.py")])
     _run([py, os.path.join("backend", "tests", "test_mcp_registry.py")])
     _run([py, os.path.join("backend", "tests", "test_gdrive_knowledge.py")])
+    _run([py, os.path.join("scripts", "check_kb_domain_hardcode.py")])
 
     if os.environ.get("ALICE_RUN_INTEGRATION", "").strip() in ("1", "true", "yes"):
         base = os.environ.get("ALICE_BASE_URL", "http://127.0.0.1:9099")
@@ -63,7 +64,8 @@ def main() -> int:
             print("OK cursor mcp e2e")
         if os.environ.get("ALICE_RUN_GDRIVE_E2E", "").strip() in ("1", "true", "yes"):
             _run([py, os.path.join("scripts", "e2e_gdrive_sheet.py")])
-            print("OK gdrive sheet e2e")
+            _run([py, os.path.join("scripts", "e2e_gdrive_chat.py")])
+            print("OK gdrive sheet + chat e2e")
         print("OK integration smokes")
     else:
         print("SKIP integration (set ALICE_RUN_INTEGRATION=1 to run smoke/e2e)")

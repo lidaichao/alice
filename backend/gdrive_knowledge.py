@@ -1,9 +1,15 @@
 """GDrive catalog + spreadsheet read helpers (E6 hotfix)."""
 from __future__ import annotations
 
+import json
 import os
 import re
+from pathlib import Path
 from typing import Callable, Optional
+
+_TENANT_SYNONYMS_PATH = Path(__file__).resolve().parent / "data" / "tenant_synonyms.json"
+_POSITION_HEADER_RE = re.compile(r"位置|最佳位置|岗位|role|position", re.I)
+_NAME_HEADER_RE = re.compile(r"姓名|名字|名称|name", re.I)
 
 _GDRIVE_ID_RE = re.compile(
     r"(?:spreadsheets/d/|file/d/|open\?id=)([a-zA-Z0-9_-]{10,})"
@@ -26,6 +32,55 @@ def looks_like_gdrive_file_id(text: str) -> bool:
     return bool(re.fullmatch(r"[a-zA-Z0-9_-]{20,}", t))
 
 
+def load_tenant_synonyms() -> dict[str, list[str]]:
+    """Per-Hub synonym map (C9.2) — not compiled into routing code."""
+    try:
+        if _TENANT_SYNONYMS_PATH.is_file():
+            with open(_TENANT_SYNONYMS_PATH, encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                out: dict[str, list[str]] = {}
+                for k, v in data.items():
+                    if isinstance(v, list):
+                        out[str(k)] = [str(x) for x in v]
+                    elif v:
+                        out[str(k)] = [str(v)]
+                return out
+    except Exception:
+        pass
+    return {}
+
+
+def expand_filter_terms(term: str) -> list[str]:
+    t = (term or "").strip()
+    if not t:
+        return []
+    terms = [t]
+    for canonical, aliases in load_tenant_synonyms().items():
+        forms = [canonical] + list(aliases)
+        if any(t == a or (len(a) >= 2 and (a in t or t in a)) for a in forms):
+            terms.extend(forms)
+    return list(dict.fromkeys(terms))
+
+
+def extract_filter_slots_from_query(query: str) -> list[str]:
+    """Generic filter slots from user text (no project entity hardcoding)."""
+    q = (query or "").strip()
+    raw: list[str] = []
+    for pat in (
+        r"位置[是为：:\s]+([\u4e00-\u9fffA-Za-z]{1,12})",
+        r"最佳位置[是为：:\s]+([\u4e00-\u9fffA-Za-z]{1,12})",
+        r"([\u4e00-\u9fff]{2,8})的.{0,10}(?:名字|名单)",
+    ):
+        m = re.search(pat, q)
+        if m:
+            raw.append(m.group(1).strip())
+    out: list[str] = []
+    for s in raw:
+        out.extend(expand_filter_terms(s))
+    return list(dict.fromkeys(out))
+
+
 def extract_catalog_keywords(query: str) -> list[str]:
     q = (query or "").strip()
     kws = [kw for kw in re.split(r"[\s,，、]+", q) if len(kw) >= 2]
@@ -33,7 +88,72 @@ def extract_catalog_keywords(query: str) -> list[str]:
     for kw in list(kws):
         if re.search(r"[\u4e00-\u9fff]", kw) and len(kw) >= 4:
             extra.extend([kw[i : i + 2] for i in range(len(kw) - 1)])
-    return list(dict.fromkeys(kws + extra))
+    slots = extract_filter_slots_from_query(q)
+    return list(dict.fromkeys(kws + extra + slots))
+
+
+def find_header_row_index(values: list) -> int:
+    for i, row in enumerate(values[:20]):
+        if not isinstance(row, list):
+            continue
+        line = " | ".join(str(c) for c in row)
+        if _POSITION_HEADER_RE.search(line) or _NAME_HEADER_RE.search(line):
+            return i
+    return 0
+
+
+def detect_column_map(header_row: list) -> dict[str, int]:
+    col_map: dict[str, int] = {}
+    for i, cell in enumerate(header_row):
+        c = str(cell).strip()
+        if not c:
+            continue
+        if "position" not in col_map and _POSITION_HEADER_RE.search(c):
+            col_map["position"] = i
+        if "name" not in col_map and _NAME_HEADER_RE.search(c):
+            col_map["name"] = i
+    return col_map
+
+
+def filter_rows_by_slots(values: list, slots: list[str], max_rows: int = 80) -> list:
+    if not values or not slots:
+        return values
+    expanded: list[str] = []
+    for s in slots:
+        expanded.extend(expand_filter_terms(s))
+    expanded = [x for x in dict.fromkeys(expanded) if x]
+    hi = find_header_row_index(values)
+    header = values[hi] if hi < len(values) else []
+    col_map = detect_column_map(header if isinstance(header, list) else [])
+    pos_col = col_map.get("position")
+    matched: list = []
+    if hi < len(values):
+        matched.append(values[hi])
+    for row in values[hi + 1 :]:
+        if not isinstance(row, list):
+            continue
+        hit = False
+        if pos_col is not None and pos_col < len(row):
+            cell = str(row[pos_col]).strip()
+            if any(term in cell or cell in term for term in expanded):
+                hit = True
+        if not hit:
+            line = " | ".join(str(c) for c in row)
+            hit = any(term in line for term in expanded)
+        if hit:
+            matched.append(row)
+        if len(matched) >= max_rows:
+            break
+    return matched if len(matched) > 1 else values
+
+
+def apply_query_filter_to_values(values: list, query: str) -> tuple[list, bool]:
+    slots = extract_filter_slots_from_query(query)
+    if not slots:
+        return values, False
+    filtered = filter_rows_by_slots(values, slots)
+    applied = filtered is not values and len(filtered) >= 1
+    return filtered, applied
 
 
 def is_spreadsheet_mime(mime: str) -> bool:
@@ -44,18 +164,29 @@ def sheet_range() -> str:
     return os.getenv("GDRIVE_SHEET_RANGE", "A1:Z200").strip() or "A1:Z200"
 
 
-def values_to_table_text(name: str, values: list, max_chars: int = 8000) -> str:
+def values_to_table_text(
+    name: str,
+    values: list,
+    max_chars: int = 8000,
+    user_query: str = "",
+) -> str:
     if not values:
         return f"# {name}\n\n(表格为空)"
+    filtered, applied = apply_query_filter_to_values(values, user_query)
+    prefix = f"# {name}\n"
+    if applied and user_query:
+        slots = extract_filter_slots_from_query(user_query)
+        if slots:
+            prefix += f"\n（已按问句条件筛选: {', '.join(slots)}）\n"
     lines = []
-    for row in values[:200]:
+    for row in filtered[:200]:
         if not isinstance(row, list):
             continue
         cells = [str(c).strip() for c in row if str(c).strip()]
         if cells:
             lines.append(" | ".join(cells))
     body = "\n".join(lines) if lines else "(无有效行)"
-    return f"# {name}\n\n{body}"[:max_chars]
+    return f"{prefix}\n{body}"[:max_chars]
 
 
 def find_row_snippets(values: list, keywords: list[str], max_rows: int = 3) -> str:
@@ -145,6 +276,7 @@ def read_gdrive_file_content(
     api_key: str,
     request_fn: Callable,
     proxies: Optional[dict],
+    user_query: str = "",
 ) -> tuple[bool, str, str]:
     """
     Returns (ok, llm_text, error_message).
@@ -164,7 +296,7 @@ def read_gdrive_file_content(
     if is_spreadsheet_mime(mime):
         vals = fetch_sheet_values(doc_id, api_key, request_fn, proxies)
         if vals:
-            return True, values_to_table_text(name, vals), ""
+            return True, values_to_table_text(name, vals, user_query=user_query), ""
         export_url = (
             f"https://www.googleapis.com/drive/v3/files/{doc_id}"
             f"/export?mimeType=text/csv&key={api_key}"

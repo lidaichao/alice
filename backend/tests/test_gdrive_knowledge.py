@@ -6,7 +6,10 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from gdrive_knowledge import (
+    expand_filter_terms,
     extract_catalog_keywords,
+    extract_filter_slots_from_query,
+    filter_rows_by_slots,
     find_row_snippets,
     match_files_by_name,
     parse_gdrive_file_id,
@@ -62,8 +65,26 @@ def test_read_spreadsheet_via_sheets_api():
     assert "foo" in content and "bar" in content
 
 
+def test_filter_slots_and_synonyms():
+    slots = extract_filter_slots_from_query("某设计 位置是 门将的球员名字列给我")
+    assert "门将" in slots
+    expanded = expand_filter_terms("门将")
+    assert "守门员" in expanded
+
+    vals = [
+        ["姓名", "最佳位置", "数值"],
+        ["一之濑明", "中锋", "88"],
+        ["若林源三", "守门员", "90"],
+    ]
+    filtered = filter_rows_by_slots(vals, ["门将"])
+    body = values_to_table_text("测试", filtered, user_query="位置是 门将的球员名字")
+    assert "若林源三" in body
+    assert "一之濑明" not in body
+
+
 if __name__ == "__main__":
     test_parse_gdrive_file_id()
     test_match_files_by_name_and_rows()
     test_read_spreadsheet_via_sheets_api()
+    test_filter_slots_and_synonyms()
     print("test_gdrive_knowledge OK")

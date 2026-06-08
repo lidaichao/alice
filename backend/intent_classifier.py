@@ -109,6 +109,29 @@ JIRA_QUERY_PATTERNS = [
     re.compile(r'(查|查看|看看|看|打开|显示|详情).*(详情|内容|描述|状态|备注|附件|评论)'),
 ]
 
+# 知识库 / 设计文档 / 表格列举 —— 走作业通道（C9：不含项目业务实体词）
+KNOWLEDGE_DOC_QUERY_PATTERNS = [
+    re.compile(r"文档|知识库|wiki|云盘|gdrive|google|notion|KB-", re.I),
+    re.compile(r"(策划案|设计文档).{0,20}(设计|规则|属性|展示)", re.I),
+    re.compile(r"(设计|规则|属性).{0,12}(及|与)?.{0,8}(展示|表格)", re.I),
+    re.compile(
+        r"(列出来|列出|列给|列给我|名单|有哪些|告诉我|列举|提取).{0,30}(名字|名单|列表|内容|条目)",
+        re.I,
+    ),
+    re.compile(r"(查|看|读|搜|找).{0,8}(文档|表格|云盘|策划)", re.I),
+    re.compile(r".{4,60}(设计|规则).{0,24}(列|名单|列出|列给|列给我)", re.I),
+]
+
+
+def is_generic_knowledge_list_query(text: str) -> bool:
+    """C9：与项目无关的「查文档 / 列举提取」信号（供 intent_router fast-path）。"""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if re.search(r"KB-[\w-]+", t, re.I):
+        return True
+    return any(p.search(t) for p in KNOWLEDGE_DOC_QUERY_PATTERNS)
+
 # 模糊工程请求
 AMBIGUOUS_PATTERNS = [
     re.compile(r'(处理|弄一下|搞一下|优化一下).*(问题|代码|项目|工程|接口|客户端|服务端)?'),
@@ -150,8 +173,9 @@ def is_smalltalk_greeting(text: str) -> bool:
 
 _OPERATIONAL_SIGNAL_RE = re.compile(
     r"jira|任务|issue|bug|需求|story|工单|周报|日报|月报|迭代|sprint|"
-    r"文档|知识库|wiki|云盘|策划|KB-|提交|commit|diff|svn|fisheye|"
-    r"查询|搜索|查找|统计|汇总|经办|负责人|未完成|待办|"
+    r"文档|知识库|wiki|云盘|策划|KB-|表格|名单|设计规则|展示规则|"
+    r"提交|commit|diff|svn|fisheye|"
+    r"查询|搜索|查找|统计|汇总|经办|负责人|未完成|待办|列出来|列出|列给|列给我|"
     r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])",
     re.I,
 )
@@ -344,6 +368,16 @@ def classify_intent(text: str) -> dict:
                 "matched_pattern": p.pattern,
             }
 
+    # 7b. 知识库 / 设计文档 / 表格名单查询
+    for p in KNOWLEDGE_DOC_QUERY_PATTERNS:
+        if p.search(normalized):
+            return {
+                "route": "knowledge_query",
+                "reason": "knowledge_doc_query",
+                "requires_confirmation": False,
+                "matched_pattern": p.pattern,
+            }
+
     # 8. 模糊请求
     for p in AMBIGUOUS_PATTERNS:
         if p.search(normalized):
@@ -436,6 +470,14 @@ def run_chat_lane_self_test() -> tuple[int, int, list]:
         ("今天天气怎么样", True),
         ("查本周所有人的任务", False),
         ("CT-10859 状态", False),
+        (
+            "系统属性及展示规则设计 最佳位置是甲类的名字列出来",
+            False,
+        ),
+        (
+            "系统属性及展示规则设计 位置是 乙类的名字列给我",
+            False,
+        ),
         ("", False),
     ]
     passed = 0

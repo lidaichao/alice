@@ -250,7 +250,9 @@ def iter_react_pipeline(ctx: ReactRunContext) -> Iterator[bytes]:
                         "custom_type": "plugin_state",
                         "plugin": {"name": t_name, "status": "running"}
                     }, ensure_ascii=False),
-                    "result": ctx.execute_tool_call(t_name, t_args, user_cfg, frontend_cfg),
+                    "result": ctx.execute_tool_call(
+                        t_name, t_args, user_cfg, frontend_cfg, ctx.user_text or ""
+                    ),
                     "sse_done": json.dumps({
                         "custom_type": "plugin_state",
                         "plugin": {"name": t_name, "status": "done"}

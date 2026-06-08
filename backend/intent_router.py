@@ -74,7 +74,7 @@ ROUTER_SYSTEM = """你是 Alice 的意图分类器。根据用户最后一句话
 
 规则提示：
 - 「简要分析 r40759 提交内容」→ revision_analysis（不是 code_commit_list）
-- 「球员系统…设计 讲讲文档」→ doc_search
+- 「某系统属性设计 讲讲文档」→ doc_search
 - 「本周需要完成的任务」「策划负责」→ week_deadline_tasks
 - 仅「最近两天提交了什么」→ code_commit_list
 
@@ -283,6 +283,13 @@ def _fast_path_intent(user_text: str) -> Optional[str]:
         r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])", t
     ) and re.search(r"提交|commit|代码", t, re.I):
         return "doc_jira_cross"
+    try:
+        from intent_classifier import is_generic_knowledge_list_query
+
+        if is_generic_knowledge_list_query(t):
+            return "doc_search"
+    except ImportError:
+        pass
     return None
 
 
