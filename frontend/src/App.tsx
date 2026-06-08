@@ -289,6 +289,7 @@ export const App: React.FC = () => {
             <OperationsConsole onBack={() => setMainView('chat')} />
           </main>
         ) : (
+        <>
         <main className="flex-1 flex flex-col min-w-0 bg-muted/10 relative border-r border-border">
           <Header />
 
@@ -415,6 +416,7 @@ export const App: React.FC = () => {
           </div>
         </main>
         <RightPanel />
+        </>
         )}
       </div>
     </ThemeProvider>
