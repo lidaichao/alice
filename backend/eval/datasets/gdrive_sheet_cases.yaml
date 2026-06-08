@@ -1,0 +1,12 @@
+# GDrive 表格检索金标 — 内测失败用例存档（用户填写 expected 后跑 eval）
+name: gdrive_sheet_cases
+version: "1.0"
+description: "表格目录/单元格检索；需 Hub 配置 GDRIVE_KEY + GDRIVE_FOLDERS"
+test_cases:
+  - id: gsheet-001
+    input: "（请填写：你对 Alice 的原话，例如：XX 表格里 YYY 字段的值是多少）"
+    file_name: "（请填写：Drive 里的表格文件名）"
+    file_id: ""
+    expected_cell_contains: "（请填写：期望引用的单元格/行关键词）"
+    min_score: 40
+    skip: true

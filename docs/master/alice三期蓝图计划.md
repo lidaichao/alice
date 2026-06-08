@@ -286,6 +286,9 @@ flowchart TB
 | A3 | API v1 冻结 | 契约 §零 | `api_version` on `/health` | [x] |
 | A4 | coord-004 | `coordinator_m1.yaml` + eval_engine | expect_confirm_card | [x] |
 | A5 | Hub 配置同步 | `hubConfig.ts` | 读 health.hub_only_jira | [x] |
+| A6 | GDrive 表格热修 | `gdrive_knowledge.py` + H1–H3 | `test_gdrive_knowledge` + 可选 `e2e_gdrive_sheet` | [x] |
+
+**暂停**：Wave 0 全员发布、M3.4（见 [user_test_feedback.md](../../eval/reports/user_test_feedback.md)）。
 
 ---
 

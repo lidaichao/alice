@@ -1348,38 +1348,82 @@ def _exec_search_docs_catalog(args: dict, **kwargs) -> str:
     # ── Google Drive 目录检索 ──
     if source in ("gdrive", "all"):
         try:
+            from gdrive_knowledge import (
+                enrich_spreadsheet_snippets,
+                extract_catalog_keywords,
+                is_spreadsheet_mime,
+                looks_like_gdrive_file_id,
+                match_files_by_name,
+                parse_gdrive_file_id,
+            )
+
             GK = os.getenv("GDRIVE_KEY") or getattr(jira, '_global_cfg', {}).get("GDRIVE_KEY", "")
             if GK:
+                proxies = get_http_proxies()
+                direct_id = parse_gdrive_file_id(query) or (
+                    query.strip() if looks_like_gdrive_file_id(query) else ""
+                )
+                if direct_id:
+                    meta_r = saas_request(
+                        "GET",
+                        f"https://www.googleapis.com/drive/v3/files/{direct_id}?key={GK}&fields=id,name,mimeType",
+                        proxies=proxies,
+                    )
+                    if meta_r.status_code == 200:
+                        mf = meta_r.json()
+                        snippet = f"type={mf.get('mimeType', '')}"
+                        if is_spreadsheet_mime(mf.get("mimeType", "")):
+                            row_snip = enrich_spreadsheet_snippets(
+                                [mf], extract_catalog_keywords(query), GK, saas_request, proxies, max_scan=1
+                            ).get(direct_id, "")
+                            if row_snip:
+                                snippet = row_snip
+                        catalog.append({
+                            "doc_id": mf.get("id", direct_id),
+                            "title": mf.get("name", "GDrive"),
+                            "source": "gdrive",
+                            "snippet": snippet,
+                        })
                 raw_folders = os.getenv("GDRIVE_FOLDERS") or getattr(jira, '_global_cfg', {}).get("GDRIVE_FOLDERS", "")
                 folders = [f.strip() for f in re.split(r'[\n,]+', raw_folders) if f.strip()]
                 if folders:
-                    proxies = get_http_proxies()
                     all_files = {}
                     for fid in folders:
                         gr = saas_request(
                             "GET",
-                            f"https://www.googleapis.com/drive/v3/files?key={GK}&q='{fid}'+in+parents&fields=files(id,name,mimeType)&pageSize=30",
+                            f"https://www.googleapis.com/drive/v3/files?key={GK}&q='{fid}'+in+parents&fields=files(id,name,mimeType)&pageSize=100",
                             proxies=proxies,
                         )
                         if gr.status_code == 200:
                             for f in gr.json().get("files", []):
                                 all_files[f["id"]] = f
-                    if query:
-                        kws = [kw for kw in re.split(r'[\s,，]+', query) if len(kw) >= 2]
-                        extra = []
-                        for kw in kws:
-                            if re.search(r'[\u4e00-\u9fff]', kw):
-                                extra.extend([kw[i:i+2] for i in range(len(kw)-1)])
-                        kws = list(set(kws + extra))
-                        matched = [f for _, f in all_files.items() if any(k in f.get("name","") for k in kws)]
-                    else:
-                        matched = list(all_files.values())
+                    kws = extract_catalog_keywords(query)
+                    row_map: dict = {}
+                    matched = match_files_by_name(all_files, kws, query)
+                    if not matched and kws:
+                        sheets = [f for f in all_files.values() if is_spreadsheet_mime(f.get("mimeType", ""))]
+                        row_map = enrich_spreadsheet_snippets(
+                            sheets, kws, GK, saas_request, proxies, max_scan=8
+                        )
+                        matched = [all_files[i] for i in row_map if i in all_files]
+                    elif matched and kws:
+                        sheets = [f for f in matched if is_spreadsheet_mime(f.get("mimeType", ""))]
+                        row_map = enrich_spreadsheet_snippets(
+                            sheets, kws, GK, saas_request, proxies, max_scan=5
+                        )
+                    if not matched and not direct_id:
+                        matched = list(all_files.values())[:10]
+                    seen_ids = {c["doc_id"] for c in catalog}
                     for f in matched[:15]:
+                        fid = f.get("id", "")
+                        if fid in seen_ids:
+                            continue
+                        snippet = row_map.get(fid, "") or f"type={f.get('mimeType','')}"
                         catalog.append({
-                            "doc_id": f["id"],
+                            "doc_id": fid,
                             "title": f.get("name", "未命名"),
                             "source": "gdrive",
-                            "snippet": f"type={f.get('mimeType','')}"
+                            "snippet": snippet,
                         })
         except Exception as e:
             logger.warning(f"[Catalog] GDrive failed: {e}")
@@ -1495,38 +1539,16 @@ def _exec_read_specific_doc(args: dict, **kwargs) -> str:
         if not GK:
             return json.dumps({"status": "error", "result": "Google Drive API Key 未配置"})
         try:
-            proxies = get_http_proxies()
-            meta_r = saas_request(
-                "GET",
-                f"https://www.googleapis.com/drive/v3/files/{doc_id}?key={GK}&fields=name,mimeType",
-                proxies=proxies,
-            )
-            if meta_r.status_code != 200:
-                return json.dumps({"status": "error", "result": f"文件 {doc_id} 不存在或无权访问"})
-            mime = meta_r.json().get("mimeType", "")
-            name = meta_r.json().get("name", "未命名")
-            export_mime = "text/csv" if "spreadsheet" in mime else "text/plain"
-            cr = saas_request(
-                "GET",
-                f"https://www.googleapis.com/drive/v3/files/{doc_id}/export?mimeType={export_mime}&key={GK}",
-                proxies=proxies,
-            )
-            if cr.status_code == 200:
-                raw = f"# {name}\n\n{cr.text}"
-                from doc_content_extractor import build_skeleton_from_markdown, should_use_skeleton
+            from gdrive_knowledge import read_gdrive_file_content
 
-                content = (
-                    build_skeleton_from_markdown(raw, title=name)
-                    if should_use_skeleton(raw)
-                    else raw[:8000]
-                )
+            proxies = get_http_proxies()
+            ok, content, err = read_gdrive_file_content(doc_id, GK, saas_request, proxies)
+            if ok:
                 return json.dumps({"status": "ok", "llm_text": content}, ensure_ascii=False)
             return json.dumps({
                 "status": "error",
-                "result": f"文件 {name} 导出失败 (HTTP {cr.status_code})",
-                "llm_text": (
-                    f"【GDrive】文件《{name}》导出失败。请检查代理配置或稍后重试。"
-                ),
+                "result": err,
+                "llm_text": f"【GDrive】{err}",
             }, ensure_ascii=False)
         except Exception as e:
             hint = (
