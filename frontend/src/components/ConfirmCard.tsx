@@ -1,29 +1,61 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ShieldAlert, CheckCircle, XCircle, RotateCcw } from 'lucide-react';
 import IssueDraftList from '@/components/IssueDraftList';
-import type { ConfirmCard as ConfirmCardType } from '@/store/slices/chatSlice';
+import type { ConfirmCard as ConfirmCardType, RecoveryAction } from '@/store/slices/chatSlice';
 
 interface Props {
   card: ConfirmCardType;
   progressMessage?: string;
-  onConfirm: (opId: string, opts?: { recoveryAction?: string }) => Promise<void>;
+  onConfirm: (
+    opId: string,
+    opts?: { recoveryAction?: string; supplement?: Record<string, string> },
+  ) => Promise<void>;
   onReject: (opId: string) => Promise<void>;
+}
+
+function actionNeedsForm(action: RecoveryAction): boolean {
+  return (
+    action.id === 'submit_supplement' ||
+    (Array.isArray(action.inputs) && action.inputs.length > 0)
+  );
 }
 
 export default function ConfirmCard({ card, progressMessage, onConfirm, onReject }: Props) {
   const [loading, setLoading] = useState<'confirm' | 'reject' | string | null>(null);
+  const [formValues, setFormValues] = useState<Record<string, string>>({});
 
   const isRecovery = card.operation_status === 'recovery_required' || !!card.recovery?.actions?.length;
 
-  const runConfirm = async (recoveryAction?: string) => {
+  const supplementAction = useMemo(
+    () => (card.recovery?.actions || []).find((a) => a.id === 'submit_supplement'),
+    [card.recovery?.actions],
+  );
+
+  const runConfirm = async (
+    recoveryAction?: string,
+    supplement?: Record<string, string>,
+  ) => {
     if (loading) return;
     setLoading(recoveryAction || 'confirm');
     try {
-      await onConfirm(card.op_id, recoveryAction ? { recoveryAction } : undefined);
+      await onConfirm(card.op_id, recoveryAction ? { recoveryAction, supplement } : undefined);
     } finally {
       setLoading(null);
     }
+  };
+
+  const handleSupplementSubmit = async () => {
+    const inputs = supplementAction?.inputs || [{ id: 'projectKey', required: true }];
+    const supplement: Record<string, string> = {};
+    for (const inp of inputs) {
+      const val = (formValues[inp.id] || '').trim();
+      if (inp.required && !val) {
+        return;
+      }
+      if (val) supplement[inp.id] = val;
+    }
+    await runConfirm('submit_supplement', supplement);
   };
 
   const handleReject = async () => {
@@ -43,7 +75,9 @@ export default function ConfirmCard({ card, progressMessage, onConfirm, onReject
     : op.type === 'transition_issue' ? '状态流转'
     : op.type || '未知操作';
 
-  const recoveryActions = (card.recovery?.actions || []).filter((a) => a.id !== 'cancel');
+  const recoveryActions = (card.recovery?.actions || []).filter(
+    (a) => a.id !== 'cancel' && !actionNeedsForm(a),
+  );
 
   return (
     <div className="mt-3 border border-orange-400/50 bg-orange-50/30 dark:bg-orange-950/20 rounded-lg p-4 animate-in fade-in">
@@ -100,6 +134,37 @@ export default function ConfirmCard({ card, progressMessage, onConfirm, onReject
         </ul>
       )}
 
+      {supplementAction && (
+        <div className="mb-3 p-3 rounded-md border border-amber-300/50 bg-background/80 space-y-2">
+          <div className="text-xs font-medium text-amber-900 dark:text-amber-100">
+            {supplementAction.label || '补充必填字段'}
+          </div>
+          {(supplementAction.inputs || [{ id: 'projectKey', label: '项目 Key', required: true }]).map(
+            (inp) => (
+              <label key={inp.id} className="block text-xs">
+                <span className="text-muted-foreground">{inp.label || inp.id}</span>
+                <input
+                  className="mt-1 w-full rounded border border-border px-2 py-1 text-sm bg-background"
+                  value={formValues[inp.id] || ''}
+                  onChange={(e) =>
+                    setFormValues((v) => ({ ...v, [inp.id]: e.target.value }))
+                  }
+                  placeholder={inp.id === 'projectKey' ? '例如 CT' : ''}
+                />
+              </label>
+            ),
+          )}
+          <Button
+            size="sm"
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+            disabled={loading !== null}
+            onClick={() => void handleSupplementSubmit()}
+          >
+            {loading === 'submit_supplement' ? '提交并继续创建…' : '补充并继续创建'}
+          </Button>
+        </div>
+      )}
+
       {progressMessage && (
         <div className="mb-3 text-xs text-muted-foreground animate-pulse">
           {progressMessage}
@@ -131,7 +196,7 @@ export default function ConfirmCard({ card, progressMessage, onConfirm, onReject
               {loading === action.id ? '执行中...' : action.label}
             </Button>
           ))
-        ) : (
+        ) : !supplementAction ? (
           <Button
             variant="default"
             size="sm"
@@ -142,7 +207,7 @@ export default function ConfirmCard({ card, progressMessage, onConfirm, onReject
             <CheckCircle size={14} />
             {loading === 'confirm' ? '放行中...' : '授权放行'}
           </Button>
-        )}
+        ) : null}
       </div>
     </div>
   );

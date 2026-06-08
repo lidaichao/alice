@@ -158,8 +158,8 @@ flowchart TB
 | 里程碑 | 时间 | 验收 |
 |--------|------|------|
 | M1 | 近一期第 4 周 | E3 + E7 完成；灰盒 SOP 可跑通 | **已交付 v1.0.2** |
-| M2 | 近一期第 8 周 | E1 + E2 + E5 完成；PRD 写路径点验 | **已交付 v1.0.4** |
-| M3 | 近一期第 16 周 | E4 + E6 完成；内部「日常可用」签字 | **骨架已交付 v1.0.5** |
+| M2 | 近一期第 8 周 | E1 + E2 + E5 完成；PRD 写路径点验 | **代码 v1.0.6**（灰盒点验待签字） |
+| M3 | 近一期第 16 周 | E4 + E6 完成；内部「日常可用」签字 | **代码 v1.0.6**（E6.5 hybrid 已接；日常可用待签字） |
 
 ---
 
@@ -239,7 +239,7 @@ flowchart TB
 | E6.2 | 确定性 L1 加强 | catalog 检索 | Issue Key / KB-id 穿透 | [x] catalog Key 前置 |
 | E6.3 | shallow memory 按 intent 过滤 | `memory_manager` | 无关规则不注入 | [x] |
 | E6.4 | 作业通道 8k 摘要 | orchestrator | 保留 Issue Key + 最近 operation | [x] format_job_channel_context |
-| E6.5 | hybrid 检索试点 | FAISS + 关键词 | 仅对已索引文档；eval 提升 | [-] 下一迭代 |
+| E6.5 | hybrid 检索试点 | FAISS + 关键词 | 仅对已索引文档；eval 提升 | [x] catalog+ALICE_HYBRID_RAG |
 
 ---
 
@@ -273,8 +273,8 @@ flowchart TB
 
 ### 6.1 发布门禁（近期每次发版）
 
-- [ ] `py -3 backend/intent_classifier.py` 全绿  
-- [ ] `py -3 scripts/ci_gate.py` → `CI_GATE_OK`  
+- [x] `py -3 backend/intent_classifier.py` 全绿（见 `release_2026-06-05.md`）  
+- [x] `py -3 scripts/ci_gate.py` → `CI_GATE_OK`  
 - [ ] `py -3 scripts/smoke_chat_only.py` → `SMOKE_CHAT_ONLY_OK`  
 - [ ] `py -3 scripts/e2e_short_draft_memory.py` → `E2E_SHORT_OK`  
 - [ ] `py -3 backend/run_eval.py coordinator_m1` 不低于 `eval/reports/coordinator_baseline_M1.md`  
@@ -313,6 +313,7 @@ flowchart TB
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| v1.0.6 | 2026-06-05 | 里程碑债务收口：submit_supplement UI、E6.5 hybrid、发版纪要 |
 | v1.0.5 | 2026-06-05 | M3 骨架：E4 Hub 凭据 + E6 上下文；M2 收尾 E5 路由消歧 |
 | v1.0.4 | 2026-06-05 | M2：E1 ReAct 迁出 + E2 HITL SSE/恢复 + 里程碑纪要 |
 | v1.0.3 | 2026-06-05 | M2 启动 E1：chat_orchestrator + plugin_gateway 绞杀者预检 |

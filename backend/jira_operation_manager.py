@@ -696,6 +696,33 @@ def mark_rejected(operation: dict) -> dict:
     return transition(operation, "rejected")
 
 
+def apply_supplement_to_operation(operation: dict, supplement: dict) -> dict:
+    """recovery submit_supplement：补全 drafts.projectKey 后回到 awaiting_confirmation（E2.4）。"""
+    sup = supplement or {}
+    project_key = (sup.get("projectKey") or sup.get("project_key") or "").strip()
+    if not project_key:
+        raise ValueError("补充 projectKey 不能为空")
+    drafts = operation.get("drafts") or []
+    if not drafts:
+        raise ValueError("操作无草稿可补充")
+    patched = 0
+    for d in drafts:
+        if not (d.get("projectKey") or d.get("project_key") or "").strip():
+            d["projectKey"] = project_key
+            patched += 1
+    if patched == 0:
+        for d in drafts:
+            d["projectKey"] = project_key
+    operation["drafts"] = drafts
+    operation = transition(operation, "awaiting_confirmation", {
+        "recovery": None,
+        "error": None,
+        "failure": None,
+    })
+    logger.info("[OpCard] supplement applied: projectKey=%s patched=%s", project_key, patched)
+    return operation
+
+
 # ══════════════════════════════════════════════════════════════
 #  内存存储（单进程，与 ai_bridge.py 共享）
 # ══════════════════════════════════════════════════════════════

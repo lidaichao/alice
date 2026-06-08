@@ -1,5 +1,10 @@
 import type { ConfirmCard, DraftCardItem, RecoveryInfo } from '@/store/slices/chatSlice';
 
+export type ConfirmOpts = {
+  recoveryAction?: string;
+  supplement?: Record<string, string>;
+};
+
 export function buildConfirmCardFromApi(
   opId: string,
   operation: Record<string, unknown> | undefined,

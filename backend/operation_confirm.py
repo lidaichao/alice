@@ -43,6 +43,13 @@ def execute_operation_confirm(
     skip_labels = _skip_labels_from_body(op, body)
 
     try:
+        if body.get("recovery_action") == "submit_supplement":
+            from jira_operation_manager import apply_supplement_to_operation
+
+            supplement = body.get("supplement") if isinstance(body.get("supplement"), dict) else body
+            op = apply_supplement_to_operation(op, supplement)
+            save_operation(op)
+
         if op.get("kind") == "jira_transition_issue":
             draft = (op.get("drafts") or [{}])[0]
             if not draft.get("transition_id"):

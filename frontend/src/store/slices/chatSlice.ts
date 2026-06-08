@@ -96,11 +96,19 @@ export interface DraftCard {
   status?: 'pending' | 'submitted';
 }
 
+export interface RecoveryInput {
+  id: string;
+  type?: string;
+  label?: string;
+  required?: boolean;
+}
+
 export interface RecoveryAction {
   id: string;
   label: string;
   kind?: string;
   description?: string;
+  inputs?: RecoveryInput[];
 }
 
 export interface RecoveryInfo {

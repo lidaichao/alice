@@ -17,7 +17,8 @@
 - E6.1 超长文档骨架模式（`doc_content_extractor`）
 - E6.3 浅层记忆按 intent 过滤
 - E6.4 作业通道 Issue Key + 诉求摘要注入 ReAct
-- E6.2 / E6.5：Issue Key 穿透与 hybrid 检索试点 → **下一迭代**（不阻塞 M3 签字）
+- E6.2 KB-id / Issue Key 穿透：`catalog_hybrid.boost_catalog_entries`
+- E6.5 hybrid：`ALICE_HYBRID_RAG=1` 时目录检索附加 `search_doc_chunks`
 
 ## 日常可用标准（勾选）
 

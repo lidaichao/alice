@@ -1400,6 +1400,27 @@ def _exec_search_docs_catalog(args: dict, **kwargs) -> str:
             )
         }, ensure_ascii=False)
 
+    from catalog_hybrid import boost_catalog_entries, extract_catalog_needles
+
+    for needle in extract_catalog_needles(query):
+        if needle.upper() not in query.upper():
+            query = f"{needle} {query}"
+    catalog = boost_catalog_entries(catalog, query)
+
+    hybrid_appendix = ""
+    if os.environ.get("ALICE_HYBRID_RAG", "1").strip().lower() not in ("0", "false", "no"):
+        try:
+            import rag_engine as _rag_mod
+
+            if _rag_mod._vector_store is None:
+                _rag_mod.init_engine(deepseek_key=os.getenv("DEEPSEEK_KEY", ""))
+            if _rag_mod._vector_store:
+                chunk_text = _rag_mod.search_doc_chunks(query, top_k=2)
+                if chunk_text and not chunk_text.startswith("[RAG]"):
+                    hybrid_appendix = f"\n\n【Hybrid 向量补充 · E6.5】\n{chunk_text}"
+        except Exception as he:
+            logger.debug("[Catalog] hybrid rag skipped: %s", he)
+
     llm_text = f"【文档目录检索结果 — 共 {len(catalog)} 个候选】\n"
     for i, d in enumerate(catalog):
         llm_text += f"{i+1}. [{d['source'].upper()}] {d['title']}"
@@ -1407,6 +1428,7 @@ def _exec_search_docs_catalog(args: dict, **kwargs) -> str:
             llm_text += f" — {d['snippet']}"
         llm_text += f"\n   doc_id: {d['doc_id']}\n"
     llm_text += "\n⚠️ 请使用 read_specific_doc 工具读取感兴趣文档的全文（传入 doc_id 和 source）。"
+    llm_text += hybrid_appendix
 
     return json.dumps({"status": "ok", "result": catalog, "llm_text": llm_text}, ensure_ascii=False)
 

@@ -153,10 +153,14 @@ export const App: React.FC = () => {
   }, []);
 
   const handleConfirm = useCallback(
-    async (opId: string, opts?: { recoveryAction?: string }) => {
-      const body = buildJiraWriteRequestBody(
-        opts?.recoveryAction ? { recovery_action: opts.recoveryAction } : {},
-      );
+    async (
+      opId: string,
+      opts?: { recoveryAction?: string; supplement?: Record<string, string> },
+    ) => {
+      const extra: Record<string, unknown> = {};
+      if (opts?.recoveryAction) extra.recovery_action = opts.recoveryAction;
+      if (opts?.supplement) extra.supplement = opts.supplement;
+      const body = buildJiraWriteRequestBody(extra);
       setConfirmProgress((p) => ({ ...p, [opId]: '开始执行…' }));
       const data = await confirmOperationWithProgress(opId, body, (ev) => {
         setConfirmProgress((p) => ({ ...p, [opId]: ev.message || ev.phase }));
