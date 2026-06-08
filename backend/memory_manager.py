@@ -146,19 +146,49 @@ def delete_memory_entry(entry_id: str) -> bool:
         return True
 
 
-def format_memory_for_prompt(max_chars: int = 2000) -> str:
-    """组装注入 System Prompt 的常驻记忆块。"""
+_INTENT_MEMORY_HINTS: dict[str, tuple[str, ...]] = {
+    "CHAT_ONLY": ("闲聊", "打招呼", "问候"),
+    "JIRA_STRUCTURED_SEARCH": ("Jira", "任务", "项目", "CT-", "筛选"),
+    "JIRA_WRITE": ("Jira", "创建", "流转", "状态", "确认"),
+    "DOC_SEARCH": ("文档", "策划", "KB-", "Notion", "设计"),
+    "CODE_COMMIT_LIST": ("提交", "commit", "SVN", "revision", "代码"),
+    "WEEKLY_REPORT": ("周报", "日报", "总结"),
+}
+
+
+def _memory_matches_intent(text: str, intent_label: str) -> bool:
+    """按 intent 过滤浅层记忆（E6.3）；闲聊道排除 Jira/代码类规则。"""
+    if not intent_label or intent_label in ("FULL_SET", "EMPTY"):
+        return True
+    if intent_label == "CHAT_ONLY":
+        t = (text or "").lower()
+        noisy = ("jira", "ct-", "commit", "svn", "确认卡", "流转", "草稿")
+        return not any(n in t for n in noisy)
+    hints = _INTENT_MEMORY_HINTS.get(intent_label)
+    if not hints:
+        return True
+    t = (text or "").lower()
+    return any(h.lower() in t for h in hints)
+
+
+def format_memory_for_prompt(max_chars: int = 2000, intent_label: str = "") -> str:
+    """组装注入 System Prompt 的常驻记忆块；可按 intent 过滤无关规则。"""
     entries = get_all_memory()
     if not entries:
         return ""
     lines = ["【团队浅层记忆 · 必须遵守】"]
     used = 0
     for e in entries[-30:]:
-        line = f"- {e.get('text', '')}"
+        text = e.get("text", "")
+        if intent_label and not _memory_matches_intent(text, intent_label):
+            continue
+        line = f"- {text}"
         if used + len(line) > max_chars:
             break
         lines.append(line)
         used += len(line)
+    if len(lines) <= 1:
+        return ""
     return "\n".join(lines)
 
 

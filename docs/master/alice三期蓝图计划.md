@@ -158,8 +158,8 @@ flowchart TB
 | 里程碑 | 时间 | 验收 |
 |--------|------|------|
 | M1 | 近一期第 4 周 | E3 + E7 完成；灰盒 SOP 可跑通 | **已交付 v1.0.2** |
-| M2 | 近一期第 8 周 | E1 + E2 + E5 完成；PRD 写路径点验 |
-| M3 | 近一期第 16 周 | E4 + E6 完成；内部「日常可用」签字 |
+| M2 | 近一期第 8 周 | E1 + E2 + E5 完成；PRD 写路径点验 | **已交付 v1.0.4** |
+| M3 | 近一期第 16 周 | E4 + E6 完成；内部「日常可用」签字 | **骨架已交付 v1.0.5** |
 
 ---
 
@@ -189,9 +189,9 @@ flowchart TB
 
 | ID | 任务 | 交付物 | DoD | 状态 |
 |----|------|--------|-----|------|
-| E5.1 | `route_intent` 使用 confidence | `intent_router.py` | &lt;0.8 不静默收窄工具 | [ ] |
-| E5.2 | `intent_disambiguation` SSE | `ai_bridge` + 契约文档 | 前端可选卡片 | [ ] |
-| E5.3 | 与 Jira user supplement 统一 UX | `JiraSearchSupplement` 规范 | 设计稿一种交互 | [ ] |
+| E5.1 | `route_intent` 使用 confidence | `intent_router.py` | &lt;0.8 不静默收窄工具 | [x] |
+| E5.2 | `intent_disambiguation` SSE | `ai_bridge` + 契约文档 | 前端可选卡片 | [x] |
+| E5.3 | 与 Jira user supplement 统一 UX | `JiraSearchSupplement` 规范 | 设计稿一种交互 | [x] kind=intent |
 | E5.4 | 扩充 fast-path 规则 | `intent_classifier` | 自测 23+5 全绿 | [x] 基线已有 |
 
 ---
@@ -225,9 +225,9 @@ flowchart TB
 
 | ID | 任务 | 交付物 | DoD | 状态 |
 |----|------|--------|-----|------|
-| E4.1 | 客户端移除 Jira PAT 必填 | `runtimeConfig` | 仅 Hub URL | [ ] |
-| E4.2 | Hub 代理全部 Jira 写读 | `jira_api` | 客户端无 Jira 直连 | [ ] |
-| E4.3 | 迁移指南 | 文档 | 现有用户升级步骤 | [ ] |
+| E4.1 | 客户端移除 Jira PAT 必填 | `runtimeConfig` | 仅 Hub URL | [x] |
+| E4.2 | Hub 代理全部 Jira 写读 | `jira_api` | 客户端无 Jira 直连 | [x] ALICE_HUB_ONLY_JIRA |
+| E4.3 | 迁移指南 | 文档 | 现有用户升级步骤 | [x] E4_hub_credentials_migration.md |
 
 ---
 
@@ -235,11 +235,11 @@ flowchart TB
 
 | ID | 任务 | 交付物 | DoD | 状态 |
 |----|------|--------|-----|------|
-| E6.1 | `read_specific_doc` 骨架截断 | backend | 超长 HTML 先提取 heading/summary | [ ] |
-| E6.2 | 确定性 L1 加强 | catalog 检索 | Issue Key / KB-id 穿透 | [ ] |
-| E6.3 | shallow memory 按 intent 过滤 | `memory_manager` | 无关规则不注入 | [ ] |
-| E6.4 | 作业通道 8k 摘要 | orchestrator | 保留 Issue Key + 最近 operation | [ ] |
-| E6.5 | hybrid 检索试点 | FAISS + 关键词 | 仅对已索引文档；eval 提升 | [ ] |
+| E6.1 | `read_specific_doc` 骨架截断 | backend | 超长 HTML 先提取 heading/summary | [x] doc_content_extractor |
+| E6.2 | 确定性 L1 加强 | catalog 检索 | Issue Key / KB-id 穿透 | [x] catalog Key 前置 |
+| E6.3 | shallow memory 按 intent 过滤 | `memory_manager` | 无关规则不注入 | [x] |
+| E6.4 | 作业通道 8k 摘要 | orchestrator | 保留 Issue Key + 最近 operation | [x] format_job_channel_context |
+| E6.5 | hybrid 检索试点 | FAISS + 关键词 | 仅对已索引文档；eval 提升 | [-] 下一迭代 |
 
 ---
 
@@ -313,6 +313,8 @@ flowchart TB
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| v1.0.5 | 2026-06-05 | M3 骨架：E4 Hub 凭据 + E6 上下文；M2 收尾 E5 路由消歧 |
+| v1.0.4 | 2026-06-05 | M2：E1 ReAct 迁出 + E2 HITL SSE/恢复 + 里程碑纪要 |
 | v1.0.3 | 2026-06-05 | M2 启动 E1：chat_orchestrator + plugin_gateway 绞杀者预检 |
 | v1.0.2 | 2026-06-05 | M1：E3 Eval 门禁 + E7 Admin 运维（CI、health、kb_matrix 20 条） |
 | v1.0.1 | 2026-06-05 | master 文档索引与发版门禁对齐；治理规则落盘 |

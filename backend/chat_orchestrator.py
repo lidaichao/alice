@@ -69,6 +69,22 @@ def clean_chat_messages(messages: list) -> list:
     return cleaned
 
 
+def format_job_channel_context(
+    user_text: str,
+    issue_keys: Set[str],
+    *,
+    max_chars: int = 8000,
+) -> str:
+    """作业通道摘要：保留 Issue Key + 用户诉求（E6.4）。"""
+    parts: List[str] = []
+    if issue_keys:
+        parts.append("【作业上下文 · Issue Keys】 " + ", ".join(sorted(issue_keys)[:30]))
+    if user_text:
+        parts.append("【用户诉求】\n" + user_text.strip()[:4000])
+    block = "\n\n".join(parts)
+    return block[:max_chars] if len(block) > max_chars else block
+
+
 def last_user_message_text(messages: list) -> str:
     for msg in reversed(messages or []):
         if msg.get("role") == "user":
@@ -82,7 +98,7 @@ def build_chat_only_messages(user_text: str) -> list:
     try:
         from memory_manager import format_memory_for_prompt
 
-        mem = format_memory_for_prompt()
+        mem = format_memory_for_prompt(intent_label="CHAT_ONLY")
         if mem:
             system += f"\n\n{mem}"
     except Exception:

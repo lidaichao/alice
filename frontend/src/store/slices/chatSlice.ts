@@ -444,6 +444,19 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
                   continue;
                 }
 
+                if (data._event === 'intent_disambiguation' && Array.isArray(data.choices)) {
+                  const card: JiraSearchSupplementCard = {
+                    id: `intent-dis-${Date.now()}`,
+                    kind: 'intent',
+                    prompt: data.prompt || '请选择处理方式',
+                    choices: data.choices,
+                  };
+                  set((state) => ({
+                    pendingJiraSupplements: [...state.pendingJiraSupplements, card],
+                  }));
+                  continue;
+                }
+
                 if (data._event === 'jira_search_supplement' && data.supplement) {
                   const sup = data.supplement;
                   const card: JiraSearchSupplementCard = {

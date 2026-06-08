@@ -7,7 +7,7 @@
 
 **相关文档**：[三期蓝图计划（开发校准）](alice三期蓝图计划.md) · [Master 架构](Alice_Master_Architecture_v1.0.md) · [前端组件树](Alice_Frontend_Component_Tree_v1.0.md) · [灰盒 SOP](Alice_Graybox_SOP_v1.0.md)
 
-> 计划中的 SSE 事件（如 `intent_disambiguation`）见蓝图 **E5.2**；合入前须同步更新本文档。
+> `intent_disambiguation` 已合入（蓝图 E5.2）。
 
 ---
 
@@ -57,6 +57,8 @@ interface FrontendConfig {
 data: {"choices":[{"delta":{"content":"..."}}]}        // 流式回答
 data: {"_intent":{"route":"CODE_COMMIT_LIST",...}}    // 意图信息
 data: {"_event":"confirm_card","operation":{...}}      // 确认卡
+data: {"_event":"intent_disambiguation","prompt":"...","choices":[{"value":"jira_search","label":"..."}],"confidence":0.65}  // 低置信路由消歧（可选）
+data: {"_event":"operation_progress","phase":"running","message":"...","percent":45}  // HITL 写 Jira 进度
 data: {"custom_type":"agent_step","step":1,...}         // ReAct 步骤
 data: {"plugin":{"name":"get_issue_commits","status":"running"}}  // 工具状态
 data: [DONE]                                            // 结束

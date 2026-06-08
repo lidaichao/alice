@@ -99,7 +99,20 @@ def iter_react_pipeline(ctx: ReactRunContext) -> Iterator[bytes]:
     system_context = ctx.core_system_prompt
     try:
         from memory_manager import format_memory_for_prompt
-        _mem_block = format_memory_for_prompt()
+        _intent_lbl = (
+            str(ctx.intent_info.get("intent_label") or "")
+            if isinstance(ctx.intent_info, dict)
+            else ""
+        )
+        _mem_block = format_memory_for_prompt(intent_label=_intent_lbl)
+        try:
+            from chat_orchestrator import format_job_channel_context
+
+            _job_ctx = format_job_channel_context(ctx.user_text, ctx.issue_keys_found)
+            if _job_ctx:
+                _mem_block = (_mem_block + "\n\n" + _job_ctx) if _mem_block else _job_ctx
+        except Exception:
+            pass
         if _mem_block:
             system_context += f"\n\n{_mem_block}"
     except Exception as _mem_inj:

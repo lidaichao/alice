@@ -346,12 +346,15 @@ export const App: React.FC = () => {
                 <div className="max-w-[75%] flex-1">
                   <JiraSearchSupplement
                     card={card}
-                    onSelect={(username) => {
+                    onSelect={(value) => {
                       useChatStore.setState((s) => ({
                         pendingJiraSupplements: s.pendingJiraSupplements.filter((c) => c.id !== card.id),
                       }));
-                      const label = card.choices.find((c) => c.value === username)?.label || username;
-                      const msg = `JIRA_USER:${username} ${label} 本周未完成的 Jira 任务`;
+                      const label = card.choices.find((c) => c.value === value)?.label || value;
+                      const msg =
+                        card.kind === 'intent'
+                          ? `[INTENT:${value}] 请按「${label}」处理我上一条需求。`
+                          : `JIRA_USER:${value} ${label} 本周未完成的 Jira 任务`;
                       useChatStore.getState().sendMessage(msg);
                     }}
                     onDismiss={() => {

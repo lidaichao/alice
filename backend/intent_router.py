@@ -80,7 +80,26 @@ ROUTER_SYSTEM = """你是 Alice 的意图分类器。根据用户最后一句话
 
 只输出 JSON：{"intent": "<id>", "confidence": <0.0-1.0>}"""
 
-_route_cache: dict[str, tuple[float, Optional[list[str]], str]] = {}
+CONFIDENCE_TOOL_FILTER_THRESHOLD = 0.8
+DISAMBIGUATION_SSE_THRESHOLD = 0.8
+
+INTENT_UI_LABELS: dict[str, str] = {
+    "weekly_report": "写周报 / 工作总结",
+    "week_deadline_tasks": "本周待完成任务",
+    "code_commit_list": "查看 Issue 提交列表",
+    "code_diff": "代码 Diff / Code Review",
+    "revision_analysis": "分析 SVN revision 提交",
+    "doc_search": "查文档 / 策划案",
+    "doc_jira_cross": "文档 + Jira 关联",
+    "jira_search": "Jira 任务筛选 / 统计",
+    "jira_keyword_search": "Jira 关键词搜索",
+    "jira_write": "Jira 创建 / 改状态",
+    "issue_metadata": "单个 Issue 详情",
+    "knowledge_query": "知识库泛查",
+    "full_set": "通用助手（不收窄工具）",
+}
+
+_route_cache: dict[str, tuple[float, Optional[list[str]], str, dict]] = {}
 
 
 def _cache_key(text: str) -> str:
@@ -88,21 +107,92 @@ def _cache_key(text: str) -> str:
     return hashlib.sha256(norm.encode("utf-8")).hexdigest()
 
 
-def _cache_get(text: str) -> Optional[tuple[Optional[list[str]], str]]:
+def _cache_get(text: str) -> Optional[tuple[Optional[list[str]], str, dict]]:
     ck = _cache_key(text)
     hit = _route_cache.get(ck)
     if not hit:
         return None
-    exp, tools, label = hit
+    exp, tools, label, meta = hit
     if time.time() > exp:
         _route_cache.pop(ck, None)
         return None
     logger.info(f"[IntentRouter] cache hit → {label}")
-    return tools, label
+    return tools, label, meta
 
 
-def _cache_set(text: str, tools: Optional[list[str]], label: str) -> None:
-    _route_cache[_cache_key(text)] = (time.time() + CACHE_TTL_SEC, tools, label)
+def _cache_set(
+    text: str,
+    tools: Optional[list[str]],
+    label: str,
+    meta: Optional[dict] = None,
+) -> None:
+    _route_cache[_cache_key(text)] = (
+        time.time() + CACHE_TTL_SEC,
+        tools,
+        label,
+        meta or {},
+    )
+
+
+def _suggest_alternate_intents(user_text: str, primary: str) -> list[str]:
+    t = user_text or ""
+    alts: list[str] = []
+    if re.search(r"周报|日报|月报", t):
+        alts.append("weekly_report")
+    if re.search(r"本周|这周|待办|交付", t):
+        alts.append("week_deadline_tasks")
+    if re.search(r"文档|策划|KB-|wiki", t, re.I):
+        alts.append("doc_search")
+    if re.search(r"[A-Z][A-Z0-9]*-\d+", t) and re.search(r"状态|流转|处理中", t):
+        alts.append("jira_write")
+    if re.search(r"Jira|任务|bug|缺陷", t, re.I):
+        alts.append("jira_search")
+    if re.search(r"r\d{4,6}|revision|提交内容|diff", t, re.I):
+        alts.append("revision_analysis")
+    out = []
+    for a in alts:
+        if a != primary and a not in out and a in INTENT_REGISTRY:
+            out.append(a)
+    if "full_set" not in out and primary != "full_set":
+        out.append("full_set")
+    return out[:3]
+
+
+def build_disambiguation_payload(verdict: dict, user_text: str) -> Optional[dict]:
+    """confidence < 0.8 时生成 intent_disambiguation SSE 载荷（E5.2）。"""
+    conf = float(verdict.get("confidence", 1.0))
+    if conf >= DISAMBIGUATION_SSE_THRESHOLD:
+        return None
+    intent_id = verdict.get("intent", "full_set")
+    choices = [{"value": intent_id, "label": INTENT_UI_LABELS.get(intent_id, intent_id)}]
+    for alt in _suggest_alternate_intents(user_text, intent_id):
+        choices.append({"value": alt, "label": INTENT_UI_LABELS.get(alt, alt)})
+    if len(choices) < 2:
+        return None
+    return {
+        "prompt": "我不太确定您想用哪种方式处理，请选一个（可跳过，将按全功能助手继续）：",
+        "confidence": conf,
+        "suggested_intent": intent_id,
+        "choices": choices[:4],
+    }
+
+
+def apply_route_meta_to_tools(
+    tools: Optional[list[str]],
+    verdict: dict,
+) -> tuple[Optional[list[str]], dict]:
+    """E5.1：<0.8 不静默收窄工具集。"""
+    conf = float(verdict.get("confidence", 1.0))
+    meta = {
+        "confidence": conf,
+        "intent_id": verdict.get("intent", "full_set"),
+        "disambiguation": None,
+    }
+    if conf < CONFIDENCE_TOOL_FILTER_THRESHOLD:
+        meta["tools_narrowed"] = False
+        return None, meta
+    meta["tools_narrowed"] = tools is not None
+    return tools, meta
 
 
 def _resolve_api_key(explicit: Optional[str] = None) -> str:
@@ -198,11 +288,27 @@ def _fast_path_intent(user_text: str) -> Optional[str]:
 
 def route_intent(user_text: str, api_key: Optional[str] = None) -> tuple:
     """
-    Returns (tool_names, intent_label).
+    Returns (tool_names, intent_label, route_meta).
     tool_names=None → 全量工具。
+    route_meta 含 confidence、disambiguation（可选）。
     """
     if not user_text or not user_text.strip():
-        return None, "EMPTY"
+        return None, "EMPTY", {"confidence": 1.0}
+
+    intent_override = re.match(r"^\[INTENT:([a-z_]+)\]\s*", user_text.strip(), re.I)
+    if intent_override:
+        intent_id = intent_override.group(1).lower()
+        if intent_id in INTENT_REGISTRY:
+            tools, label = INTENT_REGISTRY[intent_id]
+            meta = {
+                "confidence": 1.0,
+                "intent_id": intent_id,
+                "disambiguation": None,
+                "tools_narrowed": tools is not None,
+                "user_override": True,
+            }
+            logger.info(f"[IntentRouter] user override → {label}")
+            return tools, label, meta
 
     cached = _cache_get(user_text)
     if cached is not None:
@@ -211,18 +317,22 @@ def route_intent(user_text: str, api_key: Optional[str] = None) -> tuple:
     fp = _fast_path_intent(user_text)
     if fp:
         tools, label = INTENT_REGISTRY[fp]
-        _cache_set(user_text, tools, label)
+        meta = {"confidence": 1.0, "intent_id": fp, "disambiguation": None, "tools_narrowed": True}
+        _cache_set(user_text, tools, label, meta)
         logger.info(f"[IntentRouter] fast-path '{fp}' → {label}")
-        return tools, label
+        return tools, label, meta
 
     verdict = classify_intent_llm(user_text, api_key)
     intent_id = verdict.get("intent", "full_set")
     tools, label = INTENT_REGISTRY.get(intent_id, INTENT_REGISTRY["full_set"])
+    tools, meta = apply_route_meta_to_tools(tools, verdict)
+    meta["disambiguation"] = build_disambiguation_payload(verdict, user_text)
     logger.info(
-        f"[IntentRouter] LLM '{intent_id}' conf={verdict.get('confidence')} → {label} tools={tools}"
+        f"[IntentRouter] LLM '{intent_id}' conf={verdict.get('confidence')} "
+        f"narrowed={meta.get('tools_narrowed')} → {label} tools={tools}"
     )
-    _cache_set(user_text, tools, label)
-    return tools, label
+    _cache_set(user_text, tools, label, meta)
+    return tools, label, meta
 
 
 def get_filtered_tools(active_tools: list, tool_names: list) -> list:

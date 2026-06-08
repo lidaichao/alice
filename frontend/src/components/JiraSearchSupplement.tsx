@@ -6,6 +6,8 @@ export interface JiraSearchSupplementCard {
   id: string;
   prompt: string;
   choices: { value: string; label: string }[];
+  /** intent = 路由消歧；默认 jira 用户补全 */
+  kind?: 'jira_user' | 'intent';
 }
 
 interface Props {
@@ -44,7 +46,7 @@ export default function JiraSearchSupplement({ card, onSelect, onDismiss }: Prop
           disabled={!selected}
           onClick={() => selected && onSelect(selected)}
         >
-          确认用户并继续查询
+          {card.kind === 'intent' ? '按此意图继续' : '确认用户并继续查询'}
         </Button>
       </div>
     </div>

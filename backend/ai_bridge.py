@@ -163,6 +163,19 @@ def parse_user_config(data: dict) -> dict:
     uc = data.get("user_config", {}) or {}
     frontend_cfg = data.get("config", {}) or {}
     global_cfg = load_global_config()
+    hub_only = os.environ.get("ALICE_HUB_ONLY_JIRA", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    hub_pat = config["jira_pat"] or global_cfg.get("JIRA_PAT", "") or os.getenv("JIRA_PAT", "")
+    client_pat = (
+        uc.get("user_jira_pat")
+        or frontend_cfg.get("jira_pat")
+        or data.get("jira_pat")
+        or ""
+    )
+    jira_pat = hub_pat if hub_only else (client_pat or hub_pat)
     return {
         "deepseek_key": uc.get("ai_api_key") or frontend_cfg.get("deepseek_key") or config["deepseek_key"] or global_cfg.get("DEEPSEEK_KEY") or os.getenv("DEEPSEEK_KEY", ""),
         "deepseek_model": (
@@ -171,8 +184,9 @@ def parse_user_config(data: dict) -> dict:
             or global_cfg.get("DEEPSEEK_MODEL")
             or os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
         ),
-        "jira_pat": uc.get("user_jira_pat") or frontend_cfg.get("jira_pat") or config["jira_pat"] or global_cfg.get("JIRA_PAT", ""),
+        "jira_pat": jira_pat,
         "jira_email": uc.get("user_email") or os.getenv("JIRA_EMAIL", ""),
+        "hub_only_jira": hub_only,
     }
 
 
@@ -1273,6 +1287,10 @@ def _exec_search_docs_catalog(args: dict, **kwargs) -> str:
     不返回全文！获取候选列表后请用 read_specific_doc 读详情。"""
     query = args.get("query", "").strip()
     source = args.get("source", "all")
+    # E6.2：Issue Key 穿透 — 检索词前置 Key 提高目录命中
+    _ik = re.search(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])", query)
+    if _ik and _ik.group(1) not in query[:20]:
+        query = f"{_ik.group(1)} {query}"
     catalog = []  # [{doc_id, title, source, snippet(100)}]
 
     NK = os.getenv("NOTION_KEY") or getattr(jira, '_global_cfg', {}).get("NOTION_KEY", "")
@@ -1431,9 +1449,17 @@ def _exec_read_specific_doc(args: dict, **kwargs) -> str:
                     elif bt in ("bulleted_list_item", "numbered_list_item"):
                         text = "".join(t.get("plain_text", "") for t in bd.get("rich_text", []))
                         if text.strip(): content_parts.append(f"- {text}")
-            content = "\n\n".join(content_parts)[:8000]
+            content = "\n\n".join(content_parts)
             if not content:
                 content = "(文档为空或无法解析)"
+            else:
+                from doc_content_extractor import build_skeleton_from_markdown, should_use_skeleton
+
+                title = content_parts[0].lstrip("# ").strip() if content_parts else ""
+                if should_use_skeleton(content):
+                    content = build_skeleton_from_markdown(content, title=title)
+                else:
+                    content = content[:8000]
             return json.dumps({"status": "ok", "llm_text": content}, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"status": "error", "result": f"Notion 读取异常: {str(e)[:200]}"})
@@ -1460,7 +1486,14 @@ def _exec_read_specific_doc(args: dict, **kwargs) -> str:
                 proxies=proxies,
             )
             if cr.status_code == 200:
-                content = f"# {name}\n\n{cr.text[:8000]}"
+                raw = f"# {name}\n\n{cr.text}"
+                from doc_content_extractor import build_skeleton_from_markdown, should_use_skeleton
+
+                content = (
+                    build_skeleton_from_markdown(raw, title=name)
+                    if should_use_skeleton(raw)
+                    else raw[:8000]
+                )
                 return json.dumps({"status": "ok", "llm_text": content}, ensure_ascii=False)
             return json.dumps({
                 "status": "error",
@@ -1878,6 +1911,7 @@ def chat_completions():
     # ══════════════════════════════════════════════════
     intent_label = "FULL_SET"
     tool_names: list = []
+    route_meta: dict = {}
     user_text = _last_user_message_text(messages)
     intent_info_pre = (
         classify_intent(user_text)
@@ -1891,7 +1925,7 @@ def chat_completions():
         from intent_router import route_intent, get_filtered_tools
 
         if not chat_only_precheck and not is_smalltalk_greeting(user_text):
-            tool_names, intent_label = route_intent(
+            tool_names, intent_label, route_meta = route_intent(
                 user_text, api_key=user_cfg.get("deepseek_key")
             )
             if tool_names:
@@ -1906,6 +1940,12 @@ def chat_completions():
     def generate_stream():
         max_steps = frontend_cfg.get("max_steps", 5)
         step = 0
+
+        dis = route_meta.get("disambiguation") if route_meta else None
+        if dis:
+            from hitl_sse import intent_disambiguation
+
+            yield intent_disambiguation(dis)
 
         orch_ctx = prepare_orchestrator_context(
             messages,
@@ -1925,7 +1965,8 @@ def chat_completions():
         )
         cleaned_msgs = orch_ctx.cleaned_msgs
         user_text = orch_ctx.user_text
-        intent_info = orch_ctx.intent_info
+        intent_info = dict(orch_ctx.intent_info or {})
+        intent_info["intent_label"] = intent_label
         issue_keys_found = orch_ctx.issue_keys_found
 
         for _chunk in iter_preflight_sse(orch_ctx):
