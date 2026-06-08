@@ -11,6 +11,60 @@ _vector_store = None
 _chunk_metadata = {}
 _embedding_dim = None
 _DEEPSEEK_KEY = ""
+_CATALOG_DOC_COUNT = 0
+
+
+def is_index_ready() -> bool:
+    """M5.x KB 优化令 — FAISS 索引是否可用（供 intent_router / catalog 判断主路径）。"""
+    return _vector_store is not None and len(_vector_store.get("chunks", [])) > 0
+
+
+def get_indexed_doc_count() -> int:
+    return _CATALOG_DOC_COUNT
+
+
+def build_index_from_catalog_items(items: list[dict], deepseek_key: str = "") -> bool:
+    """
+    M5.x KB 优化令 — 从 GDrive 目录元数据构建 FAISS 向量索引。
+
+    items: [{"doc_id": str, "title": str, "snippet": str}, ...]
+    用 title + snippet 做 chunk，embed 后构建向量库。
+    """
+    global _vector_store, _chunk_metadata, _embedding_dim, _DEEPSEEK_KEY, _CATALOG_DOC_COUNT
+    if not items:
+        return False
+    _DEEPSEEK_KEY = deepseek_key or _DEEPSEEK_KEY
+    texts = []
+    meta = {}
+    chunk_id = 0
+    for doc in items:
+        title = doc.get("title", "")
+        snippet = doc.get("snippet", "")
+        combined = (title + "\n" + snippet).strip()
+        if len(combined) < 20:
+            combined = title.strip() or snippet.strip()
+        if not combined:
+            continue
+        texts.append(combined)
+        meta[chunk_id] = {
+            "doc_id": doc.get("doc_id", ""),
+            "title": title,
+            "chunk_index": 0,
+        }
+        chunk_id += 1
+    if not texts:
+        return False
+    embeddings = _embed_batch(texts)
+    if not embeddings:
+        return False
+    _embedding_dim = len(embeddings[0])
+    import numpy as np
+    vecs_array = np.array(embeddings, dtype=np.float32)
+    _vector_store = {"vectors": vecs_array, "chunks": texts, "metadata": meta}
+    _chunk_metadata = meta
+    _CATALOG_DOC_COUNT = len(texts)
+    print(f"[RAG] built FAISS index from {len(texts)} catalog docs")
+    return True
 
 def init_engine(deepseek_key: str = "", corpus_path: str = ""):
     """初始化 RAG 引擎: 加载文档 → 切块 → 向量化 → FAISS 索引"""
@@ -69,6 +123,7 @@ def init_engine(deepseek_key: str = "", corpus_path: str = ""):
         "chunks": all_chunks,
         "metadata": meta,
     }
+    _CATALOG_DOC_COUNT = len(set(m.get("doc_id", "") for m in meta.values()))
     print(f"[RAG] Vector store ready ({len(all_chunks)} chunks)")
     return True
 
@@ -108,7 +163,7 @@ def _cosine_sim(vec1, vec2):
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-8))
 
 
-def search_doc_chunks(query: str, doc_id: str = None, top_k: int = 3) -> str:
+def search_doc_chunks(query: str, doc_id: str = None, top_k: int = 5) -> str:
     """核心工具: 语义检索 Top-K 相关文档片段"""
     global _vector_store, _chunk_metadata
 
@@ -134,10 +189,17 @@ def search_doc_chunks(query: str, doc_id: str = None, top_k: int = 3) -> str:
         return "[RAG] 未找到匹配片段"
 
     results = []
+    doc_ids_seen: list[str] = []
     for sim, idx in top:
         chunk = _vector_store["chunks"][idx]
         meta = _chunk_metadata.get(idx, {})
+        d_id = meta.get("doc_id", "")
+        if d_id and d_id not in doc_ids_seen:
+            doc_ids_seen.append(d_id)
         results.append(f"[{meta.get('title','')[:30]}] (相似度:{sim:.2f})\n{chunk[:500]}")
 
-    print(f"[RAG] search_doc_chunks('{query[:40]}...') → {len(results)} chunks, top sim={top[0][0]:.3f}")
-    return "\n\n---\n\n".join(results)
+    header = ""
+    if doc_ids_seen:
+        header = f"【匹配文档: {', '.join(doc_ids_seen[:3])}】\n"
+    print(f"[RAG] search_doc_chunks('{query[:40]}...') → {len(results)} chunks, top sim={top[0][0]:.3f}, docs={doc_ids_seen}")
+    return header + "\n\n---\n\n".join(results)

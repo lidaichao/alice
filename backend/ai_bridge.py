@@ -1207,6 +1207,7 @@ try:
         {"type": "function", "function": {"name": "get_single_commit_diff", "description": "获取指定版本号的代码 Diff", "parameters": {"type": "object", "properties": {"revision_id": {"type": "string", "description": "SVN 版本号，如 40538"}}, "required": ["revision_id"]}}},
         {"type": "function", "function": {"name": "search_docs_catalog", "description": "知识库目录检索", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "搜索关键词"}, "source": {"type": "string", "enum": ["notion", "gdrive", "all"]}}, "required": ["query"]}}},
         {"type": "function", "function": {"name": "read_specific_doc", "description": "按 ID 读取文档全文", "parameters": {"type": "object", "properties": {"doc_id": {"type": "string", "description": "文档 ID"}, "source": {"type": "string", "enum": ["notion", "gdrive"]}}, "required": ["doc_id", "source"]}}},
+        {"type": "function", "function": {"name": "search_doc_chunks", "description": "知识库语义检索（FAISS 向量相似度）", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "语义查询文本"}, "doc_id": {"type": "string", "description": "限定文档 ID"}, "top_k": {"type": "integer", "description": "返回片段数量", "default": 5}}, "required": ["query"]}}},
     ]
     
     AVAILABLE_TOOLS = _load_tools_from_registry()
@@ -1456,28 +1457,65 @@ def _exec_search_docs_catalog(args: dict, user_text: str = "", **kwargs) -> str:
             query = f"{needle} {query}"
     catalog = boost_catalog_entries(catalog, query)
 
+    # M5.x KB 优化令 — FAISS 语义检索主路径，catalog 关键词退为附录
     hybrid_appendix = ""
-    if os.environ.get("ALICE_HYBRID_RAG", "1").strip().lower() not in ("0", "false", "no"):
-        try:
-            import rag_engine as _rag_mod
+    faiss_primary = ""
+    try:
+        import rag_engine as _rag_mod
 
-            if _rag_mod._vector_store is None:
-                _rag_mod.init_engine(deepseek_key=os.getenv("DEEPSEEK_KEY", ""))
-            if _rag_mod._vector_store:
-                chunk_text = _rag_mod.search_doc_chunks(query, top_k=2)
-                if chunk_text and not chunk_text.startswith("[RAG]"):
-                    hybrid_appendix = f"\n\n【Hybrid 向量补充 · E6.5】\n{chunk_text}"
-        except Exception as he:
-            logger.debug("[Catalog] hybrid rag skipped: %s", he)
+        if _rag_mod.is_index_ready():
+            chunk_text = _rag_mod.search_doc_chunks(query, top_k=5)
+            if chunk_text and not chunk_text.startswith("[RAG]"):
+                faiss_primary = f"【FAISS 语义检索 · 主路径】\n{chunk_text}"
+    except Exception as he:
+        logger.debug("[Catalog] FAISS primary failed: %s", he)
 
-    llm_text = f"【文档目录检索结果 — 共 {len(catalog)} 个候选】\n"
-    for i, d in enumerate(catalog):
-        llm_text += f"{i+1}. [{d['source'].upper()}] {d['title']}"
-        if d.get('snippet'):
-            llm_text += f" — {d['snippet']}"
-        llm_text += f"\n   doc_id: {d['doc_id']}\n"
-    llm_text += "\n⚠️ 请使用 read_specific_doc 工具读取感兴趣文档的全文（传入 doc_id 和 source）。"
-    llm_text += hybrid_appendix
+    if not faiss_primary:
+        # FAISS 不可用 — 降级回 catalog 关键词路径
+        if not catalog:
+            return json.dumps({
+                "status": "ok", "result": [],
+                "llm_text": (
+                    "【系统提示 — 搜索无结果，禁止编造】\n"
+                    f"知识库目录检索 '{query}' 返回 0 条结果。\n"
+                    "你必须如实告知用户：未在 Notion/GDrive 中找到匹配的文档。\n"
+                    "绝对禁止虚构文档标题、内容摘要或编造任何业务数据！"
+                )
+            }, ensure_ascii=False)
+        llm_text = f"【文档目录检索结果 — 共 {len(catalog)} 个候选】\n"
+        for i, d in enumerate(catalog):
+            llm_text += f"{i+1}. [{d['source'].upper()}] {d['title']}"
+            if d.get('snippet'):
+                llm_text += f" — {d['snippet']}"
+            llm_text += f"\n   doc_id: {d['doc_id']}\n"
+        llm_text += "\n⚠️ 请使用 read_specific_doc 工具读取感兴趣文档的全文（传入 doc_id 和 source）。"
+        if os.environ.get("ALICE_HYBRID_RAG", "1").strip().lower() not in ("0", "false", "no"):
+            try:
+                if _rag_mod._vector_store is None:
+                    _rag_mod.init_engine(deepseek_key=os.getenv("DEEPSEEK_KEY", ""))
+                if _rag_mod._vector_store:
+                    chunk_text = _rag_mod.search_doc_chunks(query, top_k=2)
+                    if chunk_text and not chunk_text.startswith("[RAG]"):
+                        hybrid_appendix = f"\n\n【Hybrid 向量补充 · E6.5】\n{chunk_text}"
+            except Exception as he:
+                logger.debug("[Catalog] hybrid rag skipped: %s", he)
+
+    if faiss_primary:
+        llm_text = faiss_primary
+        if catalog:
+            llm_text += f"\n\n【目录关键词附录 — 共 {len(catalog)} 个候选】\n"
+            for i, d in enumerate(catalog[:5]):
+                llm_text += f"{i+1}. [{d['source'].upper()}] {d['title']} — doc_id: {d['doc_id']}\n"
+        llm_text += "\n⚠️ 请使用 read_specific_doc 工具读取感兴趣文档的全文（传入 doc_id 和 source）。"
+    else:
+        llm_text = f"【文档目录检索结果 — 共 {len(catalog)} 个候选】\n"
+        for i, d in enumerate(catalog):
+            llm_text += f"{i+1}. [{d['source'].upper()}] {d['title']}"
+            if d.get('snippet'):
+                llm_text += f" — {d['snippet']}"
+            llm_text += f"\n   doc_id: {d['doc_id']}\n"
+        llm_text += "\n⚠️ 请使用 read_specific_doc 工具读取感兴趣文档的全文（传入 doc_id 和 source）。"
+        llm_text += hybrid_appendix
 
     return json.dumps({"status": "ok", "result": catalog, "llm_text": llm_text}, ensure_ascii=False)
 
@@ -1689,6 +1727,7 @@ def execute_tool_call(
     user_cfg=None,
     frontend_cfg=None,
     user_text: str = "",
+    request_user_id: str = "",
 ) -> str:
     """Alice V2.0 工具调度器 — 支持 4 原子工具 + 向后兼容"""
     try:
@@ -1696,8 +1735,13 @@ def execute_tool_call(
         logger.info(f"[Tool] {tool_name} args={json.dumps(args, ensure_ascii=False)[:120]}")
 
         user_pat = ""
+        creator_id = (request_user_id or "").strip()
         if isinstance(user_cfg, dict):
             user_pat = user_cfg.get("jira_pat", "")
+            if not creator_id:
+                creator_id = (user_cfg.get("user_id") or "").strip()
+        if not creator_id and isinstance(frontend_cfg, dict):
+            creator_id = (frontend_cfg.get("user_id") or "").strip()
 
         # V2.0 原子工具
         if tool_name in _ATOMIC_TOOLS:
@@ -1729,6 +1773,7 @@ def execute_tool_call(
                     raw,
                     conversation_id=args.get("conversation_id", ""),
                     source_text=(args.get("source_text") or "")[:500],
+                    user_id=creator_id,
                 )
                 return json.dumps(build_draft_tool_response(draft), ensure_ascii=False)
             except Exception as e:
@@ -1757,6 +1802,7 @@ def execute_tool_call(
                         issue_key=args.get("issue_key", ""),
                         body=args.get("body", ""),
                         conversation_id=args.get("conversation_id", ""),
+                        user_id=creator_id,
                     )
                     preview = f"即将为 {args.get('issue_key')} 添加评论:\n{(args.get('body') or '')[:200]}"
                 else:
@@ -1776,6 +1822,7 @@ def execute_tool_call(
                             drafts,
                             conversation_id=args.get("conversation_id", ""),
                             source_text="tool:create_jira_issues",
+                            user_id=creator_id,
                         )
                         return json.dumps(
                             build_draft_tool_response(draft),
@@ -1785,6 +1832,7 @@ def execute_tool_call(
                         drafts=drafts,
                         conversation_id=args.get("conversation_id", ""),
                         kind="jira_bulk_create",
+                        user_id=creator_id,
                     )
                     preview = f"即将创建 {len(drafts)} 个 Jira Issue，请在确认卡上授权。"
 
@@ -1862,8 +1910,8 @@ CORE_SYSTEM_PROMPT_V2 = """你是 Alice V2.0，Jira 项目和知识库管理 AI 
 1. 先用 read_specific_doc 读取文档全文
 2. 从文档内容中提取 2-3 个最具区分度的业务术语
    ⚠️ 关键: 不是用户原话中的词！而是文档内容中特有的、高频的、业务相关的名词！
-   例如: 文档标题是"球员系统属性设计"，但文档内容里反复出现"展示系数"、"命名规范"、"属性分类"
-   → 你应该用"展示系数"、"命名规范"搜索 Jira，而不是"球员系统"
+   例如: 文档标题是"某模块属性设计"，但文档内容里反复出现"展示系数"、"命名规范"、"属性分类"
+   → 你应该用"展示系数"、"命名规范"搜索 Jira，而不是照搬文档标题
 3. 用这些文档提取的术语作为 keyword 调用 search_jira_issues
 4. 展示匹配结果
 
@@ -1875,6 +1923,7 @@ CORE_SYSTEM_PROMPT_V2 = """你是 Alice V2.0，Jira 项目和知识库管理 AI 
 5. 禁止知识库幻觉：100% 来源工具结果，没搜到就说没搜到。
 6. 无数据绝对熔断：无工具返回数据 = 禁止输出任何数值/表格/Issue列表。
 7. 搜索结果必须展示：工具返回了任务列表就必须以表格列出前5-10条，不能因为"没有精确匹配"就跳过不展示！
+8. 名单/表格完整输出（最高优先级）：当工具返回了具体的名单、表格行或明确条目数据（如人名、角色名、配置项、Issue Key）时，最终回答必须逐项完整列出具体名称与对应数值，绝对禁止用「等」「若干」「部分」「主要包括」概括或省略工具结果中的任何一条！
 
 【知识库多轮追问 — C9.5】
 当用户在后续消息中更换筛选条件（如不同位置、类别、范围）但仍查文档/表格时，必须重新调用 search_docs_catalog 与 read_specific_doc，禁止仅凭上一轮回答推断或否认数据存在。
@@ -1937,7 +1986,12 @@ def chat_completions():
     data = request.json or {}
     messages = data.get("messages", [])
     user_cfg = parse_user_config(data)
+    from user_identity import parse_user_id_from_request
+
+    user_cfg["user_id"] = parse_user_id_from_request(body=data)
     frontend_cfg = data.get("config", {}) or {}
+    if user_cfg["user_id"]:
+        frontend_cfg = {**frontend_cfg, "user_id": user_cfg["user_id"]}
     conversation_id = (
         data.get("conversation_id")
         or frontend_cfg.get("conversation_id")
@@ -2082,6 +2136,122 @@ from jira_operation_manager import (
     execute_confirmed_operation,
 )
 
+def _mailbox_task_json(task: dict) -> dict:
+    """API 响应用的 Mailbox 任务摘要（不含内部 payload_json 冗余）。"""
+    return {
+        "id": task["id"],
+        "mailbox_task_id": task["id"],
+        "status": task["status"],
+        "assignee": task["assignee"],
+        "payload": task.get("payload"),
+        "result": task.get("result"),
+        "operation_id": task.get("operation_id"),
+        "created_at": task.get("created_at"),
+        "updated_at": task.get("updated_at"),
+    }
+
+
+@app.route("/v1/mailbox/dispatch", methods=["POST"])
+def mailbox_dispatch():
+    """M2.3 — 派工：创建 Mailbox 异步任务，返回 mailbox_task_id。"""
+    from mailbox_store import get_mailbox_store
+
+    data = request.get_json(silent=True) or {}
+    assignee = (data.get("assignee") or "").strip()
+    payload = data.get("payload")
+    if payload is None and data.get("payload_json") is not None:
+        raw = data.get("payload_json")
+        if isinstance(raw, str):
+            try:
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
+                return jsonify({"ok": False, "error": "payload_json 不是合法 JSON"}), 400
+        else:
+            payload = raw
+    if not assignee:
+        return jsonify({"ok": False, "error": "assignee 不能为空"}), 400
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "error": "payload 必须为 JSON 对象"}), 400
+    operation_id = (data.get("operation_id") or "").strip() or None
+    try:
+        task = get_mailbox_store().create_task(
+            assignee=assignee,
+            payload=payload,
+            operation_id=operation_id,
+        )
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.exception("[Mailbox] dispatch failed")
+        return jsonify({"ok": False, "error": str(e)[:500]}), 500
+    return jsonify({
+        "ok": True,
+        "mailbox_task_id": task["id"],
+        "task": _mailbox_task_json(task),
+    })
+
+
+@app.route("/v1/mailbox/tasks", methods=["GET"])
+def mailbox_list_tasks():
+    """M2.4 — 拉取 Mailbox 任务列表。"""
+    from mailbox_store import get_mailbox_store
+
+    status = (request.args.get("status") or "").strip() or None
+    assignee = (request.args.get("assignee") or "").strip() or None
+    try:
+        limit = int(request.args.get("limit", "50") or 50)
+    except ValueError:
+        return jsonify({"ok": False, "error": "limit 必须为整数"}), 400
+    limit = max(1, min(limit, 200))
+    store = get_mailbox_store()
+    try:
+        tasks = store.list_tasks(status=status, assignee=assignee, limit=limit)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({
+        "ok": True,
+        "tasks": [_mailbox_task_json(t) for t in tasks],
+    })
+
+
+@app.route("/v1/mailbox/tasks/<mailbox_task_id>/claim", methods=["POST"])
+def mailbox_claim_task(mailbox_task_id: str):
+    """Worker 领取：pending → claimed（拉取与回报之间的标准步骤）。"""
+    from mailbox_store import get_mailbox_store
+
+    store = get_mailbox_store()
+    task = store.get_task(mailbox_task_id)
+    if not task:
+        return jsonify({"ok": False, "error": "任务不存在"}), 404
+    try:
+        updated = store.update_task(mailbox_task_id, status="claimed")
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 409
+    return jsonify({"ok": True, "task": _mailbox_task_json(updated or task)})
+
+
+@app.route("/v1/mailbox/tasks/<mailbox_task_id>/report", methods=["POST"])
+def mailbox_report_task(mailbox_task_id: str):
+    """M2.5 — 回报：claimed → done / failed，写入 result。"""
+    from mailbox_store import get_mailbox_store
+
+    data = request.get_json(silent=True) or {}
+    new_status = (data.get("status") or "").strip().lower()
+    if new_status not in ("done", "failed"):
+        return jsonify({"ok": False, "error": "status 必须为 done 或 failed"}), 400
+    result = data.get("result")
+    if new_status == "done" and result is None:
+        return jsonify({"ok": False, "error": "status=done 时建议提供 result 对象"}), 400
+    store = get_mailbox_store()
+    if not store.get_task(mailbox_task_id):
+        return jsonify({"ok": False, "error": "任务不存在"}), 404
+    try:
+        updated = store.update_task(mailbox_task_id, status=new_status, result=result)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 409
+    return jsonify({"ok": True, "task": _mailbox_task_json(updated or {})})
+
+
 @app.route("/v1/jira/search", methods=["POST"])
 def v1_jira_search():
     """结构化 Jira 搜索 API（调试 / MCP 复用）"""
@@ -2139,6 +2309,8 @@ def normalize_list(value):
 @app.route("/operations/<op_id>", methods=["GET"])
 def get_op(op_id):
     """获取操作详情"""
+    from jira_operation_manager import operation_audit_fields
+
     op = get_operation(op_id)
     if not op:
         return jsonify({"ok": False, "error": "操作不存在"}), 404
@@ -2149,12 +2321,32 @@ def get_op(op_id):
         "error": op.get("error"), "failure": op.get("failure"),
         "recovery": op.get("recovery"),
         "created_at": op.get("created_at"), "updated_at": op.get("updated_at"),
+        **operation_audit_fields(op),
     }})
+
+def _gate_operation_approval(actor_id: str, action: str, op_id: str):
+    """M4.5 — 审批白名单；deny 时落盘 audit 并返回中文 error。"""
+    from audit_gateway import check_operation_approver, record_operation_audit
+
+    verdict = check_operation_approver(actor_id, action, op_id)
+    if verdict.get("decision") == "deny":
+        record_operation_audit(
+            actor=actor_id or "",
+            action=f"operation_{action}",
+            operation_id=op_id,
+            decision="deny",
+            reason=verdict.get("reason", ""),
+            origin="http",
+        )
+        return verdict.get("reason", "无权执行审批操作")
+    return None
+
 
 @app.route("/operations/<op_id>/confirm", methods=["POST"])
 def confirm_op(op_id):
     """用户确认操作 — 执行 Jira REST 写入（?stream=1 返回 operation_progress SSE）"""
     from operation_confirm import execute_operation_confirm, iter_operation_confirm_sse
+    from user_identity import parse_user_id_from_request
 
     op = get_operation(op_id)
     if not op:
@@ -2163,6 +2355,10 @@ def confirm_op(op_id):
         return jsonify({"ok": False, "error": f"当前状态 {op['status']} 不能确认"}), 409
 
     body = request.get_json(silent=True) or {}
+    approver_id = parse_user_id_from_request(body=body)
+    deny_reason = _gate_operation_approval(approver_id, "confirm", op_id)
+    if deny_reason:
+        return jsonify({"ok": False, "error": deny_reason}), 403
     want_stream = (
         request.args.get("stream") == "1"
         or body.get("stream") is True
@@ -2186,15 +2382,38 @@ def confirm_op(op_id):
 @app.route("/operations/<op_id>/reject", methods=["POST"])
 def reject_op(op_id):
     """用户拒绝操作"""
+    from audit_gateway import record_operation_audit
+    from jira_operation_manager import operation_audit_fields
+    from user_identity import parse_user_id_from_request
+
     op = get_operation(op_id)
     if not op:
         return jsonify({"ok": False, "error": "操作不存在"}), 404
     if op["status"] not in ("awaiting_confirmation", "recovery_required"):
         return jsonify({"ok": False, "error": f"当前状态 {op['status']} 不能拒绝"}), 409
-    op = mark_rejected(op)
+    body = request.get_json(silent=True) or {}
+    rejector_id = parse_user_id_from_request(body=body)
+    deny_reason = _gate_operation_approval(rejector_id, "reject", op_id)
+    if deny_reason:
+        return jsonify({"ok": False, "error": deny_reason}), 403
+    op = mark_rejected(op, rejected_by=rejector_id)
     save_operation(op)
-    logger.info(f"[OpCard] Rejected: {op_id}")
-    return jsonify({"ok": True, "operation": {"id": op["id"], "status": op["status"]}})
+    record_operation_audit(
+        actor=rejector_id,
+        action="operation_reject",
+        operation_id=op_id,
+        decision="allow",
+        origin="http",
+    )
+    logger.info(f"[OpCard] Rejected: {op_id} | rejected_by={rejector_id or '-'}")
+    return jsonify({
+        "ok": True,
+        "operation": {
+            "id": op["id"],
+            "status": op["status"],
+            **operation_audit_fields(op),
+        },
+    })
 
 @app.route("/drafts", methods=["GET"])
 def list_draft_boxes():
@@ -2216,6 +2435,7 @@ def list_draft_boxes():
                     f"已生成 {len(d.get('items') or [])} 条 Jira 草稿，请在草稿卡中核对后批量提交。"
                 ),
                 "conversation_id": d.get("conversation_id"),
+                "user_id": d.get("user_id") or "",
                 "created_at": d.get("created_at"),
             }
             for d in drafts
@@ -2227,20 +2447,23 @@ def list_draft_boxes():
 def create_draft_box():
     """创建草稿箱（供前端/集成测试；聊天流仍由 tool 写入）。"""
     from jira_operation_manager import create_issues_draft, draft_items_for_ui
+    from user_identity import parse_user_id_from_request
 
     body = request.get_json(silent=True) or {}
     items_in = body.get("items") or body.get("issues_list") or []
+    creator_id = parse_user_id_from_request(body=body)
     try:
         draft = create_issues_draft(
             items_in,
             conversation_id=body.get("conversation_id", ""),
             client_id=body.get("client_id", ""),
-            user_id=body.get("user_id", ""),
+            user_id=creator_id,
             source_text=body.get("source_text", ""),
         )
         return jsonify({
             "ok": True,
             "draft_id": draft["id"],
+            "user_id": draft.get("user_id") or "",
             "items": draft_items_for_ui(draft.get("items") or []),
             "warnings": draft.get("warnings") or [],
         })
@@ -2387,7 +2610,11 @@ def list_pending_ops():
 @app.route("/operations", methods=["GET"])
 def list_ops_console():
     """M3 管控台：按状态列出操作（默认待确认+恢复+进行中+失败）。"""
-    from jira_operation_manager import list_operations, operation_to_confirm_ui
+    from jira_operation_manager import (
+        list_operations,
+        operation_audit_fields,
+        operation_to_confirm_ui,
+    )
 
     conv_id = request.args.get("conversation_id", "")
     raw_status = request.args.get("status", "")
@@ -2417,6 +2644,7 @@ def list_ops_console():
             "recovery": o.get("recovery"),
             "created_at": o.get("created_at"),
             "updated_at": o.get("updated_at"),
+            **operation_audit_fields(o),
             "operation": operation_to_confirm_ui(o),
         } for o in ops],
     })
@@ -2431,12 +2659,19 @@ def mcp_list_tools():
 
 @app.route("/mcp/v1/tools/<tool_name>", methods=["POST"])
 def mcp_invoke_tool(tool_name: str):
-    from mcp_registry import invoke_readonly_tool
+    from mcp_registry import invoke_mcp_tool
 
     body = request.get_json(silent=True) or {}
     user_cfg = parse_user_config(body)
-    out = invoke_readonly_tool(tool_name, body.get("arguments") or body.get("args") or {}, user_cfg)
-    code = 200 if out.get("ok") else 400
+    out = invoke_mcp_tool(
+        tool_name,
+        body.get("arguments") or body.get("args") or {},
+        user_cfg,
+        origin="mcp_http",
+    )
+    code = out.pop("http_status", None)
+    if code is None:
+        code = 200 if out.get("ok") else 400
     return jsonify(out), code
 
 
@@ -2678,6 +2913,121 @@ def _probe_kb_health() -> dict:
     return {"status": "unconfigured", "detail": "未配置知识库源（Notion / GDrive）"}
 
 
+def _get_faiss_doc_count() -> int:
+    try:
+        import rag_engine as _rag_mod
+        return _rag_mod.get_indexed_doc_count() if _rag_mod.is_index_ready() else 0
+    except Exception:
+        return 0
+
+
+def _build_faiss_index_on_startup():
+    """
+    M5.x KB 优化令 — Hub 启动时从 GDrive 目录构建 FAISS 语义索引。
+    无 GDrive 配置 → 跳过不崩；API 错误 → 跳过不崩。
+    """
+    try:
+        import rag_engine as _rag_mod
+        GK = os.getenv("GDRIVE_KEY") or getattr(jira, '_global_cfg', {}).get("GDRIVE_KEY", "")
+        if not GK:
+            logger.info("[FAISS] GDrive KEY not configured, skipping startup index build")
+            return
+        raw_folders = os.getenv("GDRIVE_FOLDERS") or getattr(jira, '_global_cfg', {}).get("GDRIVE_FOLDERS", "")
+        folders = [f.strip() for f in re.split(r'[\n,]+', raw_folders) if f.strip()]
+        if not folders:
+            logger.info("[FAISS] GDRIVE_FOLDERS empty, skipping startup index build")
+            return
+        proxies = get_http_proxies()
+        all_files = {}
+        for fid in folders:
+            try:
+                gr = saas_request(
+                    "GET",
+                    f"https://www.googleapis.com/drive/v3/files?key={GK}&q='{fid}'+in+parents&fields=files(id,name,mimeType)&pageSize=100",
+                    proxies=proxies,
+                )
+                if gr.status_code == 200:
+                    for f in gr.json().get("files", []):
+                        all_files[f["id"]] = f
+            except Exception as fe:
+                logger.warning("[FAISS] folder %s fetch failed: %s", fid, fe)
+        if not all_files:
+            logger.info("[FAISS] no GDrive files found, skipping startup index build")
+            return
+        catalog_items = []
+        for fid, f in all_files.items():
+            catalog_items.append({
+                "doc_id": fid,
+                "title": f.get("name", "未命名"),
+                "snippet": f"type={f.get('mimeType', '')}",
+            })
+        dsk = os.getenv("DEEPSEEK_KEY") or os.getenv("DEEPSEEK_API_KEY") or ""
+        ok = _rag_mod.build_index_from_catalog_items(catalog_items, deepseek_key=dsk)
+        if ok:
+            logger.info(
+                "[FAISS] startup index built: %d docs / %d chunks",
+                _rag_mod.get_indexed_doc_count(),
+                len(_rag_mod._vector_store.get("chunks", [])),
+            )
+        else:
+            logger.info("[FAISS] startup index build returned empty — no crash")
+    except Exception as e:
+        logger.warning("[FAISS] startup index build failed (non-fatal): %s", e)
+
+
+@app.route("/v1/workflow/execute", methods=["GET", "POST"])
+def execute_workflow():
+    """M5.2 — 执行工作流模板（JSON 响应，流式留给 M5.4）。
+
+    GET:  /v1/workflow/execute?template_id=version-day-check&jql=...
+    POST: {"template_id": "version-day-check", "context": {"jql": "..."}}
+    """
+    from workflow_engine import execute_template as _exec_wf
+
+    if request.method == "GET":
+        template_id = (request.args.get("template_id") or "").strip()
+        jql = (request.args.get("jql") or "").strip()
+        ctx = {}
+        if jql:
+            ctx["jql"] = jql
+        jira_pat = (request.args.get("jira_pat") or os.getenv("JIRA_PAT") or "").strip()
+        if jira_pat:
+            ctx["jira_pat"] = jira_pat
+        jira_url = (request.args.get("jira_url") or os.getenv("JIRA_URL") or "").strip()
+        if jira_url:
+            ctx["jira_url"] = jira_url
+    else:
+        data = request.get_json(silent=True) or {}
+        template_id = (data.get("template_id") or "").strip()
+        ctx = data.get("context", {}) or {}
+
+    if not template_id:
+        return jsonify({"ok": False, "error": "缺少 template_id"}), 400
+
+    try:
+        result = _exec_wf(template_id, context=ctx)
+        if result["ok"]:
+            return jsonify(result)
+        return jsonify(result), 422
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
+@app.route("/v1/audit/logs", methods=["GET"])
+def list_audit_logs():
+    """M4.6 — 只读持久审计日志（Hub 内网）。"""
+    from audit_gateway import query_persistent_audit_logs
+
+    limit = int(request.args.get("limit", "50") or 50)
+    operation_id = (request.args.get("operation_id") or "").strip()
+    logs = query_persistent_audit_logs(limit=limit, operation_id=operation_id)
+    return jsonify({
+        "ok": True,
+        "count": len(logs),
+        "logs": logs,
+    })
+
+
 @app.route("/health")
 @app.route("/api/system/status")
 def health():
@@ -2688,6 +3038,7 @@ def health():
     }
     _bad = {"gateway_error", "auth_error", "timeout", "unreachable", "http_error", "error"}
     degraded = any(integrations.get(k, {}).get("status") in _bad for k in ("jira", "model", "kb"))
+    faiss_docs = _get_faiss_doc_count()
     with _active_lock:
         return jsonify({
             "status": "degraded" if degraded else "ok",
@@ -2698,6 +3049,7 @@ def health():
             "active_requests": _active_requests,
             "max_threads": 10,
             "integrations": integrations,
+            "faiss_indexed_docs": faiss_docs,
             "cache": {
                 "context": len(_CONTEXT_CACHE),
                 "semantic": len(_SEMANTIC_CACHE),
@@ -2754,26 +3106,26 @@ def _background_task_worker():
     while True:
         try:
             task = _task_queue.get(timeout=60)
-            task_id, action, params = task
+            admin_batch_task_id, action, params = task
             with _task_lock:
-                if task_id in _task_store:
-                    _task_store[task_id]["status"] = "running"
+                if admin_batch_task_id in _task_store:
+                    _task_store[admin_batch_task_id]["status"] = "running"
             try:
                 total = len(params.get("issue_keys", [])) or 1
                 for i, key in enumerate(params.get("issue_keys", [])):
                     time.sleep(0.5)
                     progress = int((i + 1) / total * 100)
                     with _task_lock:
-                        _task_store[task_id]["progress"] = progress
-                        _task_store[task_id]["current"] = key
-                        _task_store[task_id]["log"].append(f"[{i+1}/{total}] 分析 {key}: 完成")
+                        _task_store[admin_batch_task_id]["progress"] = progress
+                        _task_store[admin_batch_task_id]["current"] = key
+                        _task_store[admin_batch_task_id]["log"].append(f"[{i+1}/{total}] 分析 {key}: 完成")
                 with _task_lock:
-                    _task_store[task_id]["status"] = "done"
-                    _task_store[task_id]["result"] = f"分析完成，共处理 {total} 个 Issue"
+                    _task_store[admin_batch_task_id]["status"] = "done"
+                    _task_store[admin_batch_task_id]["result"] = f"分析完成，共处理 {total} 个 Issue"
             except Exception as e:
                 with _task_lock:
-                    _task_store[task_id]["status"] = "failed"
-                    _task_store[task_id]["error"] = str(e)
+                    _task_store[admin_batch_task_id]["status"] = "failed"
+                    _task_store[admin_batch_task_id]["error"] = str(e)
         except queue.Empty:
             continue
 
@@ -2790,24 +3142,27 @@ def start_batch_analysis():
         return jsonify({"ok": False, "error": "请提供 issue_keys 列表或 jql"}), 400
     if jql and not issue_keys:
         issue_keys = [f"ISSUE-{1000+i}" for i in range(3)]
-    task_id = f"task-{uuid.uuid4().hex[:8]}"
+    # M2.8：Admin 批量分析 ID 已统一为 admin_batch_task_id（与 mailbox_task_id 区分）
+    admin_batch_task_id = f"admin-batch-{uuid.uuid4().hex[:8]}"
     with _task_lock:
-        _task_store[task_id] = {
-            "id": task_id, "action": "batch_analysis", "status": "pending",
+        _task_store[admin_batch_task_id] = {
+            "id": admin_batch_task_id,
+            "action": "batch_analysis",
+            "status": "pending",
             "progress": 0, "current": None, "result": None, "error": None,
             "log": [], "created_at": time.time(),
         }
-    _task_queue.put((task_id, "batch_analysis", {"issue_keys": issue_keys}))
-    return jsonify({"ok": True, "task_id": task_id, "issue_count": len(issue_keys)})
+    _task_queue.put((admin_batch_task_id, "batch_analysis", {"issue_keys": issue_keys}))
+    return jsonify({"ok": True, "admin_batch_task_id": admin_batch_task_id, "issue_count": len(issue_keys)})
 
-@app.route('/v1/admin/tasks/<task_id>/status')
+@app.route('/v1/admin/tasks/<admin_batch_task_id>/status')
 @require_admin
-def get_task_status(task_id):
+def get_task_status(admin_batch_task_id):
     def stream_status():
         last_log_len = 0
         while True:
             with _task_lock:
-                task = _task_store.get(task_id)
+                task = _task_store.get(admin_batch_task_id)
             if not task:
                 yield f"data: {json.dumps({'error': 'Task not found'})}\n\n".encode()
                 yield b"data: [DONE]\n\n"; return
@@ -3551,5 +3906,6 @@ def diagnostics_logs():
 
 if __name__ == "__main__":
     from waitress import serve
+    _build_faiss_index_on_startup()
     logger.info(f"AI Bridge v5 on port {config['port']} (Waitress threads=10, conn_limit=50, chan_timeout=60s)")
     serve(app, host="0.0.0.0", port=config["port"], threads=10, connection_limit=50, channel_timeout=60)

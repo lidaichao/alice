@@ -138,6 +138,27 @@ def iter_react_pipeline(ctx: ReactRunContext) -> Iterator[bytes]:
         if pre_context:
             system_context += f"\n\n## 当前会话上下文{pre_context}"
 
+    # ── O2 KB 上下文缓存注入（v1.0.22）──
+    try:
+        from chat_orchestrator import get_kb_cache, detect_contrast_query, format_kb_cache_context
+        _conv_id = ctx.conversation_id or ""
+        _user_t = ctx.user_text or ""
+        # 对比查询检测
+        if detect_contrast_query(_user_t):
+            system_context += (
+                "\n\n【O2 对比查询模式】\n"
+                "用户正在进行对比查询。请尽可能从知识库中检索多个相关文档片段，"
+                "以结构化格式（表格或分点）对比两者的差异。若仅找到一侧的信息，"
+                "请明确指出并给出已有的完整内容，同时说明另一侧缺失。top-k 已扩大到 5。"
+            )
+        # KB 上下文缓存
+        _cached = get_kb_cache(_conv_id, _user_t)
+        if _cached:
+            system_context += f"\n\n{format_kb_cache_context(_cached)}"
+            logger.info("[O2] KB cache hit for conv %s", _conv_id)
+    except Exception as _o2e:
+        pass
+
     # 人名解析 (Jira username 查询)
     name_match = re.search(
         r'[\u4e00-\u9fff]{2,4}(?=负责|的|做|提交|处理|开发|最近)', user_text or "")
@@ -251,7 +272,12 @@ def iter_react_pipeline(ctx: ReactRunContext) -> Iterator[bytes]:
                         "plugin": {"name": t_name, "status": "running"}
                     }, ensure_ascii=False),
                     "result": ctx.execute_tool_call(
-                        t_name, t_args, user_cfg, frontend_cfg, ctx.user_text or ""
+                        t_name,
+                        t_args,
+                        user_cfg,
+                        frontend_cfg,
+                        ctx.user_text or "",
+                        request_user_id=(user_cfg or {}).get("user_id", ""),
                     ),
                     "sse_done": json.dumps({
                         "custom_type": "plugin_state",
@@ -319,6 +345,22 @@ def iter_react_pipeline(ctx: ReactRunContext) -> Iterator[bytes]:
                         )
                 except Exception:
                     pass
+
+                # ── O2 KB 上下文缓存写入（v1.0.22）──
+                if r.get("name") == "search_doc_chunks":
+                    try:
+                        _result_text = str(r.get("result", ""))
+                        # 从结果文本提取匹配文档 ID
+                        _doc_match = re.search(r"【匹配文档:\s*([^】]+)】", _result_text)
+                        _doc_id = _doc_match.group(1).strip() if _doc_match else ""
+                        _query = ctx.user_text or ""
+                        if _doc_id and _query:
+                            from chat_orchestrator import set_kb_cache
+                            _conv_id = ctx.conversation_id or ""
+                            set_kb_cache(_conv_id, _query, _doc_id, [])
+                            logger.info("[O2] KB cache written for conv %s doc=%s", _conv_id, _doc_id)
+                    except Exception as _o2w:
+                        logger.debug("[O2] KB cache write skipped: %s", _o2w)
 
                 if _plugin_gateway_terminal:
                     continue
@@ -560,9 +602,11 @@ def iter_react_pipeline(ctx: ReactRunContext) -> Iterator[bytes]:
     tool_messages.append({
         "role": "system",
         "content": (
-            "【数据提取指令】请严格且仅从上方 tool 角色的返回结果中提取 SVN 版本号、提交人及修改摘要。"
-            "如果 tool 返回内容为空或无法解析，请明确回复'未查询到该 Issue 的代码提交记录'。"
-            "绝不允许基于自身知识库或先验概率编造、拼凑任何版本号或人员名称！"
+            "【数据提取指令】请严格且仅从上方 tool 角色的返回结果中提取并作答。"
+            "当 tool 返回了名单、表格行或明确条目（人名、角色名、配置项、SVN 版本号等）时，"
+            "必须逐项完整列出具体名称与数值，绝对禁止用「等」「若干」「部分」概括或省略任何一条。"
+            "如果 tool 返回内容为空或无法解析，请明确回复未查询到相关记录。"
+            "绝不允许基于自身知识库或先验概率编造、拼凑任何数据！"
             "直接输出纯文本，禁止输出 <|tool_calls|> / <|DSML|> 标记。"
         )
     })

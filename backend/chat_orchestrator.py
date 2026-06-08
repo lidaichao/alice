@@ -27,6 +27,75 @@ CHAT_ONLY_SYSTEM = """你是 Alice，团队内的 Jira 与知识库 AI 工作助
 
 SSE_DONE = b"data: [DONE]\n\n"
 
+# ── O2 KB 上下文缓存（v1.0.22）──
+# 会话级缓存：上一轮 FAISS 检索结果暂存，下一轮若话题连续则直接复用
+# key = conversation_id；value = {"last_doc_id": str, "last_chunk_ids": list, "last_query": str, "cached_at": float}
+_kb_context_cache: dict[str, dict] = {}
+
+# ── O2 对比查询信号词（v1.0.22）──
+_CONTRAST_SIGNALS = ("对比", "差异", "vs", "不同", "区别", "比较", "VS", "有什么区别", "有什么不同")
+
+def _simple_keywords(text: str) -> set:
+    """提取简单关键词：中文用 bigram 滑动窗口，英文用空格拆分，≥2 字，去停用词。"""
+    stop = frozenset({"的", "了", "是", "在", "和", "有", "我", "你", "他", "她", "它", "们", "这", "那", "不", "也", "就", "都", "个",
+                       "把", "被", "对", "从", "到", "上", "下", "中", "与", "或", "等", "哪些", "怎么", "什么", "哪个", "如何",
+                       "为什么", "多少", "吗", "呢", "吧", "啊", "哦", "嗯", "一个", "一种", "一下", "能", "可", "要", "会", "可以",
+                       "还", "没", "很", "太", "更", "最", "只", "刚", "才", "已经", "正", "将", "着", "过", "得"})
+    text = text.lower()
+    # 移除标点
+    cleaned = re.sub(r"[，。！？、；：（）【】\"\'\-/\\,\.!\?;:\(\)\[\]]+", " ", text)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    tokens: set[str] = set()
+    # 中文 bigram
+    for i in range(len(cleaned) - 1):
+        bigram = cleaned[i:i + 2]
+        if re.search(r"[\u4e00-\u9fff]", bigram) and bigram not in stop:
+            tokens.add(bigram)
+    # 英文单词
+    for word in cleaned.split():
+        if len(word) >= 2 and word not in stop:
+            tokens.add(word)
+    return tokens
+
+def set_kb_cache(conversation_id: str, query: str, doc_id: str, chunk_ids: list) -> None:
+    """写入 KB 上下文缓存（O2）。"""
+    if not conversation_id:
+        return
+    _kb_context_cache[conversation_id] = {
+        "last_doc_id": doc_id,
+        "last_chunk_ids": list(chunk_ids or []),
+        "last_query": query,
+        "cached_at": __import__("time").time(),
+    }
+
+def get_kb_cache(conversation_id: str, current_query: str) -> dict | None:
+    """读取 KB 上下文缓存；关键词重叠 < 2 则清缓存返回 None（O2）。"""
+    entry = _kb_context_cache.get(conversation_id)
+    if not entry:
+        return None
+    last_kw = _simple_keywords(entry["last_query"])
+    cur_kw = _simple_keywords(current_query)
+    overlap = last_kw & cur_kw
+    if len(overlap) < 2:
+        del _kb_context_cache[conversation_id]
+        return None
+    return entry
+
+def detect_contrast_query(user_text: str) -> bool:
+    """检测是否为对比类查询（O2）。"""
+    return any(sig in user_text for sig in _CONTRAST_SIGNALS)
+
+def format_kb_cache_context(entry: dict) -> str:
+    """将缓存条目格式化为注入 Prompt 的上下文（O2）。"""
+    doc_id = entry.get("last_doc_id", "")
+    query = entry.get("last_query", "")
+    chunk_ids = entry.get("last_chunk_ids", [])
+    return (
+        "【KB 上下文缓存 · O2】\n"
+        f"上一轮用户查询了「{query}」，检索到的文档为 {doc_id}（chunk_ids: {', '.join(chunk_ids[:5])}）。\n"
+        "当前问题可能与该文档相关，请优先基于上一轮的 KB 检索结果回答。"
+    )
+
 
 @dataclass
 class OrchestratorContext:
@@ -322,6 +391,7 @@ def iter_preflight_sse(ctx: OrchestratorContext) -> Iterator[bytes]:
             intent_info,
             ctx.user_cfg,
             conversation_id=ctx.conversation_id,
+            user_id=(ctx.user_cfg or {}).get("user_id", ""),
         )
         if express:
             ctx.terminated = True
@@ -379,3 +449,55 @@ def iter_preflight_sse(ctx: OrchestratorContext) -> Iterator[bytes]:
             return
     except Exception as vip_err:
         logger.warning("[VIP] Fastpath pipeline skipped: %s", vip_err)
+
+    # ═══════════════════════════════════════════════════════
+    #  M5.4 — [WORKFLOW:xxx] 工作流模板执行道
+    #  匹配格式: [WORKFLOW:version-day-check] 或 [WORKFLOW:design-to-subtasks]
+    #  直接调 execute_template，跳过 ReAct 大循环。
+    # ═══════════════════════════════════════════════════════
+    if user_text:
+        wf_match = re.match(r"^\s*\[WORKFLOW:([a-z0-9_-]+)\]\s*", user_text, re.I)
+        if wf_match:
+            template_id = wf_match.group(1).lower()
+            logger.info("[Workflow] trigger detected: %s", template_id)
+            try:
+                from workflow_engine import execute_template as _exec_wf, list_template_ids as _list_ids
+                available = _list_ids()
+                stashed = user_text[:120]
+                ctx.terminated = True
+
+                if template_id in available:
+                    result = _exec_wf(template_id, context={})
+                    if result.get("ok"):
+                        steps = result.get("execution_log") or []
+                        lines = [f"## ⚙️ 工作流执行完成：{result.get('template_name', template_id)}\n"]
+                        for s in steps:
+                            icon = "✅" if s.get("status") == "done" else "❌"
+                            sid = s.get("step_id", "?")
+                            tool = s.get("tool", "")
+                            lines.append(f"- {icon} **{sid}**（`{tool}`）")
+                            out = (s.get("output") or "")[:200]
+                            if out:
+                                lines.append(f"  {out}")
+                        lines.append(f"\n> 共 {len(steps)} 步执行完毕。")
+                        final_msg = "\n".join(lines)
+                    else:
+                        final_msg = f"**工作流 `{template_id}` 执行失败**\n\n步驟 `{result.get('failed_step', '?')}` 出错：{result.get('error', '?')[:300]}"
+                else:
+                    avail_list = ", ".join(available) if available else "（无可用模板）"
+                    final_msg = f"未找到工作流模板 `{template_id}`。\n\n可用模板：{avail_list}"
+
+                payload = json.dumps(
+                    {"choices": [{"delta": {"content": final_msg}}]}, ensure_ascii=False
+                )
+                yield f"data: {payload}\n\n".encode("utf-8")
+                yield SSE_DONE
+            except Exception as wf_err:
+                logger.warning("[Workflow] trigger failed: %s", wf_err)
+                ctx.terminated = True
+                err_payload = json.dumps(
+                    {"choices": [{"delta": {"content": f"工作流执行异常：{str(wf_err)[:200]}"}}]}, ensure_ascii=False
+                )
+                yield f"data: {err_payload}\n\n".encode("utf-8")
+                yield SSE_DONE
+            return

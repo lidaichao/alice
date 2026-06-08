@@ -303,10 +303,10 @@ flowchart LR
 | Epic | 关键任务 | DoD | 状态 |
 |------|----------|-----|------|
 | M1 MCP Server | registry → HTTP/stdio MCP；只读审计 | `cursor_e2e_mcp.py` 3 条绿 | [x] v1.0.7 |
-| M2 Mailbox | SQLite 任务表 + `mailbox_task_id` 协议 | 派工/拉取/回报 + `e2e_mailbox.py` | [ ] |
-| M3 HITL 控制台 v1 | 审批台 + `/operations` | 侧栏入口 + 控制台内可审批 | [-] v1.0.7 骨架 |
-| M4 角色与审计 | `user_id` 绑定 + 审批人落盘 | confirm/reject 可追溯 + audit API | [ ] |
-| M5 工作流模板 | 版本日检查、策划→子任务 | 2 模板 + eval 金标 | [ ] |
+| M2 Mailbox | SQLite 任务表 + `mailbox_task_id` 协议 | 派工/拉取/回报 + MCP + E2E | [x] v1.0.12 |
+| M3 HITL 控制台 v1 | 审批台 + `/operations` | 侧栏入口 + 控制台内可审批 | [x] v1.0.11 |
+| M4 角色与审计 | `user_id` 绑定 + 审批人落盘 | confirm/reject 可追溯 + audit API | [x] v1.0.15（M4.1–M4.8 全量交付） |
+| M5 工作流模板 | 版本日检查、策划→子任务 | 2 模板 + 2 金标 | [x] v1.0.20（M5 全量交付） |
 | M6 API v1 冻结 | additive-only | 契约 §零 + `/health` api_version | [x] v1.0.7 |
 
 **中期存储**：Mailbox 用 **SQLite**（`backend/data/mailbox.db`）；仅当瓶颈明确再评估 Redis（须过 C7/C8 变更）。
@@ -333,15 +333,15 @@ flowchart LR
 
 | ID | 任务 | 交付物 | 依赖 | DoD | KB 影响 | 状态 |
 |----|------|--------|------|-----|---------|------|
-| M2.1 | 数据模型 | `mailbox_schema.sql` + `mailbox_store.py` | — | 表 `mailbox_tasks`：id, status, assignee, payload_json, result_json, created_at, updated_at, operation_id(可选) | 无 | [ ] |
-| M2.2 | `mailbox_task_id` 契约 | `Alice_API_Contract_v1.0.md` §Mailbox | M2.1 | 文档区分三种 ID；状态机 pending → claimed → done / failed | 无 | [ ] |
-| M2.3 | 派工 API | `POST /v1/mailbox/dispatch` | M2.1 | 创建任务并返回 `mailbox_task_id`；payload 校验 | 无 | [ ] |
-| M2.4 | 拉取 API | `GET /v1/mailbox/tasks` | M2.1 | 按 assignee/status 拉取；`?status=pending&limit=` | 无 | [ ] |
-| M2.5 | 回报 API | `POST /v1/mailbox/tasks/<id>/report` | M2.1 | 写入 result_json；状态 done/failed；非法转移 409 | 无 | [ ] |
-| M2.6 | 与 Operation SM 边界 | `mailbox_store.py` + 注释 | M2.1, C2 | Mailbox 不存审批状态；`operation_id` 仅引用 | 无 | [ ] |
-| M2.7 | MCP 工具 | `mcp_registry` 增 pull/report | M2.3–M2.5 | `e2e_mailbox_mcp.py` 或扩展现有 MCP e2e ≥1 条绿 | 无 | [ ] |
-| M2.8 | 清理命名冲突 | `ai_bridge.py` 内存队列 | — | `task_id` 改名为 `admin_batch_task_id`；契约 §4.5 同步 | 无 | [ ] |
-| M2.9 | E2E | `scripts/e2e_mailbox.py` | M2.3–M2.5 | dispatch → pull → report 全链路 | 无 | [ ] |
+| M2.1 | 数据模型 | `mailbox_schema.sql` + `mailbox_store.py` | — | 表 `mailbox_tasks`：id, status, assignee, payload_json, result_json, created_at, updated_at, operation_id(可选) | 无 | [x] v1.0.10 |
+| M2.2 | `mailbox_task_id` 契约 | `Alice_API_Contract_v1.0.md` §Mailbox | M2.1 | 文档区分三种 ID；状态机 pending → claimed → done / failed | 无 | [x] v1.0.10 |
+| M2.3 | 派工 API | `POST /v1/mailbox/dispatch` | M2.1 | 创建任务并返回 `mailbox_task_id`；payload 校验 | 无 | [x] v1.0.10 |
+| M2.4 | 拉取 API | `GET /v1/mailbox/tasks` | M2.1 | 按 assignee/status 拉取；`?status=pending&limit=` | 无 | [x] v1.0.10 |
+| M2.5 | 回报 API | `POST /v1/mailbox/tasks/<id>/report` | M2.1 | 写入 result_json；状态 done/failed；非法转移 409 | 无 | [x] v1.0.10 |
+| M2.6 | 与 Operation SM 边界 | `mailbox_store.py` + 注释 | M2.1, C2 | Mailbox 不存审批状态；`operation_id` 仅引用 | 无 | [x] v1.0.10 |
+| M2.7 | MCP 工具 | `mcp_registry` 增 pull/report | M2.3–M2.5 | `e2e_mailbox_mcp.py` 或扩展现有 MCP e2e ≥1 条绿 | 无 | [x] v1.0.12 |
+| M2.8 | 清理命名冲突 | `ai_bridge.py` 内存队列 | — | `task_id` 改名为 `admin_batch_task_id`；契约 §4.5 同步 | 无 | [x] v1.0.15 |
+| M2.9 | E2E | `scripts/e2e_mailbox.py` | M2.3–M2.5 | dispatch → pull → report 全链路 | 无 | [x] v1.0.10 |
 | M2.10 | 控制台可见性（P2） | OperationsConsole 或 Admin | M2.9 | 只读任务列表 | 无 | [ ] |
 
 #### M3 明细 — HITL 控制台
@@ -351,33 +351,33 @@ flowchart LR
 | M3.1 | 操作列表 API | `GET /operations` | — | 按 status 过滤 | 无 | [x] |
 | M3.2 | 前端管控台 | `OperationsConsole.tsx` | M3.1 | 健康 + 待审批 + 失败列表 | 无 | [x] |
 | M3.3 | 侧栏入口 | `Sidebar.tsx` + `uiSlice` | M3.2 | 「审批管控台」可切换 | 无 | [x] |
-| M3.4 | 控制台内 confirm/reject | `OperationsConsole.tsx` | M3.2 | 单条审批；复用 `POST /operations/<id>/confirm\|reject` | 无 | [ ] |
-| M3.5 | 批量审批 | 多选 UI | M3.4 | PM 勾选 N 条依次确认 | 无 | [ ] |
-| M3.6 | 跳转会话 | Console → chat | M3.4 | 带 `conversation_id` 回聊天 | 无 | [ ] |
-| M3.7 | E2E | `scripts/e2e_operations_console.py` | M3.4 | 控制台 confirm → 状态变 created | 无 | [ ] |
+| M3.4 | 控制台内 confirm/reject | `OperationsConsole.tsx` | M3.2 | 单条审批；复用 `POST /operations/<id>/confirm\|reject` | 无 | [x] v1.0.11 |
+| M3.5 | 批量审批 | 多选 UI | M3.4 | PM 勾选 N 条依次确认 | 无 | [x] v1.0.11 |
+| M3.6 | 跳转会话 | Console → chat | M3.4 | 带 `conversation_id` 回聊天 | 无 | [x] v1.0.11 |
+| M3.7 | E2E | `scripts/e2e_operations_console.py` | M3.4 | API 层 list+reject 绿；confirm 依 Jira 环境 | 无 | [x] v1.0.11 |
 
 #### M4 明细 — 角色与审批可追溯
 
 | ID | 任务 | 交付物 | 依赖 | DoD | KB 影响 | 状态 |
 |----|------|--------|------|-----|---------|------|
-| M4.1 | 客户端身份 | `runtimeConfig.ts` + 请求头 | — | SSE 带 `user_id` | 无 | [ ] |
-| M4.2 | 创建时绑定 | `ai_bridge` / `plugin_gateway` | M4.1 | 所有 create operation/draft 写入 `user_id` | 无 | [ ] |
-| M4.3 | 审批人落盘 | `jira_operation_manager` + `operation_confirm.py` | M4.2 | `confirmed_by` / `rejected_by` + 时间戳 | 无 | [ ] |
-| M4.4 | 列表暴露身份 | `GET /operations` 响应 | M4.3 | 含 creator + approver；契约更新 | 无 | [ ] |
-| M4.5 | 角色配置 | `global_config` 或 `skills/registry.yaml` | M4.3 | PM 可审批；未授权 403 | 无 | [ ] |
-| M4.6 | 持久审计 | `audit_gateway` + `data/audit.log` | M4.3 | `GET /v1/audit/logs`；重启不丢 | 无 | [ ] |
-| M4.7 | 加载 audit_rules | `audit_gateway.py` | — | 读 `skills/registry.yaml` | 无 | [ ] |
-| M4.8 | 单测 + E2E | `tests/test_audit_trace.py` | M4.3–M4.6 | confirm 后 audit 含 user_id | 无 | [ ] |
+| M4.1 | 客户端身份 | `runtimeConfig.ts` + 请求头 | — | SSE 带 `user_id` | 无 | [x] v1.0.13 |
+| M4.2 | 创建时绑定 | `ai_bridge` / `plugin_gateway` | M4.1 | 所有 create operation/draft 写入 `user_id` | 无 | [x] v1.0.13 |
+| M4.3 | 审批人落盘 | `jira_operation_manager` + `operation_confirm.py` | M4.2 | `confirmed_by` / `rejected_by` + 时间戳 | 无 | [x] v1.0.13 |
+| M4.4 | 列表暴露身份 | `GET /operations` 响应 | M4.3 | 含 creator + approver；契约更新 | 无 | [x] v1.0.14 |
+| M4.5 | 角色配置 | `global_config` 或 `skills/registry.yaml` | M4.3 | PM 可审批；未授权 403 | 无 | [x] v1.0.14 |
+| M4.6 | 持久审计 | `audit_gateway` + `data/audit.log` | M4.3 | `GET /v1/audit/logs`；重启不丢 | 无 | [x] v1.0.14 |
+| M4.7 | 加载 audit_rules | `audit_gateway.py` | — | 读 `skills/registry.yaml` | 无 | [x] v1.0.14 |
+| M4.8 | 单测 + E2E | `tests/test_audit_trace.py` | M4.3–M4.6 | confirm 后 audit 含 user_id | 无 | [x] v1.0.15 |
 
 #### M5 明细 — 工作流模板
 
 | ID | 任务 | 交付物 | 依赖 | DoD | KB 影响 | 状态 |
 |----|------|--------|------|-----|---------|------|
-| M5.1 | 模板注册表 | `workflow_templates.yaml` + `workflow_engine.py` | — | 加载、校验、列出模板 ID | 无 | [ ] |
-| M5.2 | 模板 A：版本日检查 | YAML + orchestrator 入口 | M5.1 | JQL 清单 + 检查项；只读 | 无 | [ ] |
-| M5.3 | 模板 B：策划→子任务 | YAML + draft 集成 | M5.1, M4.2 | 父 Issue → `create_issues_draft`；HITL | 调用 `search_docs_catalog`（依赖 Phase B） | [ ] |
-| M5.4 | 触发入口 | Sidebar 或 `[WORKFLOW:xxx]` | M5.2, M5.3 | 用户可显式触发 | L1 需覆盖 workflow 信号 | [ ] |
-| M5.5 | Eval 金标 | `eval/datasets/workflow_templates.yaml` | M5.2, M5.3 | 每模板 ≥1 条 | 无 | [ ] |
+| M5.1 | 模板注册表 | `workflow_templates.yaml` + `workflow_engine.py` | — | 加载、校验、列出模板 ID | 无 | [x] v1.0.16 |
+| M5.2 | 模板 A：版本日检查 | YAML + orchestrator 入口 | M5.1 | JQL 清单 + 检查项；只读 | 无 | [x] v1.0.18 |
+| M5.3 | 模板 B：策划→子任务 | YAML + draft 集成 | M5.1, M4.2 | 父 Issue → `create_issues_draft`；HITL | 调用 `search_docs_catalog`（依赖 Phase B） | [x] v1.0.19 |
+| M5.4 | 触发入口 | Sidebar + `[WORKFLOW:xxx]` | M5.2, M5.3 | 用户可显式触发 | L1 需覆盖 workflow 信号 | [x] v1.0.20 |
+| M5.5 | Eval 金标 | `eval/datasets/workflow_templates.yaml` | M5.2, M5.3 | 每模板 ≥1 条 | 无 | [x] v1.0.20 |
 
 **建议开工顺序**：M3.4 → M3.5–M3.7 → M2.1–M2.9 → M4.1–M4.8 → M5.1–M5.5（M5 依赖 Phase B 与 M4）。
 
@@ -473,6 +473,19 @@ flowchart LR
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| v1.0.22 | 2026-06-08 | O2 调试优化：KB 上下文缓存（conversation_id 粒度 + 关键词重叠命中/清空）+ FAISS top_k 3→5 + 对比查询信号检测（对比/差异/vs/不同/区别/比较）+ SVN/FishEye 3 条验证（SVN-1/2/3）+ `test_kb_context_cache.py` 4 条单测 |
+| v1.0.21 | 2026-06-08 | 调试阶段 O1：浅层记忆注入（`memory_manager.py` 按 intent_label 过滤注入系统 prompt + `test_shallow_memory_injection.py` 4 条单测+ 11 条基线剧本验证） |
+| v1.0.20 | 2026-06-08 | M5.4 Sidebar 工作流启动器 + `[WORKFLOW:xxx]` 聊天触发 + M5.5 Eval 金标 2 条；M5 Epic 全量交付封板 |
+| v1.0.19 | 2026-06-08 | M5.3 策划→子任务模板（4 步：kb_search → llm_identify → create_drafts → format_draft_list；partial_failures 容错；auto_confirm 仅 ALICE_DEBUG=1） |
+| v1.0.18 | 2026-06-08 | M5.2 版本日检查模板执行器（`execute_template` 三步：jira_search → format → llm_summarize；API `GET/POST /v1/workflow/execute`；8 条单测全绿） |
+| v1.0.17 | 2026-06-08 | KB 优化令：FAISS 语义检索升级为主路径（startup 自动建索引 + health `faiss_indexed_docs` + intent_router 优先 knowledge_query + eval 新增 3 条语义金标） |
+| v1.0.16 | 2026-06-08 | M5.1 工作流模板注册表 + 引擎骨架（`workflow_templates.yaml` + `workflow_engine.py`） |
+| v1.0.15 | 2026-06-08 | M4.8 单测收口 + M2.8 `task_id` → `admin_batch_task_id` 命名清理；M4 Epic 全量交付 |
+| v1.0.14 | 2026-06-08 | M4.4–M4.6 管控台审计字段 + 审批 403 + `GET /v1/audit/logs` + `e2e_audit_trace.py` |
+| v1.0.13 | 2026-06-08 | M4.1–M4.3 用户身份透传 + creator/approver 落盘 + `e2e_audit_user_id.py` |
+| v1.0.12 | 2026-06-08 | M2.7 Mailbox MCP 工具 + `e2e_mailbox_mcp.py` |
+| v1.0.11 | 2026-06-08 | M3 管控台收口：M3.4–M3.7 confirm/批量/跳转会话 + `e2e_operations_console.py` |
+| v1.0.10 | 2026-06-08 | M2 Mailbox 闭环：M2.1–M2.6、M2.4–M2.5、M2.9 + `e2e_mailbox.py` |
 | v1.0.9 | 2026-06-08 | §2.2 知识库多项目设计 + C5/C9；Phase B 重写 B1–B10 |
 | v1.0.8 | 2026-06-08 | §5.9 中期 WBS 细拆（M2/M3/M4/M5 任务级）；§5.11 增补 Phase B |
 | v1.0.7 | 2026-06-08 | 近期出口收口 + M1 MCP + M3 管控台骨架 |
