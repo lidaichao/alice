@@ -1,7 +1,7 @@
 # Alice 三期蓝图计划
 
 > **文档性质**：产品开发白皮书 · 开发校准唯一路径  
-> **版本**：v1.4 | **日期**：2026-06-09 | **状态**：已批准执行（文档分层重组 + 客户端角色体系 + Cursor SDK v1.2 修正）  
+> **版本**：v1.5 | **日期**：2026-06-09 | **状态**：已批准执行（引擎选择器 + 客户端本地 Cursor SDK 执行）  
 > **部署形态**：私有化 Hub（单机）+ 各用户 Alice 客户端 + Admin 统一配链  
 > **成本约束**：基础设施仅开源可自托管；LLM 按量 API；不采购商业中间件/SaaS  
 
@@ -563,30 +563,68 @@ flowchart LR
 
 **DeepSeek ReAct 降级范围**：仅处理闲聊（"海贼王是什么"）、极简单步 Jira 查询、VIP 快车道。其他全部走 Cursor SDK。
 
-**交付物清单（v1.2 扩展）**：
+### 5.13.1 引擎选择器——前端交互设计（v1.4 新增）
+
+> **协调者产品概念**：用户不应被动接受自动分流——应主动选择引擎和模式。
+> 输入框旁边加 `EngineSelector` 下拉，不写死任何选项，所有选项从服务器/SDK 动态拉取。
+
+**UI 效果**：
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  [引擎: Cursor · Plan ▼]    [________________] [发送]    │
+│                                                          │
+│  ┌─────────────────────┐                                 │
+│  │ 🐰 DeepSeek         │                                 │
+│  │    deepseek-v4-pro  │  ← GET /v1/config/engines 返回  │
+│  │─────────────────────│                                 │
+│  │ 🔬 Cursor SDK       │                                 │
+│  │    · plan（先规划）  │  ← Cursor SDK 动态模式列表        │
+│  │    · agent（直接）   │                                 │
+│  │    · ask（仅问答）   │                                 │
+│  └─────────────────────┘                                 │
+└──────────────────────────────────────────────────────────┘
+```
+
+**分流逻辑**：
+
+| 引擎选择 | 行为 |
+|------|------|
+| Auto（默认） | `chat_orchestrator` 自动判断：闲聊/简单→DeepSeek / 复杂→Cursor·plan |
+| DeepSeek | 强制走 Hub DeepSeek，`sendMessage(user_text, engine="deepseek")` |
+| Cursor·plan | 强制走客户端 Cursor SDK plan 模式 |
+| Cursor·agent | 强制走客户端 Cursor SDK agent 模式（仅分析，不写文件） |
+| Cursor·ask | 强制走客户端 Cursor SDK ask 模式（仅问答） |
+
+**模式列表来源**（不写死）：
+- **DeepSeek 模型名**：`GET /v1/config/engines` → 读 `global_config.json` 的 `DEEPSEEK_MODEL` 字段
+- **Cursor SDK 模式列表**：`Cursor.models.list()` → 遍历 `parameters` → 提取 `mode` 参数的 `values`
+
+**用户偏好**：`localStorage.setItem("alice_engine_pref", JSON.stringify({ engine, mode }))` ——下次启动自动恢复上次选择。
+
+**交付物清单（v1.4 修正——客户端本地执行）**：
+
 | 文件 | 操作 | 说明 |
 |------|------|------|
-| `backend/cursor_agent_lane.py` | 新建 | SDK 编排道：`should_use_cursor_lane()` + `run_cursor_agent()` + 自定义工具注册（Jira 工具组 + workspace 工具组）+ SSE 流式 |
-| `backend/chat_orchestrator.py` | 修改 | 插入 `should_use_cursor_lane()` 判断 |
+| **Hub 后端** | | |
+| `backend/cursor_agent_lane.py` | 新建 | 自定义工具定义（jira_search/jira_create_subtasks 等 → 回调 Hub API） |
+| `backend/chat_orchestrator.py` | 修改 | 读取前端传入的 `engine` 参数，跳过自动分流 |
+| `backend/ai_bridge.py` | 修改 | 新增 `GET /v1/config/engines`（返回可用引擎和模式列表） |
 | `backend/tools/registry.yaml` | 修改 | P1-4 4 个手搓工具标记 `deprecated: true` |
-| `backend/ai_bridge.py` | 修改 | `get_admin_config()` 加 `CURSOR_SDK_KEY` / `CURSOR_SDK_MODEL` / `CURSOR_SDK_THINKING` |
-| `admin-ui/src/composables/useAdminStore.js` | 修改 | 新增 `state.cursor`（KEY/MODEL/THINKING） |
-| `admin-ui/src/views/SettingsView.vue` | 修改 | 新增 Cursor SDK 配置卡片（API Key 密码框 + 模型/推理深度下拉框） |
-| `src/store/useChatStore.ts` | 修改 | `Message` 类型加 `source?: 'deepseek' \| 'cursor'` |
-| `src/store/slices/chatSlice.ts` | 修改 | SSE 解析 `source` 字段 |
-| `src/App.tsx` | 修改 | 头像/气泡颜色区分（🐰/🔬 + 来源标签） |
-| `tests/test_cursor_agent_lane.py` | 新建 | 单测：分流逻辑 + 自定义工具注册 + 降级路径 |
-| `requirements.txt` | 修改 | 新增 `cursor-sdk` 依赖 |
+| **客户端前端** | | |
+| `src/components/EngineSelector.tsx` | 新建 | 下拉组件：Auto/DeepSeek/Cursor·plan/agent/ask，选项从 API 动态拉 |
+| `src/App.tsx` | 修改 | 输入框旁插入 `<EngineSelector>` + 头像/气泡颜色区分（🐰/🔬） |
+| `src/store/useChatStore.ts` | 修改 | `Message` 加 `source?: 'deepseek' \| 'cursor'` |
+| `src/store/slices/chatSlice.ts` | 修改 | SSE 解析 `source` 字段；`sendMessage()` 传 `engine` 参数 |
+| **测试与依赖** | | |
+| `tests/test_cursor_agent_lane.py` | 新建 | 单测：自定义工具注册 + API 回调 |
+| `tests/test_engine_selector.py` | 新建 | 单测：引擎选择器状态 + 偏好持久化 |
+| `requirements.txt` | 修改 | 新增 `cursor-sdk` 依赖（客户端侧） |
 
-**后台可配置项**（`127.0.0.1:9099/admin#settings` → Cursor SDK 配置卡片）：
-
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|------|------|
-| CURSOR_SDK_KEY | 密码框 | — | Cursor API Key（来自 dashboard） |
-| CURSOR_SDK_MODEL | 下拉框 | composer-2.5 | 模型选择 |
-| CURSOR_SDK_THINKING | 下拉框 | high | 推理深度（high/medium/low） |
-
-**手搓工具退役**：P1-4 4 工具 deprecated，不删除（降级兜底）
+**架构原则**：
+- ❌ Hub **不跑** Cursor SDK——执行器在开发者客户端本地
+- Hub 只提供：路由判断 + 自定义工具 API 端点 + 审计闸门 + 确认卡
+- 客户端本地 Cursor SDK 通过自定义工具回调 Hub API（不直连外部系统）
 
 ---
 
@@ -686,6 +724,7 @@ flowchart LR
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| v1.5 | 2026-06-09 | **引擎选择器**：§5.13.1 新增前端交互设计——输入框旁 `EngineSelector` 下拉（Auto/DeepSeek/Cursor·plan/agent/ask，选项从 API 动态拉，不写死）；Hub 不跑 Cursor SDK（执行器在客户端本地）；交付物修正为 13 文件（Hub后端4 + 客户端前端5 + 测试2 + 依赖）；协调者确认 |
 | v1.4 | 2026-06-09 | **文档分层重组**：新增 §1 版本演化说明 + §5 过渡横幅；§1.1–1.3 更新为当前架构（执行引擎/流程图含 Cursor SDK Lane）；§2.1 更正非目标描述；§5.12 标记为「✅ 已交付·仅留档」；杰尼龟反馈「新旧混杂」已修正 |
 | v1.3 | 2026-06-09 | **v1.2 修正**：Cursor SDK 角色从"代码分析引擎"→"通用复杂执行引擎"；§5.13 重写：新增自定义工具模型（Jira 工具组 + workspace 工具组经审计闸门）、DeepSeek ReAct 退守聊聊/简单查询、P2-2 交付物扩展至 11 个文件；协调者确认 |
 | v1.2 | 2026-06-09 | 新增 §5.14 审批控制台中期目标（Phase E）：三阶段路径（单人确认卡→SDK分析审批管道→多角色审批台）；协调者确认 |
