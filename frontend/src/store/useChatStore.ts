@@ -51,6 +51,8 @@ export interface Message {
   timestamp: number;
   plugin?: { name: string; status: 'running' | 'done' };
   citations?: Citation[];
+  source?: 'deepseek' | 'cursor';
+  error?: boolean;
 }
 
 export interface Session {

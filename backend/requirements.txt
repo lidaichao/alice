@@ -16,6 +16,13 @@ tenacity>=8.0
 # MCP 服务（可选，供 WorkBuddy 调用）
 fastmcp>=2.0
 
+# Cursor SDK（P2-2 Cursor Lane 通用执行引擎）
+# ⚠️ v1.0.30 已知兼容性问题：cursor-sdk 0.1.7 在 Python 3.14 + Windows 上
+# Agent.create() 因 selectors.SelectSelector + select.select() 不兼容 pipe 句柄
+# 而报 OSError WinError 10038。客户端本地执行不受影响（客户端可能有其他 Python 版本）。
+# 锁定版本为 0.1.7，待上游修复后升级。
+cursor-sdk==0.1.7
+
 # 环境变量
 python-dotenv>=1.0
 

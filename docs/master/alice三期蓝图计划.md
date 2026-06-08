@@ -1,7 +1,7 @@
 # Alice 三期蓝图计划
 
 > **文档性质**：产品开发白皮书 · 开发校准唯一路径  
-> **版本**：v1.5 | **日期**：2026-06-09 | **状态**：已批准执行（引擎选择器 + 客户端本地 Cursor SDK 执行）  
+> **版本**：v1.7 | **日期**：2026-06-09 | **状态**：已批准执行（Cursor SDK Lane 通用执行引擎已打通 + 客户端本地 Cursor SDK 执行）  
 > **部署形态**：私有化 Hub（单机）+ 各用户 Alice 客户端 + Admin 统一配链  
 > **成本约束**：基础设施仅开源可自托管；LLM 按量 API；不采购商业中间件/SaaS  
 
@@ -503,7 +503,7 @@ flowchart LR
 | C3 | P1-2 单 Issue 增强 | `ai_bridge.py` L1233-1255 重写 | 7/7 单测 | [x] v1.0.26 |
 | C4 | P1-3 写审计闸门 | `jira_operation_manager.py` audit_jira_operation + create_operation_card_with_audit | 8/8 单测 | [x] v1.0.27 |
 | C5 | P1-4 受控代码分析 | `workspace_manager.py` + `tools/registry.yaml` 4 工具 + `workspace_tools.py` 4 执行器（v1.0.28-1 从 ai_bridge 抽离，遵守 E1.3） | 4/4 单测 + CI_GATE_OK | ⚠️ v1.0.28（已被 Cursor SDK 方向替代，见 §5.13） |
-|| C6 | P2-2 Cursor SDK Lane | `cursor_agent_lane.py` + `chat_orchestrator.py` 集成 + 手搓工具标记 deprecated | TBD | 🔲 v1.0.29 |
+|| C6 | P2-2 Cursor SDK Lane | `cursor_agent_lane.py` + `chat_orchestrator.py` 集成 + 手搓工具标记 deprecated | TBD | [x] v1.0.30 |
 
 ---
 
@@ -724,6 +724,15 @@ flowchart LR
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| v1.7 | 2026-06-09 | **P2-2 w2 交付（v1.0.30）**：新增 `cursor_agent_lane.py`（13 个 CustomTool：6 只读 + 4 KB/SVN + 3 写经审计闸门）+ `iter_cursor_sdk_lane()` 主入口（解析 engine 参数、Agent.create + LocalAgentOptions(custom_tools=...) + run.text() SSE 流式输出）；`chat_orchestrator.py` 预检链末尾新增 Cursor 道（engine 以 "cursor-" 开头时分流）；`ai_bridge.py` 解析前端 engine/mode 参数并注入 user_cfg；`tools/registry.yaml` 标记 4 个 P1-4 workspace 工具为 deprecated；4 条单测全绿 |
+| v1.7-patch | 2026-06-09 | **工具补齐**：`cursor_agent_lane.py` 新增 4 个只读 handler wrapper（`get_issue_commits` / `get_single_commit_diff` / `search_docs_catalog` / `read_specific_doc`，复用 `ai_bridge.py` 现有实现）；CustomTool 注册从 9→13；单测 `test_custom_tool_registration` 更新。协调者反馈 Cursor·plan 引擎查不到 Notion/SVN 已修复。 |
+| v1.7-patch2 | 2026-06-09 | **闲聊截胡修复**：`chat_orchestrator.py` L355/L374 —— 记忆捕获和 `chat_only_lane` 判定增加 `engine.startswith("cursor-")` 跳过条件，用户选的 Cursor 引擎不再被闲聊判定截走。 |
+| v1.7-patch3 | 2026-06-09 | **UX 体验修复（4 项）**：(1) 引擎选择器重构——移至输入框左侧，引擎/模式下拉 + 模型名标签（🐰 deepseek / 🔬 cursor_sdk_model），模型可选切换 (2) 消息气泡新增复制按钮（📋 → ✓ 2s）+ AI 来源指示器（🐰 DeepSeek / 🔬 Cursor SDK，依 `m.source` 字段区分）(3) 停止生成修复——AbortError 追加「⏹ 已停止生成」到消息尾，前端不再对空 content 假显示「正在思考…」(4) `isGenerating: boolean` → `generatingSessions: Record<string, boolean>`（per-session 并发状态），发送按钮只锁当前会话。`Message` 类型新增 `source?: 'deepseek' | 'cursor'` 字段。 |
+| v1.7-patch4 | 2026-06-09 | **UX 修正（4 项）**：(1) 气泡宽度按角色区分——用户 `max-w-[70%]` 自适应宽度，助手 `w-full max-w-[80%]` (2) 用户消息新增复制按钮 (3) 输入区引擎/模型选择器改为水平并排布局（`flex items-center gap-1.5`），停止按钮移至引擎右侧 (4) `EngineSelector` 自身外层从 Fragment 改为 `flex items-center gap-1` 容器，引擎下拉 + 模型标签水平排列。对标 LobeHub 布局。 |
+| v1.7-patch5 | 2026-06-09 | **UX 对标 LobeHub**：(1) EngineSelector 改为胶囊按钮+文本徽章布局——模式用 `rounded-full bg-secondary h-7` 胶囊按钮（Zap/Bot/MessageCircle lucide 图标替代 emoji），模型用 `rounded-md max-w-[100px] truncate` 文本徽章 (2) 助手气泡去 `w-full` 保持自适应宽度 (3) Cursor 道 `engine` 参数自动拼 `cursor-${mod}` 前缀，修复"执行吧"路由 bug (4) `CursorSettings` 标签/输入框 `text-muted-foreground`→`text-foreground` 修复浅色模式不可见。 |
+| v1.7-patch6 | 2026-06-09 | **模型列表动态获取**：(1) 后端新增 `GET /v1/admin/cursor-sdk/models`——代理 `Cursor.models.list(api_key=...)` 实时返回可用模型列表 (2) `EngineSelector` 启动时调用新端点填充 `cursorAvailableModels`，替换硬编码 `['composer-2.5','auto']` (3) `CursorSettings` 同理动态渲染 `<option>`，模型下拉不再硬编码 (4) `CursorSettings` 弹出卡片根 div 加 `text-foreground` 修复浅色模式。失败时均回退硬编码兜底列表。 |
+| v1.7-note | 2026-06-09 | **P2-2 封板阻塞排查**：WinError 10038 根因锁定——`cursor-sdk 0.1.7` + Python 3.14 + Windows 上 `Agent.create()` 桥进程 `_read_discovery()` 使用 `selectors.DefaultSelector`（Windows → SelectSelector → select.select()）监听子进程 stderr pipe，Windows `select()` 仅支持 socket → OSError WinError 10038。0.1.6 同错。**已修复**：`cursor_agent_lane.py` L16-74 新增 `_PollingSelector` 轮询补丁（在 cursor-sdk import 前替换 `selectors.DefaultSelector`），绕过 select 限制。验证：Python 3.12 + 3.14 均通过，桥正常启动 → `Agent.create(sk-test)` → AuthenticationError（预期）无 WinError。需向 Cursor SDK 团队报 bug（_bridge.py L275 应使用 `selectors.DefaultSelector` 或平台感知选择器）。真 Key 连通测试待协调者提供。 |
+| v1.6 | 2026-06-09 | **Bug 修复**：修正 `POST /v1/admin/cursor-sdk/test` 的 `cursor_sdk_test()` 函数——移除不存在的 `mode` 参数（`Agent.create(model=model, mode="plan")`→`Agent.create(model=model, api_key=api_key, local=LocalAgentOptions(cwd=...))`）+ `result.text` 属性改为 `run.text()` 方法 + `GET /v1/config/engines` Cursor modes 加注释说明（IDE 概念→用户意图标签，非 SDK 参数）；假 Key 回归通过 → 200/CursorAgentError；真 Key 待协调者提供 |
 | v1.5 | 2026-06-09 | **引擎选择器**：§5.13.1 新增前端交互设计——输入框旁 `EngineSelector` 下拉（Auto/DeepSeek/Cursor·plan/agent/ask，选项从 API 动态拉，不写死）；Hub 不跑 Cursor SDK（执行器在客户端本地）；交付物修正为 13 文件（Hub后端4 + 客户端前端5 + 测试2 + 依赖）；协调者确认 |
 | v1.4 | 2026-06-09 | **文档分层重组**：新增 §1 版本演化说明 + §5 过渡横幅；§1.1–1.3 更新为当前架构（执行引擎/流程图含 Cursor SDK Lane）；§2.1 更正非目标描述；§5.12 标记为「✅ 已交付·仅留档」；杰尼龟反馈「新旧混杂」已修正 |
 | v1.3 | 2026-06-09 | **v1.2 修正**：Cursor SDK 角色从"代码分析引擎"→"通用复杂执行引擎"；§5.13 重写：新增自定义工具模型（Jira 工具组 + workspace 工具组经审计闸门）、DeepSeek ReAct 退守聊聊/简单查询、P2-2 交付物扩展至 11 个文件；协调者确认 |

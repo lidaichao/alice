@@ -229,6 +229,8 @@ tools:
     category: workspace
     icon: "📄"
     risk: readonly
+    deprecated: true
+    deprecated_message: "已被 Cursor SDK 内置工具替代"
     function:
       parameters:
         path:
@@ -246,6 +248,8 @@ tools:
     category: workspace
     icon: "🔍"
     risk: readonly
+    deprecated: true
+    deprecated_message: "已被 Cursor SDK 内置工具替代"
     function:
       parameters:
         pattern:
@@ -267,6 +271,8 @@ tools:
     category: workspace
     icon: "📜"
     risk: readonly
+    deprecated: true
+    deprecated_message: "已被 Cursor SDK 内置工具替代"
     function:
       parameters:
         path:
@@ -284,6 +290,8 @@ tools:
     category: workspace
     icon: "📁"
     risk: readonly
+    deprecated: true
+    deprecated_message: "已被 Cursor SDK 内置工具替代"
     function:
       parameters:
         path:

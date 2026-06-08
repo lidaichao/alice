@@ -141,17 +141,19 @@ export interface ChatSlice {
   sessions: Session[];
   activeSessionId: string | null;
   isDbLoaded: boolean;
-  isGenerating: boolean;
+  generatingSessions: Record<string, boolean>;
   abortController: AbortController | null;
   pendingConfirmations: ConfirmCard[];
   pendingDraftCards: DraftCard[];
   pendingJiraSupplements: JiraSearchSupplementCard[];
+  enginePreference: { engine?: string; mode?: string };
 
   initDB: () => Promise<void>;
   setActiveSession: (id: string) => void;
   clearAllSessions: () => Promise<void>;
   stopGenerating: () => void;
   sendMessage: (content: string, imageBase64?: string) => Promise<void>;
+  setEngine: (engine: string, mode?: string) => void;
 
   renameSession: (id: string, newTitle: string) => Promise<void>;
   togglePinSession: (id: string) => Promise<void>;
@@ -165,11 +167,12 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
   sessions: [],
   activeSessionId: null,
   isDbLoaded: false,
-  isGenerating: false,
+  generatingSessions: {} as Record<string, boolean>,
   abortController: null,
   pendingConfirmations: [],
   pendingDraftCards: [],
   pendingJiraSupplements: [],
+  enginePreference: {},
 
   initDB: async () => {
     try {
@@ -266,11 +269,18 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
     set({ sessions: [], activeSessionId: null });
   },
   stopGenerating: () => {
-    const { abortController } = get();
+    const { abortController, activeSessionId } = get();
     if (abortController) {
       abortController.abort();
-      set({ isGenerating: false, abortController: null });
+      set((s) => ({
+        abortController: null,
+        generatingSessions: { ...s.generatingSessions, [activeSessionId!]: false },
+      }));
     }
+  },
+
+  setEngine: (engine: string, mode?: string) => {
+    set({ enginePreference: { engine, mode } });
   },
 
   sendMessage: async (content: string, imageBase64?: string) => {
@@ -278,16 +288,24 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
     if (!activeSessionId) return;
     if (prevAbort) {
       prevAbort.abort();
-      set({ abortController: null, isGenerating: false });
+      set((s) => ({ abortController: null, generatingSessions: { ...s.generatingSessions, [activeSessionId]: false } }));
     }
 
     const msgContent = imageBase64 ? `${imageBase64}\n\n[图片说明]:${content}` : content;
     const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: msgContent, timestamp: Date.now() };
     const aiMsgId = `a-${Date.now() + 1}`;
-    const aiMsg: Message = { id: aiMsgId, role: 'assistant', content: '', timestamp: Date.now() };
+    const aiMsg: Message = {
+      id: aiMsgId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      source: (get().enginePreference.engine === 'cursor' || get().enginePreference.engine?.startsWith?.('cursor-'))
+        ? 'cursor' as const
+        : 'deepseek' as const,
+    };
 
     set((state) => ({
-      isGenerating: true,
+      generatingSessions: { ...state.generatingSessions, [activeSessionId]: true },
       sessions: state.sessions.map(s =>
         s.id === activeSessionId ? { ...s, messages: [...s.messages, userMsg, aiMsg], updatedAt: Date.now() } : s
       )
@@ -349,6 +367,13 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
         body: JSON.stringify({
           messages: messagesPayload,
           conversation_id: activeSessionId,
+          engine: (() => {
+            const eng = get().enginePreference.engine;
+            const mod = get().enginePreference.mode;
+            if (eng === 'cursor' && mod) return `cursor-${mod}`;
+            return eng || undefined;
+          })(),
+          mode: get().enginePreference.mode || undefined,
           config: (() => {
             const rc = loadRuntimeConfig();
             const cfg: Record<string, string> = {
@@ -551,6 +576,20 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
       }
     } catch (error: any) {
       if (error.name === 'AbortError') {
+        // 追加「已停止」标记到当前消息
+        set((state) => ({
+          sessions: state.sessions.map(s => {
+            if (s.id !== activeSessionId) return s;
+            return {
+              ...s,
+              messages: s.messages.map(m =>
+                m.id === aiMsgId
+                  ? { ...m, content: (m.content || '').trim() || '⏹ 已停止生成' }
+                  : m
+              ),
+            };
+          }),
+        }));
         const abortedSession = get().sessions.find(s => s.id === activeSessionId);
         if (abortedSession) await db.sessions.put(abortedSession);
       } else {
@@ -575,7 +614,10 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
         }
       }
     } finally {
-      set({ isGenerating: false, abortController: null });
+      set((s) => ({
+        generatingSessions: { ...s.generatingSessions, [activeSessionId]: false },
+        abortController: null,
+      }));
     }
   }
 });

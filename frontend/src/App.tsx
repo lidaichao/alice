@@ -15,9 +15,11 @@ import { useOperationActions } from '@/hooks/useOperationActions';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { PluginToolCard } from '@/components/MarkdownRenderer';
 import { OperationsConsole } from '@/components/OperationsConsole';
+import { EngineSelector } from '@/components/EngineSelector';
+import { CursorSettings } from '@/components/CursorSettings';
 import { syncHubConfigFromHealth } from '@/lib/hubConfig';
 import { ThemeProvider } from '@lobehub/ui';
-import { Square } from 'lucide-react';
+import { Square, Copy, Check } from 'lucide-react';
 
 export const App: React.FC = () => {
   // ═══ 统一数据源：useChatStore（chatSlice + agentSlice + uiSlice + memorySlice）═══
@@ -26,7 +28,7 @@ export const App: React.FC = () => {
   const sessions = useChatStore((s) => s.sessions);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   const sendMessage = useChatStore((s) => s.sendMessage);
-  const isGenerating = useChatStore((s) => s.isGenerating);
+  const isGenerating = useChatStore((s) => s.generatingSessions[activeSessionId || ''] || false);
   const stopGenerating = useChatStore((s) => s.stopGenerating);
   const pendingConfirmations = useChatStore((s) => s.pendingConfirmations);
   const pendingDraftCards = useChatStore((s) => s.pendingDraftCards);
@@ -55,6 +57,8 @@ export const App: React.FC = () => {
   const [commandFilter, setCommandFilter] = useState('');
   const [selectedCmdIndex, setSelectedCmdIndex] = useState(0);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
+  const [showCursorSettings, setShowCursorSettings] = useState(false);
+  const [copiedMessages, setCopiedMessages] = useState<Record<string, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -282,6 +286,21 @@ export const App: React.FC = () => {
           <div ref={chatContainerRef} onScroll={handleChatScroll} className="flex-1 overflow-y-auto p-4 space-y-6">
             {messages.map((m) => {
               const isUser = m.role === 'user';
+              const isAssistant = m.role === 'assistant';
+              const isStopped = isAssistant && m.content === '⏹ 已停止生成';
+              const hasContent = isAssistant && m.content && !isStopped;
+              const hasPluginOnly = isAssistant && !m.content && m.plugin;
+              const isEmptyAssistant = isAssistant && !m.content && !m.plugin && !isStopped;
+              const isCopied = copiedMessages[m.id] || false;
+
+              const handleCopy = async () => {
+                try {
+                  await navigator.clipboard.writeText(m.content);
+                  setCopiedMessages((prev) => ({ ...prev, [m.id]: true }));
+                  setTimeout(() => setCopiedMessages((prev) => ({ ...prev, [m.id]: false })), 2000);
+                } catch {}
+              };
+
               return (
                 <div key={m.id} className={`flex gap-4 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
                   {/* 头像 */}
@@ -290,22 +309,46 @@ export const App: React.FC = () => {
                   </div>
 
                   {/* 气泡 */}
-                  <div className={`max-w-[75%] p-4 rounded-2xl ${
-                    isUser
-                      ? 'bg-blue-600 text-white rounded-tr-none'
-                      : 'bg-muted text-foreground rounded-tl-none'
-                  }`}>
-                    {m.role === 'assistant' && m.content ? (
-                      <MarkdownRenderer content={m.content} citations={m.citations} plugin={m.plugin} />
-                    ) : m.role === 'assistant' && m.plugin ? (
-                      <div className="space-y-2">
-                        <PluginToolCard plugin={m.plugin} />
+                  <div className={isUser ? 'max-w-[70%]' : 'max-w-[80%]'}>
+                    <div className={`p-4 rounded-2xl ${
+                      isUser
+                        ? 'bg-blue-600 text-white rounded-tr-none'
+                        : isStopped
+                          ? 'bg-muted/60 text-muted-foreground/60 rounded-tl-none'
+                          : 'bg-muted text-foreground rounded-tl-none'
+                    }`}>
+                      {hasContent ? (
+                        <MarkdownRenderer content={m.content} citations={m.citations} plugin={m.plugin} />
+                      ) : hasPluginOnly ? (
+                        <div className="space-y-2">
+                          <PluginToolCard plugin={m.plugin} />
+                          <span className="text-muted-foreground italic text-sm">正在思考...</span>
+                        </div>
+                      ) : m.content ? (
+                        <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">{m.content}</div>
+                      ) : isEmptyAssistant ? (
                         <span className="text-muted-foreground italic text-sm">正在思考...</span>
+                      ) : null}
+                    </div>
+
+                    {/* 操作栏：复制按钮 + 来源指示 */}
+                    {(isAssistant ? (hasContent || isStopped) : !!m.content) && (
+                      <div className="flex items-center gap-2 mt-1.5 px-1">
+                        {isAssistant && m.source === 'cursor' && (
+                          <span className="text-[10px] text-muted-foreground/70 select-none">🔬 Cursor SDK</span>
+                        )}
+                        {isAssistant && m.source === 'deepseek' && (
+                          <span className="text-[10px] text-muted-foreground/70 select-none">🐰 DeepSeek</span>
+                        )}
+                        <div className="flex-1" />
+                        <button
+                          onClick={handleCopy}
+                          className="text-muted-foreground/40 hover:text-muted-foreground transition-colors p-0.5 rounded"
+                          title="复制"
+                        >
+                          {isCopied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+                        </button>
                       </div>
-                    ) : m.content ? (
-                      <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">{m.content}</div>
-                    ) : (
-                      <span className="text-muted-foreground italic text-sm">正在思考...</span>
                     )}
                   </div>
                 </div>
@@ -373,16 +416,17 @@ export const App: React.FC = () => {
 
           {/* ── 输入区 ── */}
           <div className="p-4 bg-background border-t border-border flex-shrink-0 flex flex-col gap-2 relative">
-            <div className="flex justify-center gap-2 mb-2">
-              {isGenerating && (
-                <Button variant="ghost" size="sm" onClick={stopGenerating} className="text-red-500 hover:text-red-700 text-xs gap-1">
-                  <Square size={12} /> ⏹ 停止生成
-                </Button>
-              )}
-            </div>
-
-            <div className="flex items-end gap-3 max-w-4xl mx-auto w-full relative">
+            <div className="flex items-end gap-2 max-w-4xl mx-auto w-full relative">
               {showCommands && <CommandPanel filterText={commandFilter} selectedIndex={selectedCmdIndex} onSelect={handleSelectCommand} />}
+              {/* 引擎选择器 + 停止按钮（贴在 textarea 左侧） */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <EngineSelector onOpenSettings={() => setShowCursorSettings(true)} />
+                {isGenerating && (
+                  <Button variant="ghost" size="sm" onClick={stopGenerating} className="h-8 w-8 p-0 text-red-500 hover:text-red-700 rounded-lg" title="停止生成">
+                    <Square size={14} />
+                  </Button>
+                )}
+              </div>
               <textarea
                 ref={inputRef}
                 value={myInput}
@@ -404,6 +448,7 @@ export const App: React.FC = () => {
         </>
         )}
       </div>
+      <CursorSettings open={showCursorSettings} onClose={() => setShowCursorSettings(false)} />
     </ThemeProvider>
   );
 };

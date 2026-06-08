@@ -2109,6 +2109,20 @@ def chat_completions():
     frontend_cfg = data.get("config", {}) or {}
     if user_cfg["user_id"]:
         frontend_cfg = {**frontend_cfg, "user_id": user_cfg["user_id"]}
+
+    # P2-2: 前端发送 engine/mode 参数 → 注入 user_cfg，供 chat_orchestrator 预检链消费
+    engine = (data.get("engine") or "").strip()
+    if engine and not user_cfg.get("engine"):
+        user_cfg["engine"] = engine
+    mode = (data.get("mode") or "").strip()
+    if mode and not user_cfg.get("mode"):
+        user_cfg["mode"] = mode
+    # 若 frontend_cfg 中有 cursor_api_key / cursor_sdk_model，也注入 user_cfg
+    for _k in ("cursor_api_key", "cursor_sdk_model"):
+        _v = (frontend_cfg.get(_k) or "").strip()
+        if _v and not user_cfg.get(_k):
+            user_cfg[_k] = _v
+
     conversation_id = (
         data.get("conversation_id")
         or frontend_cfg.get("conversation_id")
@@ -3328,6 +3342,84 @@ def get_admin_config():
         "JIRA_FIELD_GLOSSARY": config.get("JIRA_FIELD_GLOSSARY", []),
         "JIRA_PROJECTS": config.get("JIRA_PROJECTS", os.getenv("JIRA_PROJECTS", "")),
     })
+
+@app.route("/v1/config/engines", methods=["GET"])
+def config_engines():
+    """返回可用引擎列表（DeepSeek + Cursor SDK）供客户端 EngineSelector 下拉菜单"""
+    config = load_global_config()
+    deepseek_model = _resolved_deepseek_model(config)
+    # 注意：plan/agent/ask 是 Cursor IDE 的交互模式概念，不是 cursor-sdk 的 API 参数。
+    # SDK 侧无 mode 参数，仅通过 model + 提示词控制行为。此处保留作为用户意图标签，
+    # 后续 cursor lane 实现时会将意图映射到具体 SDK 配置。
+    cursor_modes = [
+        {"id": "plan", "label": "plan（先规划后执行）"},
+        {"id": "agent", "label": "agent（直接执行）"},
+        {"id": "ask", "label": "ask（仅问答）"},
+    ]
+    return jsonify({
+        "deepseek": {
+            "model": deepseek_model,
+            "label": "DeepSeek 回答",
+        },
+        "cursor": {
+            "modes": cursor_modes,
+            "label": "Cursor 深度分析",
+        },
+    })
+
+@app.route("/v1/admin/cursor-sdk/test", methods=["POST"])
+def cursor_sdk_test():
+    """代理测试 Cursor SDK 连通性（Key 由客户端传入，不存储）"""
+    data = request.json or {}
+    api_key = (data.get("api_key") or "").strip()
+    model = (data.get("model") or "composer-2.5").strip()
+    if not api_key:
+        return jsonify({"ok": False, "error": "缺少 api_key"}), 400
+    try:
+        import cursor_sdk
+        _ = cursor_sdk
+    except ImportError:
+        return jsonify({"ok": False, "error": "服务器未安装 cursor-sdk（pip install cursor-sdk）"}), 500
+    try:
+        from cursor_sdk import Agent, LocalAgentOptions
+
+        # 使用临时目录作为 workspace，避免污染实际项目
+        test_cwd = os.path.join(os.environ.get("TEMP", os.getcwd()), "alice_cursor_sdk_test")
+        os.makedirs(test_cwd, exist_ok=True)
+
+        with Agent.create(
+            model=model,
+            api_key=api_key,
+            local=LocalAgentOptions(cwd=test_cwd),
+        ) as agent:
+            run = agent.send("Hello, respond with 'OK' only.")
+            run.wait()
+            text = (run.text() or "").strip()
+        
+        if "OK" in text or "ok" in text:
+            return jsonify({"ok": True, "model": model})
+        return jsonify({"ok": True, "model": model, "warning": f"返回非预期内容: {text[:200]}"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:300]})
+
+@app.route("/v1/admin/cursor-sdk/models", methods=["GET"])
+def cursor_sdk_models():
+    """返回 Cursor API Key 可用的模型列表（前端下拉菜单数据源）"""
+    api_key = (request.args.get("api_key") or "").strip()
+    if not api_key:
+        return jsonify({"ok": False, "error": "缺少 api_key", "models": []}), 400
+    try:
+        import cursor_sdk
+        _ = cursor_sdk
+    except ImportError:
+        return jsonify({"ok": False, "error": "服务器未安装 cursor-sdk", "models": []}), 500
+    try:
+        from cursor_sdk import Cursor
+        sdk_models = Cursor.models.list(api_key=api_key)
+        models = [{"id": m.id, "display_name": m.display_name} for m in sdk_models]
+        return jsonify({"ok": True, "models": models})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)[:300], "models": []})
 
 @app.route('/v1/admin/config', methods=['POST', 'OPTIONS'])
 @require_admin

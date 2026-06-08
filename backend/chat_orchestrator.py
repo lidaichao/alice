@@ -352,7 +352,7 @@ def iter_preflight_sse(ctx: OrchestratorContext) -> Iterator[bytes]:
         yield SSE_DONE
         return
 
-    if user_text:
+    if user_text and not (ctx.user_cfg.get("engine") or "").startswith("cursor-"):
         try:
             from memory_manager import try_capture_memory_from_message
 
@@ -371,7 +371,7 @@ def iter_preflight_sse(ctx: OrchestratorContext) -> Iterator[bytes]:
         except Exception as mem_e:
             logger.warning("[Memory] capture failed: %s", mem_e)
 
-    if user_text and should_use_chat_only_lane(user_text, intent_info, ctx.intent_label):
+    if user_text and not (ctx.user_cfg.get("engine") or "").startswith("cursor-") and should_use_chat_only_lane(user_text, intent_info, ctx.intent_label):
         logger.info("[ChatOnly] ordinary_chat → LLM stream (no tools, single-turn)")
         ctx.terminated = True
         yield from iter_llm_sse_messages(
@@ -497,6 +497,41 @@ def iter_preflight_sse(ctx: OrchestratorContext) -> Iterator[bytes]:
                 ctx.terminated = True
                 err_payload = json.dumps(
                     {"choices": [{"delta": {"content": f"工作流执行异常：{str(wf_err)[:200]}"}}]}, ensure_ascii=False
+                )
+                yield f"data: {err_payload}\n\n".encode("utf-8")
+                yield SSE_DONE
+            return
+
+    # ═══════════════════════════════════════════════════════
+    #  P2-2 Cursor SDK Lane — 通用复杂执行引擎
+    #  分流条件：engine 以 "cursor-" 开头（cursor-plan/cursor-agent/cursor-ask）
+    #  DeepSeek ReAct 退守闲聊/简单查询。
+    # ═══════════════════════════════════════════════════════
+    if user_text:
+        engine = ctx.user_cfg.get("engine", "")
+        if isinstance(engine, str) and engine.startswith("cursor-"):
+            ctx.terminated = True
+            try:
+                from cursor_agent_lane import iter_cursor_sdk_lane
+                yield from iter_cursor_sdk_lane(
+                    user_text,
+                    ctx.user_cfg,
+                    ctx.frontend_cfg,
+                    ctx.conversation_id,
+                )
+            except ImportError as cur_e:
+                logger.warning("[CursorLane] module not available: %s", cur_e)
+                err_payload = json.dumps(
+                    {"choices": [{"delta": {"content": f"Cursor SDK 模块不可用：{str(cur_e)[:200]}"}}]},
+                    ensure_ascii=False,
+                )
+                yield f"data: {err_payload}\n\n".encode("utf-8")
+                yield SSE_DONE
+            except Exception as cur_e:
+                logger.warning("[CursorLane] unexpected error: %s", cur_e)
+                err_payload = json.dumps(
+                    {"choices": [{"delta": {"content": f"Cursor SDK 执行异常：{str(cur_e)[:200]}"}}]},
+                    ensure_ascii=False,
                 )
                 yield f"data: {err_payload}\n\n".encode("utf-8")
                 yield SSE_DONE
