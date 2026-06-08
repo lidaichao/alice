@@ -1,7 +1,7 @@
 # Alice 三期蓝图计划
 
 > **文档性质**：产品开发白皮书 · 开发校准唯一路径  
-> **版本**：v1.2 | **日期**：2026-06-09 | **状态**：已批准执行（Cursor SDK Lane 路线修正 + 审批控制台中期目标确认）  
+> **版本**：v1.3 | **日期**：2026-06-09 | **状态**：已批准执行（Cursor SDK Lane v1.2 修正——从代码分析→通用执行引擎）  
 > **部署形态**：私有化 Hub（单机）+ 各用户 Alice 客户端 + Admin 统一配链  
 > **成本约束**：基础设施仅开源可自托管；LLM 按量 API；不采购商业中间件/SaaS  
 
@@ -485,60 +485,86 @@ flowchart LR
 
 ---
 
-### 5.13 Cursor SDK Lane（Phase D，v1.0.29）
+### 5.13 Cursor SDK Lane（Phase D，v1.0.29 · v1.2 修正）
 
-> **决策背景**：2026-06-09 兔子（CTO）完成技术选型评估——P1-4 手搓工具集已交付但体验未质变，
-> 根因是手搓工具的编排深度远不如 Baize 的 Claude Code 开放式工具链。
-> Alice 不应手搓"Claude Code"，应**借用** Cursor SDK 的成熟 Agent runtime。
-> 详见 RABBIT_ROADMAP.md §3.2-3.3。
+> **v1.2 修正（2026-06-09）**：协调者纠正——Cursor SDK 不应仅做"代码分析"。
+> SDK 的核心价值是**开放式多步编排**。所有复杂执行（Jira 创建子任务、改状态、代码分析、跨域综合）
+> 都应交由 Cursor SDK，Alice 提供被审计闸门包裹的自定义工具。
+>
+> **一句话**：Cursor SDK = Alice 的复杂任务执行引擎。DeepSeek ReAct 退守聊聊/简单查询。
 
-**不换引擎，新增编排道**：
-- Alice 保留：ReAct 循环、Jira 操作管理器、审计闸门、确认卡、工作区白名单
-- Alice 新增：`cursor_agent_lane.py`——复杂分析（读文件/搜代码/Web搜索/多步编排）转发 Cursor Agent
-- Cursor SDK 负责执行与工具编排；Alice 负责安全边界 + 审计 + 结果包装
-
-**编排流**：
+**编排流（v1.2）**：
 
 ```
 用户问题
-  └── chat_orchestrator 预检
-        ├── 闲聊 → chat-only lane（不变）
-        ├── 危险拦截 → 拒绝（不变）
-        ├── Jira 写/读 → AI Bridge ReAct（不变）
-        └── 复杂分析（需读文件/搜代码/Web搜索/多步编排）
-              └── NEW：Cursor SDK Lane
-                    ├── 检查工作区授权（workspace_manager.is_path_allowed）
-                    ├── cursor_sdk.Agent.create(local=cwd=白名单目录)
-                    ├── agent.send(user_question)
-                    ├── 收集 run.messages() 流式输出
-                    └── Alice 审计包装 → SSE 返回前端
+  │
+  ├── chat_orchestrator 预检
+  │     ├── 闲聊/简单问候 → chat-only lane（DeepSeek，不变）
+  │     ├── 危险拦截 → 拒绝（不变）
+  │     │
+  │     └── 其他（需执行/分析/多步推理）→ 🎯 Cursor SDK Lane
+  │           │
+  │           ├── cursor_sdk.Agent.create(
+  │           │       model=config.CURSOR_SDK_MODEL,
+  │           │       mode="plan",
+  │           │       local=LocalAgentOptions(cwd=白名单目录),
+  │           │       custom_tools=[
+  │           │           # ── 只读工具 ──
+  │           │           jira_search_issues,
+  │           │           jira_read_issue_detail,
+  │           │           read_file, search_code, svn_log, list_directory,
+  │           │           # ── 写工具（经审计闸门）──
+  │           │           jira_create_subtasks,    # → audit → 确认卡
+  │           │           jira_update_status,       # → audit → 确认卡
+  │           │           jira_add_comment,         # → audit → 确认卡
+  │           │       ],
+  │           │   )
+  │           │
+  │           ├── agent.send(user_question)
+  │           │     Cursor Agent 自主编排：
+  │           │       ├─ 理解意图
+  │           │       ├─ 读 Jira → 生成子任务结构 → 创建
+  │           │       ├─ 读代码 → grep → svn log → 总结
+  │           │       └─ 跨域综合（Jira + 文档 + 代码）
+  │           │
+  │           └── run.messages() 流式 → Alice 包装 → SSE
+  │                 ├─ 标注 source: "cursor"
+  │                 └─ 写操作附带确认卡
+  └── FAISS KB / VIP 快车道（不变）
 ```
 
-**技术栈**：
-- `pip install cursor-sdk`（Python SDK）
-- `cursor_agent_lane.py`（新文件，Alice 编排道）
-- `chat_orchestrator.py`（1 处集成判断 `should_use_cursor_lane()`）
-- 环境变量：`CURSOR_API_KEY`
+**安全红线**：
+- 🚧 所有「写」自定义工具的 handler 内部 → 必须 `audit_jira_operation()` → 确认卡
+- ❌ Cursor SDK Agent 不持有 Jira PAT/URL → 只能通过自定义工具回调 Hub
+- ❌ Cursor SDK Agent 不写文件（mode="plan"）
+- ❌ Cursor SDK Agent 不直连外部系统
 
-**交付物清单**：
+**DeepSeek ReAct 降级范围**：仅处理闲聊（"海贼王是什么"）、极简单步 Jira 查询、VIP 快车道。其他全部走 Cursor SDK。
+
+**交付物清单（v1.2 扩展）**：
 | 文件 | 操作 | 说明 |
 |------|------|------|
-| `backend/cursor_agent_lane.py` | 新建 | Cursor SDK Agent 编排道：`should_use_cursor_lane()` + `run_cursor_agent()` + SSE 流式 |
-| `backend/chat_orchestrator.py` | 修改 | 插入 `should_use_cursor_lane()` 判断（在 ReAct 之前） |
-| `backend/tools/registry.yaml` | 修改 | P1-4 4 个手搓工具标记 `deprecated: true`（不删除，降级兜底） |
-| `tests/test_cursor_agent_lane.py` | 新建 | 单测：should_use_cursor_lane 判断逻辑 + 降级路径 |
+| `backend/cursor_agent_lane.py` | 新建 | SDK 编排道：`should_use_cursor_lane()` + `run_cursor_agent()` + 自定义工具注册（Jira 工具组 + workspace 工具组）+ SSE 流式 |
+| `backend/chat_orchestrator.py` | 修改 | 插入 `should_use_cursor_lane()` 判断 |
+| `backend/tools/registry.yaml` | 修改 | P1-4 4 个手搓工具标记 `deprecated: true` |
+| `backend/ai_bridge.py` | 修改 | `get_admin_config()` 加 `CURSOR_SDK_KEY` / `CURSOR_SDK_MODEL` / `CURSOR_SDK_THINKING` |
+| `admin-ui/src/composables/useAdminStore.js` | 修改 | 新增 `state.cursor`（KEY/MODEL/THINKING） |
+| `admin-ui/src/views/SettingsView.vue` | 修改 | 新增 Cursor SDK 配置卡片（API Key 密码框 + 模型/推理深度下拉框） |
+| `src/store/useChatStore.ts` | 修改 | `Message` 类型加 `source?: 'deepseek' \| 'cursor'` |
+| `src/store/slices/chatSlice.ts` | 修改 | SSE 解析 `source` 字段 |
+| `src/App.tsx` | 修改 | 头像/气泡颜色区分（🐰/🔬 + 来源标签） |
+| `tests/test_cursor_agent_lane.py` | 新建 | 单测：分流逻辑 + 自定义工具注册 + 降级路径 |
 | `requirements.txt` | 修改 | 新增 `cursor-sdk` 依赖 |
 
-**手搓工具退役计划**（渐进，不立即删除）：
-- P1-4 4 工具（read_file/search_code/svn_log/list_directory）：deprecated
-- Cursor SDK Lane 优先使用；手搓工具作为 Cursor SDK 不可用时的降级
-- 阶段三架构收口时正式删除
+**后台可配置项**（`127.0.0.1:9099/admin#settings` → Cursor SDK 配置卡片）：
 
-**宪法合规（自检）**：
-- C1 ✓：Cursor SDK 通过 Alice Hub 编排，不直连外部系统
-- C3 ✓：新逻辑进 `chat_orchestrator` 调用；`cursor_agent_lane.py` 是编排道模块，非旁路
-- C7 ⚠️：`cursor-sdk` 是非 OSS 依赖——但属**可选编排道**，可用手搓工具降级；用户已审批
-- E1.3 ✓：`ai_bridge.py` 不新增业务逻辑，仅路由
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|------|------|
+| CURSOR_SDK_KEY | 密码框 | — | Cursor API Key（来自 dashboard） |
+| CURSOR_SDK_MODEL | 下拉框 | composer-2.5 | 模型选择 |
+| CURSOR_SDK_THINKING | 下拉框 | high | 推理深度（high/medium/low） |
+
+**手搓工具退役**：P1-4 4 工具 deprecated，不删除（降级兜底）
 
 ---
 
@@ -587,6 +613,7 @@ flowchart LR
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| v1.3 | 2026-06-09 | **v1.2 修正**：Cursor SDK 角色从"代码分析引擎"→"通用复杂执行引擎"；§5.13 重写：新增自定义工具模型（Jira 工具组 + workspace 工具组经审计闸门）、DeepSeek ReAct 退守聊聊/简单查询、P2-2 交付物扩展至 11 个文件；协调者确认 |
 | v1.2 | 2026-06-09 | 新增 §5.14 审批控制台中期目标（Phase E）：三阶段路径（单人确认卡→SDK分析审批管道→多角色审批台）；协调者确认 |
 | v1.1 | 2026-06-09 | **路线修正**：P1-4 手搓工具集被 Cursor SDK Lane 方向替代（§5.13 Phase D）；新增 C6 任务 + Cursor SDK 编排流设计 + 宪法合规 C7 例外审批；蓝本版本升至 v1.1 |
 | v1.0.28-1 | 2026-06-09 | P1-4 架构收口：4 个 workspace 执行器从 `ai_bridge.py` 抽离到 `workspace_tools.py`（4043→3928 行，净减 115 行），遵守 E1.3（ai_bridge 仅路由，禁止堆新逻辑） |
