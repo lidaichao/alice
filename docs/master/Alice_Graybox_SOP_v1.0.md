@@ -1,8 +1,8 @@
 # Alice Jira AI — 灰度测试白皮书 (Graybox SOP)
 
-> 版本：v1.2 | 日期：2026-06-05 | 作者：可达鸭 (Psyduck)
+> 版本：v1.3 | 日期：2026-06-08 | 作者：可达鸭 (Psyduck)
 
-**相关文档**：[三期蓝图计划（开发校准）](alice三期蓝图计划.md) · [技术架构](Alice_Master_Architecture_v1.0.md) · [文档索引](README.md) · [白泽 Baize 架构](Baize_Architecture_v1.0.md)
+**相关文档**：[三期蓝图计划（开发校准）](alice三期蓝图计划.md) · [E4 Hub 凭据迁移](E4_hub_credentials_migration.md) · [技术架构](Alice_Master_Architecture_v1.0.md) · [文档索引](README.md) · [白泽 Baize 架构](Baize_Architecture_v1.0.md)
 
 ---
 
@@ -39,24 +39,24 @@ Alice 是一款面向游戏研发团队的 AI 工作助手。
 
 ## 三、配置指南
 
-### 3.1 获取 Jira Personal Access Token (PAT)
+### 3.1 Hub 独占 Jira（推荐 · E4）
 
-1. 登录 Jira：`http://ctjira1.lmdgame.com:8080`
-2. 右上角头像 → **个人设置** → **Personal Access Tokens**
-3. 点击 **创建 Token**，名称随意（如 `Alice-Graybox`），过期时间设为 90 天
-4. 复制生成的 Token（只显示一次！）
+生产环境由 **Hub** 统一持有 Jira 凭据，客户端**不必**填写 PAT。详见 [E4_hub_credentials_migration.md](E4_hub_credentials_migration.md)。
 
-### 3.2 配置 Alice
+| 角色 | 操作 |
+|------|------|
+| **运维** | Admin 或 `backend/global_config.json` 配置 `JIRA_URL`、`JIRA_PAT`；启动 Hub 时设 `ALICE_HUB_ONLY_JIRA=1`（`scripts/start_hub.ps1` 已包含） |
+| **用户** | 客户端仅配置 **Hub 地址**（默认 `http://127.0.0.1:9099`）与 DeepSeek Key；设置里 **Jira PAT 可留空** |
+| **验收** | 空 PAT 下可搜 Jira、可走草稿确认流 — `scripts/e2e_e4_hub_only.py` |
 
-1. 启动 Alice 桌面应用
-2. 点击左下角 ⚙️ **设置**
-3. 填入：
-   - **Jira 地址**：`http://ctjira1.lmdgame.com:8080`
-   - **PAT**：粘贴你的 Token
-   - **DeepSeek Key**：联系管理员获取
-4. 点击 **Test Connection**，看到 ✅ 绿色即配置成功
+### 3.2 客户端携带 PAT（回滚 / 灰度遗留）
 
-### 3.3 管理员：Web 后台（可选）
+若未启用 `ALICE_HUB_ONLY_JIRA`，仍可在客户端设置中填写 PAT：
+
+1. 登录 Jira → **个人设置** → **Personal Access Tokens** → 创建 Token（只显示一次）
+2. Alice 设置 → **Jira 地址** + **PAT** + **DeepSeek Key** → **Test Connection** ✅
+
+### 3.3 管理员：Web 后台
 
 浏览器打开 `http://<服务器>:9099/admin`（需管理员 Bearer Token）。
 
@@ -102,7 +102,7 @@ Alice 是一款面向游戏研发团队的 AI 工作助手。
 
 **注意**：刷新页面后，**待确认的操作卡** 会自动恢复（同一会话）；若只剩一半流程，可重新向 Alice 描述需求生成新草稿。
 
-**前置条件**：`sessionStorage` / 设置中已配置有效 **Jira PAT**（与 Test Connection 一致）。
+**前置条件**：Hub 已配置 Jira 凭据（E4 推荐）；或客户端 PAT 有效（§3.2 回滚模式）。
 
 ### 4.2 团队规则（服务端记忆）
 
@@ -173,12 +173,12 @@ Alice 内置 OTA 更新机制：
 
 | # | 步骤 | 命令 / 动作 | 勾选 |
 |---|------|-------------|------|
-| 1 | 意图自测 | `py -3 backend/intent_classifier.py` | [ ] |
-| 2 | kb 矩阵 | `py -3 scripts/validate_kb_matrix_yaml.py` | [ ] |
-| 3 | CI 静态门禁 | `py -3 scripts/ci_gate.py` | [ ] |
-| 4 | 闲聊冒烟 | `py -3 scripts/smoke_chat_only.py` → `SMOKE_CHAT_ONLY_OK`（Hub 9099） | [ ] |
-| 5 | 草稿 e2e | `py -3 scripts/e2e_short_draft_memory.py` → `E2E_SHORT_OK` | [ ] |
-| 6 | 协调者基线 | `py -3 backend/run_eval.py coordinator_m1` 不低于 [`coordinator_baseline_M1.md`](../../eval/reports/coordinator_baseline_M1.md) | [ ] |
+| 1 | CI 门禁（含意图 + kb 矩阵 + C9 防回归） | `py -3 scripts/ci_gate.py` → `CI_GATE_OK` | [ ] |
+| 2 | 集成冒烟（Hub 9099） | `ALICE_RUN_INTEGRATION=1 py -3 scripts/ci_gate.py` | [ ] |
+| 3 | Hub-only Jira（E4） | `ALICE_RUN_INTEGRATION=1 ALICE_RUN_E4=1 py -3 scripts/ci_gate.py` | [ ] |
+| 4 | GDrive 知识库 e2e（Phase B） | `ALICE_RUN_INTEGRATION=1 ALICE_RUN_GDRIVE_E2E=1 py -3 scripts/ci_gate.py` | [ ] |
+| 5 | 协调者基线（可选） | `py -3 backend/run_eval.py coordinator_m1` 不低于 [`coordinator_baseline_M1.md`](../../eval/reports/coordinator_baseline_M1.md) | [ ] |
+| 6 | 发版记录 | `eval/reports/release_YYYY-MM-DD.md`（仅自动化结果） | [ ] |
 | 7 | （可选）第四节场景 | 产品不要求人工签字时跳过 | — |
 
 ---

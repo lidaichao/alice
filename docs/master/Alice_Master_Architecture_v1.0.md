@@ -1,8 +1,8 @@
 # Alice AI Bridge — 技术架构文档 (V2.2)
 
-> 版本：v2.3 | 日期：2026-06-05 | 分支：master
+> 版本：v2.4 | 日期：2026-06-08 | 分支：master
 
-**相关文档**：[三期蓝图计划（开发校准）](alice三期蓝图计划.md) · [Master PRD](Alice_Master_PRD_v1.0.md) · [文档索引](README.md) · [技术说明 TECHNICAL](TECHNICAL.md) · [API 契约](Alice_API_Contract_v1.0.md) · [桌面端方案](desktop_app_plan.md) · [灰盒 SOP](Alice_Graybox_SOP_v1.0.md) · [上游参考：白泽 Baize 架构](Baize_Architecture_v1.0.md)
+**相关文档**：[三期蓝图计划（开发校准）](alice三期蓝图计划.md) · [Master PRD](Alice_Master_PRD_v1.0.md) · [文档索引](README.md) · [技术说明 TECHNICAL](TECHNICAL.md) · [API 契约](Alice_API_Contract_v1.0.md) · [MCP 接入](M1_MCP_Cursor_setup.md) · [灰盒 SOP](Alice_Graybox_SOP_v1.0.md) · [上游参考：白泽 Baize 架构](Baize_Architecture_v1.0.md)
 
 > **排期与模块拆分顺序**以蓝图为准（近期 E1 绞杀者：`chat_orchestrator` / `plugin_gateway`）。
 
@@ -60,7 +60,10 @@
 | AI Bridge | `backend/ai_bridge.py` | 主引擎 + Flask 路由 |
 | LangGraph Agent | `backend/agent/` | V2.0 Planner/Executor/Synthesizer |
 | RAG 引擎 | `backend/rag_engine.py` | FAISS 向量索引 + search_doc_chunks |
-| 意图路由 | `backend/intent_router.py` | 6 类意图 (含 KNOWLEDGE_QUERY) |
+| 意图路由 | `backend/intent_router.py` | 作业通道分诊；KB 列举走通用 L1（C9） |
+| 聊天编排 | `backend/chat_orchestrator.py` | VIP / ReAct 统一入口（E1） |
+| GDrive 知识库 | `backend/gdrive_knowledge.py` | catalog → read；表头槽位筛选（L2） |
+| MCP 注册 | `backend/mcp_registry.py` | Hub MCP 工具暴露（M1） |
 | 知识检索 | `backend/knowledge_retriever.py` | SVN/Notion/动态关键词 |
 | 评测引擎 | `eval/` | ingest → generate → run_tests → benchmark |
 | 全局配置 | `backend/global_config.json` | Admin POST merge；`DEEPSEEK_MODEL` 驱动默认对话模型 |

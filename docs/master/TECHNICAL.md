@@ -1,8 +1,10 @@
 # Alice AI Bridge — 技术架构文档
 
-> 版本：v2.1 | 日期：2026-06-05 | 分支：master
+> 版本：v2.2 | 日期：2026-06-08 | 分支：master
 
-**相关文档**：[三期蓝图计划（开发校准）](alice三期蓝图计划.md) · [Master 架构](Alice_Master_Architecture_v1.0.md) · [API 契约](Alice_API_Contract_v1.0.md) · [白泽 Baize 架构](Baize_Architecture_v1.0.md) · [桌面端方案](desktop_app_plan.md)
+**相关文档**：[三期蓝图计划（开发校准）](alice三期蓝图计划.md) · [Master 架构](Alice_Master_Architecture_v1.0.md) · [API 契约](Alice_API_Contract_v1.0.md) · [白泽 Baize 架构](Baize_Architecture_v1.0.md)
+
+> 知识库多项目分层（L1/L2/L3）与 **C9 红线**见蓝图 **§2.2**；实现见 `intent_classifier.py`、`gdrive_knowledge.py`、`tenant_synonyms.json`。
 
 > **排期与架构变更**以 [alice三期蓝图计划.md](alice三期蓝图计划.md) 为准；本文档描述实现细节。
 

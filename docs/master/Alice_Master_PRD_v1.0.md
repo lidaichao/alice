@@ -1,6 +1,6 @@
 # Alice AI Bridge — 产品需求文档 (Master PRD)
 
-> 版本：v1.0 Master | 日期：2026-06-03 | 作者：可达鸭 (Psyduck)
+> 版本：v1.0 Master | 日期：2026-06-08 | 作者：可达鸭 (Psyduck)
 >
 > 本文档基于仓库 `H:\workbuddy\alice` 全部现有代码和文档汇编而成。
 > 标注 `✅` = 已实现，`🟡` = 部分实现，`⏳` = 规划中。
@@ -179,7 +179,7 @@ graph TD
 | # | 问题 | 影响 | 建议 |
 |---|------|------|------|
 | 1 | `src/` 在 `ai-bridge/src/` 下，非项目根目录 | 新成员困惑 | 统一到 `src/` 或保留现状 |
-| 2 | `desktop_app_plan.md` 规划的 React+TS 前端在 `ai-bridge/src/` 已实现，但 `desktop/` 仍用原生 HTML | 双轨前端 | 明确桌面端是否复用 React 前端 |
+| 2 | `frontend/` React 为主 UI，`desktop/` 为 Electron 壳；历史 `ai-bridge/src/` 已收敛 | 双轨残留 | 以蓝图 Phase A 为准，逐步弃用冗余入口 |
 | 3 | `retrieval-architecture-plan.md` 的 Plan-and-Execute (S0→L4) 过于复杂，实际简化为 VIP 直通车 | 文档与代码不一致 | master 文档已统一，旧文档归档 |
 | 4 | Java 插件与 Electron 桌面功能重叠 | 维护负担 | 确定主力交付形态后放弃一个 |
 | 5 | `测试连接` 按钮未实现 | 用户无法自助排障 | P1 补上 |

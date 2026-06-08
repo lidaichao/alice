@@ -1,6 +1,6 @@
 # Alice AI Bridge — 前端组件树与状态流转图 (v1.0)
 
-> 版本：v1.0 | 日期：2026-06-05 | 作者：可达鸭 (Psyduck)
+> 版本：v1.1 | 日期：2026-06-08 | 作者：可达鸭 (Psyduck)
 >
 > 基于 `frontend/src/` 目录实际文件结构生成。
 
@@ -21,9 +21,10 @@ graph TD
 
     subgraph 布局组件
         B --> D[Header.tsx<br/>顶部栏]
-        B --> E[Sidebar.tsx<br/>左侧会话列表]
+        B --> E[Sidebar.tsx<br/>左侧会话列表 + 运维台切换]
         B --> F[RightPanel.tsx<br/>右侧上下文面板]
         B --> G[MemoryView.tsx<br/>存储器视图]
+        B --> O[OperationsConsole.tsx<br/>HITL 运维台 M3]
     end
 
     subgraph 功能组件
@@ -113,10 +114,11 @@ graph LR
 
 | 组件 | 层 | 职责 | 状态依赖 |
 |------|-----|------|----------|
-| **App.tsx** | 容器 | 三栏布局、SSE 错误气泡、isGenerating 动画 | chatSlice |
+| **App.tsx** | 容器 | `mainView` 切换 chat / operations；三栏布局、SSE、草稿确认 | chatSlice, uiSlice |
+| **OperationsConsole.tsx** | 功能 | `GET /operations` 列表；审批/拒绝 `POST /operations/{id}/reject` | 本地 state |
 | **MobileApp.tsx** | 容器 | 移动端单栏布局 | chatSlice |
 | **Header.tsx** | 展示 | 标题栏、模型切换 | uiSlice |
-| **Sidebar.tsx** | 交互 | 会话列表 CRUD、新建/删除/搜索 | chatSlice.sessions |
+| **Sidebar.tsx** | 交互 | 会话列表 CRUD；**运维台**按钮切换 `mainView` | chatSlice, uiSlice |
 | **RightPanel.tsx** | 展示 | 上下文信息面板（可折叠） | chatSlice.activeSession |
 | **MemoryView.tsx** | 展示 | 记忆/知识库视图 | memorySlice |
 | **AgentMarket.tsx** | 功能 | Agent 浏览/安装 | agentSlice |

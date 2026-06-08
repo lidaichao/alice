@@ -5,7 +5,7 @@
 > **源码仓库**：`H:\workbuddy\baize`（Alice 对照：`H:\workbuddy\alice`）  
 > **依据**：Baize 公开 README、`docs/baize-overall-architecture.mmd`、`docs/architecture.mmd`、核心 `src/services/*` 实现  
 
-**相关文档（Alice 仓库）**：[三期蓝图计划](alice三期蓝图计划.md) · [Alice 技术架构](Alice_Master_Architecture_v1.0.md) · [TECHNICAL](TECHNICAL.md) · [桌面端方案](desktop_app_plan.md) · [Jira A/B 报告](../../eval/reports/jira_baize_ab_latest.md)
+**相关文档（Alice 仓库）**：[三期蓝图计划](alice三期蓝图计划.md) · [Alice 技术架构](Alice_Master_Architecture_v1.0.md) · [TECHNICAL](TECHNICAL.md) · [Jira A/B 报告](../../eval/reports/jira_baize_ab_latest.md)
 
 ---
 
@@ -399,7 +399,7 @@ Electron **userData**（与 baize 根分离）：`conversations.json`、`workspa
 
 ## 11. 与 Alice 的对照（架构决策参考）
 
-> Alice 侧完整架构见 [Alice_Master_Architecture_v1.0.md](Alice_Master_Architecture_v1.0.md)；桌面形态差异见 [desktop_app_plan.md](desktop_app_plan.md)。
+> Alice 侧完整架构见 [Alice_Master_Architecture_v1.0.md](Alice_Master_Architecture_v1.0.md)；交付形态以蓝图 **Phase A** 为准（Electron + `frontend/` React）。
 
 | 维度 | 白泽 Baize | Alice V2 |
 |------|------------|----------|
