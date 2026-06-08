@@ -1,7 +1,7 @@
 # Alice 三期蓝图计划
 
 > **文档性质**：产品开发白皮书 · 开发校准唯一路径  
-> **版本**：v1.4 | **日期**：2026-06-09 | **状态**：已批准执行（客户端角色体系概念 + Cursor SDK v1.2 修正）  
+> **版本**：v1.4 | **日期**：2026-06-09 | **状态**：已批准执行（文档分层重组 + 客户端角色体系 + Cursor SDK v1.2 修正）  
 > **部署形态**：私有化 Hub（单机）+ 各用户 Alice 客户端 + Admin 统一配链  
 > **成本约束**：基础设施仅开源可自托管；LLM 按量 API；不采购商业中间件/SaaS  
 
@@ -11,57 +11,73 @@
 
 ## 1. 产品愿景与终极形态
 
+> **⚠️ 蓝图演化说明**：本文档从 v1.0（2026-06-05，ReAct+DeepSeek 全栈）演进至 v1.4（2026-06-09，Cursor SDK 通用执行引擎 + 客户端角色体系）。<br>
+> **§5.1–§5.12 = v1.0 原始 WBS（✅ 已全部交付）**。<br>
+> **§5.13–§5.14 = v1.4 当前架构方向**（实施中/排队中）。<br>
+> 新旧设计不冲突——旧的是地基（已建成），新的是上层建筑（施工中）。
+
 ### 1.1 定位
 
 Alice 是 **研发协同中间件（Orchestration Hub）**，不是长期意义上的「Jira 聊天框」。
 
 | 链路 | 说明 |
 |------|------|
-| 纵向 | 开发者 **Cursor（执行 Agent）** ↔ Alice（策略 / 审计 / 状态）↔ **Jira（事实源）** |
-| 横向 | PM / 主程在 Alice **管控面** 审批写操作、查看队列与健康度 |
+| 纵向 | 开发者 **Cursor / Alice 客户端** ↔ Alice Hub（策略 / 审计 / 状态）↔ **Jira（事实源）** |
+| 横向 | PM / 主程在 Alice **管控台** 审批写操作、查看队列与健康度 |
+| 执行引擎 | Cursor SDK（通用复杂执行）负责多步编排；DeepSeek 退守闲聊/简单查询 |
 | A2A | 机器间通过 **MCP + operation_id + Audit**；人通过 **HITL + 必要时聊天** |
 
 ### 1.2 三期总览
 
 | 期 | 时间盒 | 产品定位 | 出口里程碑 |
 |----|--------|----------|------------|
-| **近期** | 0–4 月 | 可信工作台：聊天 + 审批 + Admin 稳定 | 内部日常可用 + eval 门禁 + **API v1 已冻结（§5.11）** |
-| **中期** | 4–10 月 | 团队中枢：管控台 + Cursor MCP 试点 | 3 条 Cursor E2E + MCP 只读/半自动写 |
-| **远期** | 10–18 月 | A2A 中间件，可对外私有化售卖 | 全链路 A2E 演示 + 第二家工作室部署 POC |
+| **近期（✅ 已交付）** | 0–4 月 | 可信工作台：聊天 + 审批 + Admin 稳定 | 内部日常可用 + eval 门禁 + **API v1 已冻结（§5.11）** |
+| **中期（🚧 施工中）** | 4–10 月 | 智能执行中枢：Cursor SDK 通用执行引擎 + 后台可配置 | P2-2 Cursor SDK Lane 交付 + 审批控制台 |
+| **远期** | 10–18 月 | A2A 中间件 + 客户端角色体系，可对外私有化售卖 | 全链路 A2E 演示 + 第二家工作室部署 POC |
 
 ### 1.3 部署与配链
 
-- **Hub**：一台服务器运行 `ai_bridge`、Admin、Hub 数据目录（`backend/data/`）。
-- **客户端**：Electron 桌面端；仅配置 **Hub URL + 用户标识**（近一期目标：Jira PAT 仅 Hub 持有）。
-- **配链**：Jira / Notion / GDrive / SVN / 模型密钥 **仅在 Admin** 配置。
+- **Hub**：一台服务器运行 `ai_bridge`、Admin、`cursor_agent_lane`（Cursor SDK 编排道）、Hub 数据目录（`backend/data/`）。
+- **客户端**：Electron 桌面端；启动时登录 → 决定角色（管理者/开发者）；配自己的 Cursor SDK API Key。
+- **配链**：Jira / Notion / GDrive / SVN / 模型密钥 / Cursor SDK 密钥 **均在 Admin 配置**。
 
 ```mermaid
 flowchart TB
-  subgraph clients [Clients]
-    Desktop[AliceDesktop]
-    Cursor[Cursor_MCP]
+  subgraph clients [Clients / 客户端]
+    DevClient[开发者客户端]
+    PMClient[管理者客户端]
   end
-  subgraph hub [AliceHub]
+  subgraph hub [Alice Hub]
     API[API_SSE]
     Orch[ChatOrchestrator]
-    GW[PluginGateway]
+    CursorLane[CursorSDK_Lane]
     OpSM[OperationStateMachine]
-    Admin[Admin]
+    Admin[Admin 管控台]
   end
   subgraph ext [External]
     Jira[Jira]
     KB[Notion_GDrive]
-    SVN[SVN]
+    SVN[SVN_FishEye]
   end
-  Desktop --> API
-  Cursor --> API
-  API --> Orch --> GW
-  GW --> Jira
-  GW --> KB
-  GW --> SVN
-  Orch --> OpSM
-  PM[PM_Lead] --> Admin
-  PM --> Desktop
+
+  DevClient --> API
+  PMClient --> API
+  PMClient --> Admin
+
+  API --> Orch
+  Orch -->|闲聊/简单查询| AI[DeepSeek_ReAct]
+  Orch -->|复杂执行| CursorLane
+
+  CursorLane -->|自定义工具| Jira
+  CursorLane -->|自定义工具| KB
+  CursorLane -->|自定义工具| SVN
+  CursorLane --> OpSM
+
+  AI --> Jira
+  AI --> KB
+  AI --> SVN
+
+  OpSM --> Jira
 ```
 
 ---
@@ -89,7 +105,7 @@ flowchart TB
 - Cursor 无审批自动写 Jira
 - 多租户 SaaS
 - 商业软件采购（Camunda 企业版、Glean、LangSmith SaaS、LlamaParse 等）
-- **新增（v1.1）**：不支持用 Cursor SDK 替代 Alice 核心引擎（仅作编排道）
+- **v1.4 更正**：Cursor SDK 已作为通用执行引擎接管复杂执行——但这**不等于**淘汰 DeepSeek（闲聊/简单查询仍用 DeepSeek）
 
 ### 2.2 知识库答题设计（多项目）
 
@@ -186,6 +202,11 @@ flowchart LR
 ---
 
 ## 5. 可执行开发计划（WBS）
+
+> **⚠️ 文档结构说明**：本章分上下两部分。<br>
+> **上半部分（§5.1–§5.12）= v1.0 原始设计，✅ 已于 v1.0.28 全量交付完毕，此处保留为历史记录。**<br>
+> **下半部分（§5.13–§5.14）= v1.4 当前架构方向，🚧 施工中 / 排队中。**<br>
+> 阅读时请以下半部分为准；上半部分仅用于追溯"已建成的地基"。 |
 
 **状态符号**：`[x]` 已完成基线 · `[ ]` 待做 · `[-]` 进行中  
 
@@ -470,9 +491,10 @@ flowchart LR
 
 ---
 
-### 5.12 调试期增强（Phase C）
+### 5.12 调试期增强（Phase C · ✅ 已全部交付 · 仅留档）
 
-> 调试期（RABBIT_ROADMAP.md §4）排队的优化和增强项，补齐 Alice 的 Jira 准确度、回答深度、工程分析能力。
+> **本阶段已于 v1.0.28 全量交付。** 此处保留为历史记录。<br>
+> 当前架构方向见 **§5.13（Cursor SDK Lane）** 和 **§5.14（客户端角色体系）**。
 
 | ID | 任务 | 交付物 | DoD | 状态 |
 |----|------|--------|-----|:--:|
@@ -664,7 +686,7 @@ flowchart LR
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
-| v1.4 | 2026-06-09 | **§5.14 重写**：客户端角色体系设计（管理者/开发者双视角）+ 三件套架构图 + Cursor IDE 类比 + 四阶段实现路径；协调者确认 |
+| v1.4 | 2026-06-09 | **文档分层重组**：新增 §1 版本演化说明 + §5 过渡横幅；§1.1–1.3 更新为当前架构（执行引擎/流程图含 Cursor SDK Lane）；§2.1 更正非目标描述；§5.12 标记为「✅ 已交付·仅留档」；杰尼龟反馈「新旧混杂」已修正 |
 | v1.3 | 2026-06-09 | **v1.2 修正**：Cursor SDK 角色从"代码分析引擎"→"通用复杂执行引擎"；§5.13 重写：新增自定义工具模型（Jira 工具组 + workspace 工具组经审计闸门）、DeepSeek ReAct 退守聊聊/简单查询、P2-2 交付物扩展至 11 个文件；协调者确认 |
 | v1.2 | 2026-06-09 | 新增 §5.14 审批控制台中期目标（Phase E）：三阶段路径（单人确认卡→SDK分析审批管道→多角色审批台）；协调者确认 |
 | v1.1 | 2026-06-09 | **路线修正**：P1-4 手搓工具集被 Cursor SDK Lane 方向替代（§5.13 Phase D）；新增 C6 任务 + Cursor SDK 编排流设计 + 宪法合规 C7 例外审批；蓝本版本升至 v1.1 |
