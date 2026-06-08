@@ -1,7 +1,7 @@
 # Alice 三期蓝图计划
 
 > **文档性质**：产品开发白皮书 · 开发校准唯一路径  
-> **版本**：v1.0 | **日期**：2026-06-05 | **状态**：已批准执行  
+> **版本**：v1.2 | **日期**：2026-06-09 | **状态**：已批准执行（Cursor SDK Lane 路线修正 + 审批控制台中期目标确认）  
 > **部署形态**：私有化 Hub（单机）+ 各用户 Alice 客户端 + Admin 统一配链  
 > **成本约束**：基础设施仅开源可自托管；LLM 按量 API；不采购商业中间件/SaaS  
 
@@ -89,6 +89,7 @@ flowchart TB
 - Cursor 无审批自动写 Jira
 - 多租户 SaaS
 - 商业软件采购（Camunda 企业版、Glean、LangSmith SaaS、LlamaParse 等）
+- **新增（v1.1）**：不支持用 Cursor SDK 替代 Alice 核心引擎（仅作编排道）
 
 ### 2.2 知识库答题设计（多项目）
 
@@ -479,7 +480,106 @@ flowchart LR
 | C2 | P1-1 NL→结构化 | `jira_query_builder.py` | 8/8 单测 | [x] v1.0.25 |
 | C3 | P1-2 单 Issue 增强 | `ai_bridge.py` L1233-1255 重写 | 7/7 单测 | [x] v1.0.26 |
 | C4 | P1-3 写审计闸门 | `jira_operation_manager.py` audit_jira_operation + create_operation_card_with_audit | 8/8 单测 | [x] v1.0.27 |
-| C5 | P1-4 受控代码分析 | `workspace_manager.py` + `tools/registry.yaml` 4 工具 + `workspace_tools.py` 4 执行器（v1.0.28-1 从 ai_bridge 抽离，遵守 E1.3） | 4/4 单测 + CI_GATE_OK | [x] v1.0.28 |
+| C5 | P1-4 受控代码分析 | `workspace_manager.py` + `tools/registry.yaml` 4 工具 + `workspace_tools.py` 4 执行器（v1.0.28-1 从 ai_bridge 抽离，遵守 E1.3） | 4/4 单测 + CI_GATE_OK | ⚠️ v1.0.28（已被 Cursor SDK 方向替代，见 §5.13） |
+|| C6 | P2-2 Cursor SDK Lane | `cursor_agent_lane.py` + `chat_orchestrator.py` 集成 + 手搓工具标记 deprecated | TBD | 🔲 v1.0.29 |
+
+---
+
+### 5.13 Cursor SDK Lane（Phase D，v1.0.29）
+
+> **决策背景**：2026-06-09 兔子（CTO）完成技术选型评估——P1-4 手搓工具集已交付但体验未质变，
+> 根因是手搓工具的编排深度远不如 Baize 的 Claude Code 开放式工具链。
+> Alice 不应手搓"Claude Code"，应**借用** Cursor SDK 的成熟 Agent runtime。
+> 详见 RABBIT_ROADMAP.md §3.2-3.3。
+
+**不换引擎，新增编排道**：
+- Alice 保留：ReAct 循环、Jira 操作管理器、审计闸门、确认卡、工作区白名单
+- Alice 新增：`cursor_agent_lane.py`——复杂分析（读文件/搜代码/Web搜索/多步编排）转发 Cursor Agent
+- Cursor SDK 负责执行与工具编排；Alice 负责安全边界 + 审计 + 结果包装
+
+**编排流**：
+
+```
+用户问题
+  └── chat_orchestrator 预检
+        ├── 闲聊 → chat-only lane（不变）
+        ├── 危险拦截 → 拒绝（不变）
+        ├── Jira 写/读 → AI Bridge ReAct（不变）
+        └── 复杂分析（需读文件/搜代码/Web搜索/多步编排）
+              └── NEW：Cursor SDK Lane
+                    ├── 检查工作区授权（workspace_manager.is_path_allowed）
+                    ├── cursor_sdk.Agent.create(local=cwd=白名单目录)
+                    ├── agent.send(user_question)
+                    ├── 收集 run.messages() 流式输出
+                    └── Alice 审计包装 → SSE 返回前端
+```
+
+**技术栈**：
+- `pip install cursor-sdk`（Python SDK）
+- `cursor_agent_lane.py`（新文件，Alice 编排道）
+- `chat_orchestrator.py`（1 处集成判断 `should_use_cursor_lane()`）
+- 环境变量：`CURSOR_API_KEY`
+
+**交付物清单**：
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `backend/cursor_agent_lane.py` | 新建 | Cursor SDK Agent 编排道：`should_use_cursor_lane()` + `run_cursor_agent()` + SSE 流式 |
+| `backend/chat_orchestrator.py` | 修改 | 插入 `should_use_cursor_lane()` 判断（在 ReAct 之前） |
+| `backend/tools/registry.yaml` | 修改 | P1-4 4 个手搓工具标记 `deprecated: true`（不删除，降级兜底） |
+| `tests/test_cursor_agent_lane.py` | 新建 | 单测：should_use_cursor_lane 判断逻辑 + 降级路径 |
+| `requirements.txt` | 修改 | 新增 `cursor-sdk` 依赖 |
+
+**手搓工具退役计划**（渐进，不立即删除）：
+- P1-4 4 工具（read_file/search_code/svn_log/list_directory）：deprecated
+- Cursor SDK Lane 优先使用；手搓工具作为 Cursor SDK 不可用时的降级
+- 阶段三架构收口时正式删除
+
+**宪法合规（自检）**：
+- C1 ✓：Cursor SDK 通过 Alice Hub 编排，不直连外部系统
+- C3 ✓：新逻辑进 `chat_orchestrator` 调用；`cursor_agent_lane.py` 是编排道模块，非旁路
+- C7 ⚠️：`cursor-sdk` 是非 OSS 依赖——但属**可选编排道**，可用手搓工具降级；用户已审批
+- E1.3 ✓：`ai_bridge.py` 不新增业务逻辑，仅路由
+
+---
+
+### 5.14 审批控制台（Phase E，远期）
+
+> **协调者终极蓝图**：2026-06-09 确认——Jira 写入、Cursor SDK 分析结果、写操作等，全部经 PM/主程管控台审核后执行。
+
+**三阶段路径**：
+
+| 阶段 | 能力 | 状态 |
+|------|------|:--:|
+| Phase A：单人确认卡 | Alice 出确认卡 → 发起者自己点"确认/驳回" | ✅ v1.0.27 |
+| Phase B：SDK 分析→审批管道 | Cursor SDK 分析报告 + "AI 建议" → 推到管控台 → 用户决定采纳/忽略 | 🔲 P2-2 后 |
+| Phase C：多角色审批台 | 账号系统 + 角色定义 + 审批路由 + 操作历史 | ⬜ 远期 |
+
+**Phase C 编排流**：
+
+```
+开发者客户端                        PM / 主程管控台
+  │                                    │
+  │ "把 CT-10899 改为进行中"        →   │ 审批队列弹卡
+  │                                    │  ├─ 批准 → Alice 执行
+  │                                    │  └─ 驳回 → 开发者收到原因
+  │                                    │
+  │ "CT-10899 影响了哪些模块"       →  │ Cursor SDK 分析报告 + "AI 建议"
+  │                                    │  ├─ 采纳 → 记入知识库
+  │                                    │  ├─ 仅参考 → 记录留档
+  │                                    │  └─ 忽略
+```
+
+**待建模块**：
+
+| 模块 | 说明 |
+|------|------|
+| 账号系统 | 用户注册/登录、角色定义（developer / PM / lead）、会话管理 |
+| 审批路由 | 什么操作找谁审批、审批链、超时策略 |
+| 管控台升级 | 当前 Admin 管控台 → 多角色审批队列 + 批量处理 + 操作历史回溯 |
+| 客户端身份绑定 | Alice 客户端启动时绑定用户身份 |
+| `Cursor 分析→审批` 适配 | Cursor SDK 分析报告自动推入审批管道 |
+
+**宪法原则**：**写操作永远需审批**（C2 单一 Operation 状态机是唯一真相源）。审批控制台是 C2 的自然延伸——从单人确认到多角色审核。
 
 ---
 
@@ -487,6 +587,8 @@ flowchart LR
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| v1.2 | 2026-06-09 | 新增 §5.14 审批控制台中期目标（Phase E）：三阶段路径（单人确认卡→SDK分析审批管道→多角色审批台）；协调者确认 |
+| v1.1 | 2026-06-09 | **路线修正**：P1-4 手搓工具集被 Cursor SDK Lane 方向替代（§5.13 Phase D）；新增 C6 任务 + Cursor SDK 编排流设计 + 宪法合规 C7 例外审批；蓝本版本升至 v1.1 |
 | v1.0.28-1 | 2026-06-09 | P1-4 架构收口：4 个 workspace 执行器从 `ai_bridge.py` 抽离到 `workspace_tools.py`（4043→3928 行，净减 115 行），遵守 E1.3（ai_bridge 仅路由，禁止堆新逻辑） |
 | v1.0.28 | 2026-06-09 | P1-4 受控代码分析：新增 `workspace_manager.py` 工作区授权模块 + `tools/registry.yaml` 4 个只读工具（read_file/search_code/svn_log/list_directory）+ `ai_bridge.py` 4 个执行器 + `test_workspace_manager.py` 4 条单测；蓝图新增 §5.12 调试期增强（Phase C）C1–C5 |
 | v1.0.27 | 2026-06-09 | P1-3 Jira 写操作审计闸门：`jira_operation_manager.py` 新增 `audit_jira_operation()` 三态决策（allow/require_confirmation/deny）+ `create_operation_card_with_audit()` 包装函数 + `test_jira_audit.py` 8 条单测；对标 Baize audit-rules/jira.js |
