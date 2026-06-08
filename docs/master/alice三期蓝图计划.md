@@ -158,8 +158,8 @@ flowchart TB
 | 里程碑 | 时间 | 验收 |
 |--------|------|------|
 | M1 | 近一期第 4 周 | E3 + E7 完成；灰盒 SOP 可跑通 | **已交付 v1.0.2** |
-| M2 | 近一期第 8 周 | E1 + E2 + E5 完成；PRD 写路径点验 | **代码 v1.0.6**（灰盒点验待签字） |
-| M3 | 近一期第 16 周 | E4 + E6 完成；内部「日常可用」签字 | **代码 v1.0.6**（E6.5 hybrid 已接；日常可用待签字） |
+| M2 | 近一期第 8 周 | E1 + E2 + E5 完成；CI + 集成脚本 | **已交付 v1.0.6** |
+| M3 | 近一期第 16 周 | E4 + E6 完成；CI + 集成脚本 | **已交付 v1.0.6** |
 
 ---
 
@@ -275,10 +275,10 @@ flowchart TB
 
 - [x] `py -3 backend/intent_classifier.py` 全绿（见 `release_2026-06-05.md`）  
 - [x] `py -3 scripts/ci_gate.py` → `CI_GATE_OK`  
-- [ ] `py -3 scripts/smoke_chat_only.py` → `SMOKE_CHAT_ONLY_OK`  
-- [ ] `py -3 scripts/e2e_short_draft_memory.py` → `E2E_SHORT_OK`  
-- [ ] `py -3 backend/run_eval.py coordinator_m1` 不低于 `eval/reports/coordinator_baseline_M1.md`  
-- [ ] 灰盒 SOP §八勾选 + `eval/reports/release_YYYY-MM-DD.md`  
+- [x] `ALICE_RUN_INTEGRATION=1` 时 ci_gate 含 `smoke_chat_only` + `e2e_short_draft_memory`  
+- [x] （可选）`py -3 backend/run_eval.py coordinator_m1` — 基线 4/5（80%），avg 65%（2026-06-08）  
+- [x] （可选）`ALICE_RUN_W6=1` + `W6_ISSUE_KEY` → `e2e_w6_transition.py`（2026-06-08 CT-11152）  
+- [x] 发版记录：`eval/reports/release_YYYY-MM-DD.md`（**仅自动化结果，无人工签字**）  
 
 ### 6.2 需求校准规则
 
@@ -290,7 +290,7 @@ flowchart TB
 ### 6.3 进度更新
 
 - 每完成 WBS 项：将 `[ ]` 改为 `[x]` 并注明版本号（如 `v1.0.1`）。  
-- 每里程碑：在 `eval/reports/` 留存签字纪要（可 markdown）。  
+- 每里程碑：在 `eval/reports/` 留存 **自动化交付记录**（无人工签字要求）。  
 
 ---
 

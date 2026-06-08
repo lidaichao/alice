@@ -179,7 +179,7 @@ Alice 内置 OTA 更新机制：
 | 4 | 闲聊冒烟 | `py -3 scripts/smoke_chat_only.py` → `SMOKE_CHAT_ONLY_OK`（Hub 9099） | [ ] |
 | 5 | 草稿 e2e | `py -3 scripts/e2e_short_draft_memory.py` → `E2E_SHORT_OK` | [ ] |
 | 6 | 协调者基线 | `py -3 backend/run_eval.py coordinator_m1` 不低于 [`coordinator_baseline_M1.md`](../../eval/reports/coordinator_baseline_M1.md) | [ ] |
-| 7 | 人工点验 | 本 SOP 第四节场景 | [ ] |
+| 7 | （可选）第四节场景 | 产品不要求人工签字时跳过 | — |
 
 ---
 

@@ -47,6 +47,12 @@ def main() -> int:
             return 1
         _run([py, os.path.join("scripts", "smoke_chat_only.py")])
         _run([py, os.path.join("scripts", "e2e_short_draft_memory.py")])
+        if os.environ.get("ALICE_RUN_W6", "").strip() in ("1", "true", "yes"):
+            if not os.environ.get("W6_ISSUE_KEY", "").strip():
+                print("FAIL ALICE_RUN_W6=1 requires W6_ISSUE_KEY")
+                return 1
+            _run([py, os.path.join("scripts", "e2e_w6_transition.py")])
+            print("OK w6 transition e2e")
         print("OK integration smokes")
     else:
         print("SKIP integration (set ALICE_RUN_INTEGRATION=1 to run smoke/e2e)")

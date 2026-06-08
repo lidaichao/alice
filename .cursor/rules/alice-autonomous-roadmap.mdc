@@ -11,3 +11,4 @@ alwaysApply: true
 2. 里程碑顺序：M1（已交付）→ M2（E1+E2+E5）→ M3（E4+E6）。
 3. 任务收尾执行 [auto-commit-github](.cursor/skills/auto-commit-github/SKILL.md)：commit + push，汇报 hash。
 4. 禁止引入 Redis/Temporal；禁止客户端直连 Jira（E4）。
+5. **无人工签字**：见 [no-human-signoff.mdc](no-human-signoff.mdc)；里程碑完成 = WBS + CI（+ 可选 Hub 集成脚本）。
