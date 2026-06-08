@@ -47,12 +47,13 @@ INTENT_REGISTRY: dict[str, tuple[Optional[list[str]], str]] = {
         ],
         "DOC_JIRA_CROSS",
     ),
-    "jira_search": (["search_jira_issues"], "JIRA_STRUCTURED_SEARCH"),
+    "jira_search": (["search_jira_issues", "query_jira_metadata"], "JIRA_STRUCTURED_SEARCH"),
     "jira_keyword_search": (["search_jira_issues"], "JIRA_KEYWORD_SEARCH"),
     "jira_write": (["search_jira_issues"], "JIRA_WRITE"),
     "issue_metadata": (["query_jira_metadata"], "ISSUE_METADATA"),
-    "knowledge_query": (["search_docs_catalog", "read_specific_doc"], "KNOWLEDGE_QUERY"),
+    "knowledge_query": (["search_docs_catalog", "read_specific_doc", "search_doc_chunks"], "KNOWLEDGE_QUERY"),
     "full_set": (None, "FULL_SET"),
+    "workflow_trigger": (None, "WORKFLOW_TRIGGER"),
 }
 
 ROUTER_SYSTEM = """你是 Alice 的意图分类器。根据用户最后一句话，输出唯一意图 JSON。
@@ -143,8 +144,11 @@ def _suggest_alternate_intents(user_text: str, primary: str) -> list[str]:
         alts.append("week_deadline_tasks")
     if re.search(r"文档|策划|KB-|wiki", t, re.I):
         alts.append("doc_search")
-    if re.search(r"[A-Z][A-Z0-9]*-\d+", t) and re.search(r"状态|流转|处理中", t):
+    # Baize 路由分离 — Issue Key 匹配时按关键词分 write 和 search
+    if re.search(r"[A-Z][A-Z0-9]*-\d+", t) and re.search(r"状态|流转|处理中|审批|确认", t):
         alts.append("jira_write")
+    elif re.search(r"[A-Z][A-Z0-9]*-\d+", t):
+        alts.append("jira_search")
     if re.search(r"Jira|任务|bug|缺陷", t, re.I):
         alts.append("jira_search")
     if re.search(r"r\d{4,6}|revision|提交内容|diff", t, re.I):
@@ -271,9 +275,13 @@ def _fast_path_intent(user_text: str) -> Optional[str]:
         pass
     if re.search(r"KB-[\w-]+", t, re.I):
         return "doc_search"
+    # M5.4 — [WORKFLOW:xxx] 显式触发
+    if re.match(r"^\s*\[WORKFLOW:([a-z0-9_-]+)\]\s*", t, re.I):
+        return "workflow_trigger"
+    # Baize 路由分离 — jira_write 精确路径：Issue Key + 写操作关键词
     if re.search(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])", t) and re.search(
-        r"(?:改成|改为|状态|流转)", t, re.I
-    ) and re.search(r"处理中|完成|关闭|进行中|待办", t, re.I):
+        r"(?:改成|改为|状态|流转|审批|确认|处理中|完成|关闭|进行中|待办)", t, re.I
+    ):
         return "jira_write"
     if re.search(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])", t) and re.search(
         r"(?:r|版本)\s*\d{4,6}", t, re.I
@@ -283,11 +291,17 @@ def _fast_path_intent(user_text: str) -> Optional[str]:
         r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])", t
     ) and re.search(r"提交|commit|代码", t, re.I):
         return "doc_jira_cross"
+    # Baize 路由分离 — Issue Key 存在但未被上述特化路径命中 → 通用 Jira 查询通道
+    # 读/写判断下沉到通道内部（LLM 自行决定调 read 还是 write 工具），路由层不再硬编码词表
+    if re.search(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])", t):
+        return "jira_search"
     try:
         from intent_classifier import is_generic_knowledge_list_query
 
         if is_generic_knowledge_list_query(t):
-            return "doc_search"
+            # M5.x KB 优化令 — FAISS 可用时优先走 knowledge_query
+            import rag_engine as _rag_mod
+            return "knowledge_query" if _rag_mod.is_index_ready() else "doc_search"
     except ImportError:
         pass
     return None
