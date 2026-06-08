@@ -248,6 +248,51 @@ def iter_react_pipeline(ctx: ReactRunContext) -> Iterator[bytes]:
             logger.error(f"[ReAct] LLM probe failed at step {step}: {e}")
             break
 
+        # ═══════════════════════════════════════════════════════════
+        #  v1.0.24 — 空响应兜底：tool_choice=required + DeepSeek 空值
+        #  检测：finish_reason 为空 / msg 既无 tool_calls 也无 content
+        #  策略：retry 同一请求但 tool_choice="auto"
+        # ═══════════════════════════════════════════════════════════
+        _is_empty_probe = (
+            (not finish_reason or str(finish_reason).strip() == "")
+            and not msg.get("tool_calls")
+            and not (str(msg.get("content", "")).strip())
+        )
+        if _is_empty_probe and tool_names and msg.get("role") != "user":
+            logger.warning(
+                f"[ReAct] Empty probe with tool_choice=required (tools={len(active_tools)}), "
+                f"retrying with auto"
+            )
+            try:
+                probe_resp2 = ctx.http_post(ctx.deepseek_url, headers=headers, json={
+                    "model": user_cfg["deepseek_model"],
+                    "messages": tool_messages,
+                    "tools": active_tools,
+                    "tool_choice": "auto",
+                    "stream": False
+                }, timeout=30)
+                probe_data2 = probe_resp2.json()
+                choice2 = probe_data2.get("choices", [{}])[0]
+                msg = choice2.get("message", {})
+                finish_reason = choice2.get("finish_reason", "")
+                logger.info(
+                    f"[ReAct] Retry with auto: finish_reason={finish_reason} | "
+                    f"has_tool_calls={bool(msg.get('tool_calls'))} | "
+                    f"content_len={len(str(msg.get('content','')))}"
+                )
+                # 仍空 → 断
+                _still_empty = (
+                    (not finish_reason or str(finish_reason).strip() == "")
+                    and not msg.get("tool_calls")
+                    and not (str(msg.get("content", "")).strip())
+                )
+                if _still_empty:
+                    logger.error("[ReAct] Empty probe retry also failed")
+                    break
+            except Exception as _retry_e:
+                logger.error(f"[ReAct] Retry probe also failed: {_retry_e}")
+                break
+
         # ── 分支 A: LLM 决定调用工具 ──
         if finish_reason == "tool_calls" and msg.get("tool_calls"):
             tcs = msg["tool_calls"]
