@@ -1,7 +1,7 @@
 import React from 'react';
 import { useChatStore } from '@/store/useChatStore';
 import { Button } from '@/components/ui/button';
-import { X, ExternalLink, Network } from 'lucide-react';
+import { X, ExternalLink } from 'lucide-react';
 
 export const RightPanel: React.FC = () => {
   const isRightPanelOpen = useChatStore((state) => state.isRightPanelOpen);
@@ -11,10 +11,10 @@ export const RightPanel: React.FC = () => {
   if (!isRightPanelOpen) return null;
 
   return (
-    <aside className="w-80 border-l border-border bg-background flex flex-col transition-all duration-300 shadow-2xl z-20">
+    <aside className="w-80 border-l border-border bg-background flex flex-col transition-all duration-300 shadow-2xl shadow-black/20 z-20">
       <div className="h-16 border-b border-border flex items-center justify-between px-4 shrink-0 bg-muted/10">
         <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
-          {activeCitation ? '📄 原始文献深度溯源' : '🔍 上下文流审查'}
+          {activeCitation ? '📄 原始文献深度溯源' : '📄 引用原文'}
         </h3>
         <Button variant="ghost" size="icon" onClick={toggleRightPanel} className="h-8 w-8 rounded-md">
           <X size={16} />
@@ -25,7 +25,7 @@ export const RightPanel: React.FC = () => {
         {activeCitation ? (
           <div className="space-y-5">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+              <span className="text-[11px] uppercase tracking-wider font-bold px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
                 {activeCitation.source} 节点
               </span>
               <span className="font-mono text-xs text-muted-foreground">
@@ -51,16 +51,10 @@ export const RightPanel: React.FC = () => {
               </div>
             </div>
             <div className="text-[11px] text-muted-foreground bg-muted/30 p-3 rounded-lg border border-dashed border-border leading-normal">
-              💡 提示：此片段是网关底层 RAG 机制根据你提问的向量相似度自动召回的。
+              💡 提示：来自知识库的原始文档片段
             </div>
           </div>
-        ) : (
-          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-muted-foreground opacity-60">
-            <Network className="w-12 h-12 stroke-[1.5] text-muted-foreground mb-3" />
-            <p className="text-sm font-medium text-foreground">暂无活跃溯源</p>
-            <p className="text-xs mt-1 max-w-[200px] leading-relaxed">当你在对话中点击 AI 回复下方的【参考溯源】胶囊标签时，原文内容会在此同步呈现。</p>
-          </div>
-        )}
+        ) : null}
       </div>
     </aside>
   );

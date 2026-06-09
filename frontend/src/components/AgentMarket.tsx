@@ -89,7 +89,7 @@ export const AgentMarket: React.FC = () => {
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-muted-foreground flex items-center justify-between">
                 <span>核心设定系统 Prompt</span>
-                <span className="text-[10px] text-primary bg-primary/10 px-1.5 rounded">最核心的灵魂设定</span>
+                <span className="text-[11px] text-primary bg-primary/10 px-1.5 rounded">最核心的灵魂设定</span>
               </label>
               <textarea 
                 placeholder="在此输入你期望灌注给大模型的约束指令。例如：你是一个经验丰富的DBA..." required rows={5}

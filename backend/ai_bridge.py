@@ -3,6 +3,44 @@ AI Bridge v6 — Alice V2.0 — asyncio 真并发 + 流式优先 + 语义缓存
 启动: python ai_bridge.py
 """
 import os, sys, re, json, time, logging, asyncio, hashlib, threading, collections, concurrent.futures
+import selectors
+
+# ═══════════════════════════════════════════════════════════════
+#  cursor-sdk WinError 10038 补丁（Python 3.12+Windows 下 select.select 不支持 pipe）
+#  与 cursor_agent_lane.py L18-62 完全一致，确保 ai_bridge.py 内所有
+#  cursor-sdk 调用（test/models 端点）不受 WinError 10038 影响。
+# ═══════════════════════════════════════════════════════════════
+
+class _PollingSelector(selectors._BaseSelectorImpl):
+    """轮询选择器：用轮询替代 select.select()，绕过 WinError 10038。"""
+    _POLL_S = 0.02
+
+    def register(self, fileobj, events, data=None):
+        key = super().register(fileobj, events, data)
+        return key
+
+    def unregister(self, fileobj):
+        return super().unregister(fileobj)
+
+    def select(self, timeout=None):
+        deadline = (time.monotonic() + timeout) if timeout is not None else None
+        while True:
+            ready = []
+            for fd in list(self._fd_to_key):
+                key = self._fd_to_key[fd]
+                if key.events & selectors.EVENT_READ:
+                    try:
+                        os.read(fd, 0)
+                    except (BlockingIOError, OSError):
+                        continue
+                    ready.append((key, selectors.EVENT_READ))
+            if ready or (deadline is not None and time.monotonic() >= deadline):
+                return ready
+            time.sleep(min(timeout or self._POLL_S, self._POLL_S))
+
+
+selectors.DefaultSelector = _PollingSelector  # type: ignore[assignment]
+
 from logging.handlers import RotatingFileHandler
 from functools import wraps
 from flask import Flask, request, jsonify, Response

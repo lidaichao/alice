@@ -628,6 +628,32 @@ flowchart LR
 
 ---
 
+### §5.8 Cursor Mode 差异化（设计阶段，未实现）
+
+**当前状态（v1.0.30）**：
+- plan、agent、ask 三个模式在 `cursor_agent_lane.py` 中完全同质
+- L474 注释明确："模式标签→前端显示用，SDK 全走 agent 模式"
+- L541 仅启动消息不同：`{plan: '📋 规划模式', agent: '🔬 分析模式', ask: '💬 问答模式'}`
+
+**目标状态（Phase B2）**：
+
+| 模式 | 行为 | 工具集 | 审批 |
+|------|------|--------|------|
+| **plan** | 生成执行计划（只读分析）→ 渲染计划卡片 → 用户点【执行】→ 推管控台 | 全部注入 | PM 审批 |
+| **agent** | 直接多步执行（当前行为） | 全部注入 | 逐条内联确认卡 |
+| **ask** | 只读分析，不注入写工具 | 仅 6 个只读工具 | 无 |
+
+**前端新增组件**：
+- `PlanCard.tsx`：解析 AI 计划输出 → 渲染步骤列表 + 【📋 执行此计划】按钮
+- plan 模式下 `App.tsx` 气泡消息追加 PlanCard（非 plan 模式不渲染）
+
+**后端新增端点**：
+- `POST /v1/plans/submit`：接收执行计划 JSON → 写入审批队列 → 返回确认
+
+完整设计见 [RABBIT_ROADMAP.md §5.2](H:\workbuddy\coordinator-rabbit\RABBIT_ROADMAP.md)。
+
+---
+
 ### 5.14 客户端角色体系 + 审批控制台（Phase E，远期）
 
 > **协调者产品概念（2026-06-09）**：Alice 客户端 = 团队版 Cursor——Cursor SDK 引擎 + 角色系统 + 审批流 + 审计追溯。
@@ -720,6 +746,68 @@ flowchart LR
 
 ---
 
+### §5.9 前端全线重构：审批流 + 辅助功能（v1.8-frontend，2026-06-09 协调者确认）
+
+> **背景**：协调者测试 Cursor·agent 全链路通过，但审批体验卡顿——确认卡内联在消息流末尾、审批台二分切换、团队规则和上下文流审查的标签/UX 令人困惑。本设计对标产品级体验。
+
+#### 功能域 A：内联审批（聊天中审批）
+
+| ID | 改动 | 现状 | 目标 |
+|----|------|------|------|
+| A1 | 确认卡位置 | 独立渲染在消息流末尾（`App.tsx` L358-384） | **嵌入 AI 回复气泡内部**——确认卡是 AI 回复的一部分 |
+| A2 | DraftCard + ConfirmCard 合并 | 两个独立组件，各自渲染 | 合并为一个 `ConfirmCard`，统一渲染草稿列表 + 操作按钮 |
+| A3 | 操作后状态 | 放行/拒绝后卡片消失 | 卡片原地变更为 "✅ 已创建..." 或 "❌ 已拒绝"（不可再操作） |
+| A4 | 无操作状态 | 卡片在消息流末尾随时可见 | 卡片仅在该会话当前消息气泡中可见；切换会话消失，从审批台可重新拉取 |
+
+#### 功能域 B：审批控制台（独立视图）
+
+| ID | 改动 | 现状 | 目标 |
+|----|------|------|------|
+| B1 | 入口 | 无显式入口（仅 Sidebar "审批管控台" 按钮） | Sidebar 中 `🔔 审批中心` 按钮，待审批数红色徽章，点击进入全屏视图 |
+| B2 | 过滤 | 无过滤，显示所有用户操作 | 默认 "我的待审批"（按 user_id），可切换 "全部" |
+| B3 | 列表 | `font-mono` op_id 为主 | 操作类型 · Issue Key · 提交时间 · 提交者 · 来源会话 |
+| B4 | 点击跳回 | "查看原会话" 按钮 | 点击行 → 切回聊天视图 + 跳转至对应会话 + 滚动到对应消息 |
+| B5 | 批量操作 | 已有（全选/反选/批量放行/拒绝） | 保留 |
+| B6 | 审计追溯 | 已有（创建者/审批者/时间） | 保留 |
+
+#### 功能域 C：行为指令（原"团队规则"）
+
+| ID | 改动 | 现状 | 目标 |
+|----|------|------|------|
+| C1 | 标签 | `团队规则（服务端）` | `✨ 行为指令` |
+| C2 | 引导 | 无 | 副标题：`教 Alice 你的回答偏好` |
+| C3 | 位置 | Sidebar 底部折叠 | Sidebar 独立区域，默认展开 |
+| C4 | 空状态 | `暂无规则` | 显示灰色示例：`示例：始终用中文回答`（不可点击） |
+| C5 | 按钮 | `+` | `+ 新建指令` |
+| C6 | 说明 | 无 | 底部小字：`在对话中说「请记住」可自动添加` |
+
+#### 功能域 D：引用原文（原"上下文流审查"）
+
+| ID | 改动 | 现状 | 目标 |
+|----|------|------|------|
+| D1 | 标签 | `上下文流审查` | `📄 引用原文` |
+| D2 | 触发 | Header "上下文" 按钮 + 引用胶囊均可触发 | **仅点击引用胶囊时触发**；Header 按钮移除 |
+| D3 | 空状态 | 面板永久占位（w-80），显示 "暂无活跃溯源" | 面板默认不渲染（不占空间）；有引用时才滑入 |
+| D4 | 面板标题 | `上下文流审查` | `📄 引用原文` |
+| D5 | 提示文案 | 技术腔："网关底层 RAG 机制..." | 人话：`来自知识库的原始文档片段` |
+
+#### 涉及文件
+
+| 文件 | 改动 | 类型 |
+|------|------|------|
+| `App.tsx` | 确认卡内联到气泡内（A1/A2/A3）+ 移除独立渲染 | 重构 |
+| `ConfirmCard.tsx` | 合并 DraftCard 渲染 + 操作后状态（A2/A3） | 重构 |
+| `DraftCard.tsx` | 逻辑合并到 ConfirmCard，保留文件但废弃 | 废弃 |
+| `Sidebar.tsx` | 新增 `🔔 审批中心` 入口 + `✨ 行为指令` 区域（B1/C1-C6） | 重构 |
+| `TeamMemoryPanel.tsx` | 改名 + 改文案 + 默认展开 + 示例（C1-C6） | 改文案 |
+| `OperationsConsole.tsx` | 加过滤 + 点击跳回（B2/B4） | 增强 |
+| `RightPanel.tsx` | 改名 + 条件渲染 + 去 Header 按钮依赖（D1-D5） | 重构 |
+| `Header.tsx` | 移除 "上下文" 按钮（D2） | 删减 |
+
+完整设计见 [RABBIT_ROADMAP.md §5.3](H:\workbuddy\coordinator-rabbit\RABBIT_ROADMAP.md)。
+
+---
+
 ## 修订记录
 
 | 版本 | 日期 | 说明 |
@@ -769,3 +857,13 @@ flowchart LR
 | v1.0.2 | 2026-06-05 | M1：E3 Eval 门禁 + E7 Admin 运维（CI、health、kb_matrix 20 条） |
 | v1.0.1 | 2026-06-05 | master 文档索引与发版门禁对齐；治理规则落盘 |
 | v1.0 | 2026-06-05 | 首期可执行版：近/中/远 WBS + 架构宪法 + OSS 约束 |
+| v1.7-patch9 | 2026-06-09 | ai_bridge.py 加 PollingSelector 补丁（models/test 端点不再 WinError 10038）+ 去假模型 composer-2.5-fast |
+| v1.8-frontend | 2026-06-09 | 前端全线重构设计——内联审批（确认卡嵌入气泡 + DraftCard 合并）+ 审批控制台（Sidebar 入口+用户过滤+点击跳回）+ 行为指令（原"团队规则"改名+引导文案）+ 引用原文（原"上下文流审查"改名+条件渲染）。详见 Roadmap §5.3。 |
+| v1.8-frontend-dev | 2026-06-09 | 前端全线重构交付——确认卡内联气泡 + 审批中心 Sidebar 入口 + 行为指令改名+默认展开 + 引用原文改名。DraftCard 合并至 ConfirmCard。7 文件重构 |
+| v1.8-frontend-hotfix | 2026-06-09 | 前端重构热修复——删除重复审批入口 + 控制台列表卡片式可读化 + 审批按钮/导航加 console.log 调试日志 |
+| v1.9-P0 | 2026-06-09 | P0 视觉重构（卡罗尔方案）：暗色主题 navy→深灰紫（Slack 风格）、字体底线 11px（44处）、emoji→Lucide 图标（User/Bot）、消息气泡柔和配色（primary/card border）、侧边栏毛玻璃（backdrop-blur-md）+ 底部设置分组 |
+| v1.9-P1 | 2026-06-09 | P1 交互心流打磨（卡罗尔方案）：输入区 LobeHub 风格重构（引擎浮动右侧+标签下置+停止发送并排）、审批中心侧拉面板（backdrop-blur 滑入+OperationsConsole embedded）、新建会话欢迎面板（快捷指令卡片）、会话列表搜索/置顶/双击重命名/软删除撤销 Toast、消息重新生成/编辑按钮、CommandPanel 置顶 |
+| v1.9-P2 | 2026-06-09 | P2 体验增值（卡罗尔方案）：Onboarding 3步引导、Toast 通知系统（内联无依赖实现+sonner 已加入 package.json）、Skeleton 骨架屏、反馈功能拆分(诊断工具 Activity 图标+轻量反馈对话框)、浅色模式补全(暖灰+暖紫)、6 个体验瑕疵修复（TeamMemory button disabled/Hedaer light/RightPanel shadow/ConfirmCard orange/Sidebar TestConnection font/App copy position） |
+| v1.7-patch8 | 2026-06-09 | 修复 EngineSelector onMount 未同步 Zustand enginePreference 导致界面选 agent 但后端收不到 engine 参数 |
+| v1.7-patch7 | 2026-06-09 | 修复 Cursor SDK 未传 api_key 导致 Jira 任务创建失败——chatSlice.ts 从 localStorage 读取 cursor_api_key 注入 config |
+| v1.8-plan-note | 2026-06-09 | ⚠️ plan/agent/ask 模式同质化标记：P2-2 交付的三种模式当前在 SDK 层完全相同（cursor_agent_lane.py L474），仅启动消息文字不同（L541）。Phase B2 将实现差异化——plan（执行计划+执行按钮→管控台审批）、agent（直接执行+逐条确认卡）、ask（只读无写工具）。详见 RABBIT_ROADMAP.md §5.2。 |

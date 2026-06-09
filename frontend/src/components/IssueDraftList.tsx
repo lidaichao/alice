@@ -18,7 +18,7 @@ export default function IssueDraftList({ items, editable, onChange }: Props) {
           key={it.index}
           className="rounded-md border border-border/60 bg-background/50 p-2 text-xs"
         >
-          <div className="text-[10px] text-muted-foreground mb-1">#{it.index + 1}</div>
+          <div className="text-[11px] text-muted-foreground mb-1">#{it.index + 1}</div>
           {editable && onChange ? (
             <div className="space-y-1.5">
               <input
@@ -44,9 +44,9 @@ export default function IssueDraftList({ items, editable, onChange }: Props) {
             </div>
           ) : (
             <div>
-              <span className="font-mono text-[10px] text-primary">{it.projectKey}</span>
+              <span className="font-mono text-[11px] text-primary">{it.projectKey}</span>
               <span className="mx-1 text-muted-foreground">·</span>
-              <span className="text-[10px] text-muted-foreground">{it.issueType}</span>
+              <span className="text-[11px] text-muted-foreground">{it.issueType}</span>
               <div className="mt-0.5 font-medium text-foreground">{it.summary}</div>
             </div>
           )}

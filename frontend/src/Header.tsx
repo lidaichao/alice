@@ -1,12 +1,9 @@
 import React from 'react';
 import { useChatStore } from '@/store/useChatStore';
-import { Button } from '@/components/ui/button';
-import { PanelRight } from 'lucide-react';
 
 export const Header: React.FC = () => {
   const sessions = useChatStore((s) => s.sessions);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
-  const toggleRightPanel = useChatStore((s) => s.toggleRightPanel);
   const activeSession = sessions.find((s) => s.id === activeSessionId);
 
   return (
@@ -14,9 +11,9 @@ export const Header: React.FC = () => {
       <div className="flex items-center gap-2">
         {activeSession ? (
           <div className="flex items-center gap-2">
-            <div className="text-xl">⚛️</div>
+            <div className="text-xl text-primary">⚛️</div>
             <div>
-              <h2 className="text-sm font-semibold text-foreground tracking-tight leading-tight">
+              <h2 className="text-sm font-semibold text-foreground font-medium tracking-tight leading-tight">
                 {activeSession.title}
               </h2>
               <div className="text-[11px] text-muted-foreground">
@@ -27,13 +24,6 @@ export const Header: React.FC = () => {
         ) : (
           <h2 className="text-sm font-semibold text-muted-foreground tracking-tight">爱丽丝研发中枢</h2>
         )}
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={toggleRightPanel}>
-          <PanelRight size={16} className="mr-2" />
-          上下文
-        </Button>
       </div>
     </header>
   );

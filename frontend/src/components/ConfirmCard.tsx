@@ -12,6 +12,8 @@ interface Props {
     opts?: { recoveryAction?: string; supplement?: Record<string, string> },
   ) => Promise<void>;
   onReject: (opId: string) => Promise<void>;
+  resolved?: boolean;
+  resolvedText?: string;
 }
 
 function actionNeedsForm(action: RecoveryAction): boolean {
@@ -21,9 +23,17 @@ function actionNeedsForm(action: RecoveryAction): boolean {
   );
 }
 
-export default function ConfirmCard({ card, progressMessage, onConfirm, onReject }: Props) {
+export default function ConfirmCard({ card, progressMessage, onConfirm, onReject, resolved, resolvedText }: Props) {
   const [loading, setLoading] = useState<'confirm' | 'reject' | string | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
+
+  if (resolved) {
+    return (
+      <div className="mt-3 border border-border rounded-lg p-3 text-sm bg-muted/30">
+        {resolvedText || '✅ 已处理'}
+      </div>
+    );
+  }
 
   const isRecovery = card.operation_status === 'recovery_required' || !!card.recovery?.actions?.length;
 
@@ -80,7 +90,7 @@ export default function ConfirmCard({ card, progressMessage, onConfirm, onReject
   );
 
   return (
-    <div className="mt-3 border border-orange-400/50 bg-orange-50/30 dark:bg-orange-950/20 rounded-lg p-4 animate-in fade-in">
+    <div className="mt-3 border border-orange-400/50 bg-orange-50/30 dark:bg-orange-900/40 rounded-lg p-4 animate-in fade-in">
       <div className="flex items-start gap-3 mb-3">
         <ShieldAlert className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">

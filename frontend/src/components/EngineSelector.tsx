@@ -6,6 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { ChevronDown, Zap, Bot, MessageCircle } from 'lucide-react';
 import { useChatStore } from '@/store/useChatStore';
@@ -60,13 +61,13 @@ function loadCursorConfig(): CursorConfig {
   }
 }
 
-export const EngineSelector: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenSettings }) => {
+export const EngineSelector: React.FC<{ onOpenSettings?: () => void; compact?: boolean }> = ({ onOpenSettings, compact }) => {
   const [engines, setEngines] = useState<EnginesConfig | null>(null);
   const [choice, setChoice] = useState<EngineChoice>(() => loadPreference() || { engine: 'auto' });
   const [hasCursorKey, setHasCursorKey] = useState(false);
   const [cursorModel, setCursorModel] = useState<string>(() => loadCursorConfig().model);
   const [modelOpen, setModelOpen] = useState(false);
-  const [cursorAvailableModels, setCursorAvailableModels] = useState<string[]>(['composer-2.5', 'composer-2.5-fast', 'auto']);
+  const [cursorAvailableModels, setCursorAvailableModels] = useState<string[]>(['composer-2.5', 'auto']);
   const setEngine = useChatStore((s) => s.setEngine);
 
   useEffect(() => {
@@ -97,6 +98,15 @@ export const EngineSelector: React.FC<{ onOpenSettings?: () => void }> = ({ onOp
       }
     } catch {}
     })();
+    // 同步 Zustand enginePreference（避免界面选 agent 但后端收不到）
+    const pref = loadPreference();
+    if (pref) {
+      if (pref.engine === 'cursor' && 'mode' in pref) {
+        setEngine('cursor', pref.mode);
+      } else {
+        setEngine(pref.engine);
+      }
+    }
   }, []);
 
   const handleSelect = useCallback(
@@ -130,6 +140,45 @@ export const EngineSelector: React.FC<{ onOpenSettings?: () => void }> = ({ onOp
     return [];
   })();
 
+  if (compact) {
+    return (
+      <Popover>
+        <PopoverTrigger asChild>
+          <span className="text-[11px] text-muted-foreground flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors">
+            {choice.engine === 'cursor' ? 'Cursor' : choice.engine === 'deepseek' ? 'DeepSeek' : 'Auto'}
+            <ChevronDown size={10} />
+          </span>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-44 p-1">
+          <button onClick={() => handleSelect({ engine: 'auto' })} className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-2">
+            <Zap size={12} className="text-muted-foreground" />
+            Auto（自动分流）
+          </button>
+          <button onClick={() => handleSelect({ engine: 'deepseek' })} className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-2">
+            <MessageCircle size={12} />
+            DeepSeek
+          </button>
+          {engines && hasCursorKey && engines.cursor.modes.map((m) => (
+            <button key={m.id} onClick={() => handleSelect({ engine: 'cursor', mode: m.id })} className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-2">
+              <Bot size={12} />
+              Cursor · {m.label}
+            </button>
+          ))}
+          {(!hasCursorKey || !engines) && (
+            <button disabled className="w-full text-left px-2 py-1.5 text-xs rounded text-muted-foreground italic">
+              🔒 请先配置 Cursor SDK
+            </button>
+          )}
+          <div className="border-t border-border mt-1 pt-1">
+            <button onClick={onOpenSettings} className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted">
+              ⚙ 配置 Cursor SDK...
+            </button>
+          </div>
+        </PopoverContent>
+      </Popover>
+    );
+  }
+
   return (
     <div className="flex items-center gap-1">
       {/* 模式胶囊按钮 —— LobeHub AgentMode 风格 */}
@@ -149,7 +198,7 @@ export const EngineSelector: React.FC<{ onOpenSettings?: () => void }> = ({ onOp
           {engines && (
             <>
               <DropdownMenuSeparator />
-              <DropdownMenuItem disabled className="text-muted-foreground text-[10px] uppercase tracking-wider">
+              <DropdownMenuItem disabled className="text-muted-foreground text-[11px] uppercase tracking-wider">
                 DeepSeek
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleSelect({ engine: 'deepseek' })} className="flex items-center gap-2">
@@ -157,7 +206,7 @@ export const EngineSelector: React.FC<{ onOpenSettings?: () => void }> = ({ onOp
                 <span>DeepSeek</span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem disabled className="text-muted-foreground text-[10px] uppercase tracking-wider">
+              <DropdownMenuItem disabled className="text-muted-foreground text-[11px] uppercase tracking-wider">
                 Cursor SDK
               </DropdownMenuItem>
               {hasCursorKey ? (

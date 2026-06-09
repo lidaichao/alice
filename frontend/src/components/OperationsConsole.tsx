@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, ArrowLeft, Activity, CheckCircle, XCircle, Link2 } from 'lucide-react';
 import { useOperationActions } from '@/hooks/useOperationActions';
+import { useToast } from '@/components/Toast';
 import {
   buildAliceUserHeaders,
   getAliceUserId,
@@ -43,7 +44,7 @@ function actionNeedsForm(action: RecoveryAction): boolean {
   );
 }
 
-export const OperationsConsole: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+export const OperationsConsole: React.FC<{ onBack: () => void; embedded?: boolean }> = ({ onBack, embedded }) => {
   const [ops, setOps] = useState<OpRow[]>([]);
   const [health, setHealth] = useState<HealthPayload | null>(null);
   const [loading, setLoading] = useState(false);
@@ -51,9 +52,11 @@ export const OperationsConsole: React.FC<{ onBack: () => void }> = ({ onBack }) 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchSummary, setBatchSummary] = useState('');
   const [userId, setUserId] = useState(() => getAliceUserId());
+  const [filterMode, setFilterMode] = useState<'mine' | 'all'>('mine');
 
   const setActiveSession = useChatStore((s) => s.setActiveSession);
   const setMainView = useChatStore((s) => s.setMainView);
+  const { toast } = useToast();
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -62,7 +65,10 @@ export const OperationsConsole: React.FC<{ onBack: () => void }> = ({ onBack }) 
       const headers = buildAliceUserHeaders();
       const [hRes, oRes] = await Promise.all([
         fetch('/health', { headers }),
-        fetch('/operations?limit=80', { headers }),
+        fetch(filterMode === 'mine'
+          ? `/operations?limit=80&user_id=${encodeURIComponent(userId)}`
+          : '/operations?limit=80',
+          { headers }),
       ]);
       if (hRes.ok) setHealth(await hRes.json());
       if (!oRes.ok) throw new Error(`operations HTTP ${oRes.status}`);
@@ -71,10 +77,11 @@ export const OperationsConsole: React.FC<{ onBack: () => void }> = ({ onBack }) 
       setSelectedIds(new Set());
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
+      toast('连接断开，正在重连...', { type: 'error' });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filterMode, userId]);
 
   const {
     confirm,
@@ -156,22 +163,25 @@ export const OperationsConsole: React.FC<{ onBack: () => void }> = ({ onBack }) 
   };
 
   const handleConfirm = async (opId: string, recoveryAction?: string) => {
+    console.log('[OpsConsole] handleConfirm', opId, recoveryAction);
     try {
       await confirm(opId, recoveryAction ? { recoveryAction } : undefined);
-    } catch {
-      /* error surfaced via lastError */
+    } catch (e) {
+      console.error('[OpsConsole] confirm failed', e);
     }
   };
 
   const handleReject = async (opId: string) => {
+    console.log('[OpsConsole] handleReject', opId);
     try {
       await reject(opId);
-    } catch {
-      /* error surfaced via lastError */
+    } catch (e) {
+      console.error('[OpsConsole] reject failed', e);
     }
   };
 
   const jumpToConversation = (conversationId?: string) => {
+    console.log('[OpsConsole] jumpToConversation', conversationId);
     if (!conversationId) return;
     setActiveSession(conversationId);
     setMainView('chat');
@@ -183,12 +193,24 @@ export const OperationsConsole: React.FC<{ onBack: () => void }> = ({ onBack }) 
   return (
     <div className="flex flex-col h-full min-w-0 bg-background">
       <header className="flex items-center gap-3 px-4 py-3 border-b border-border shrink-0">
-        <Button variant="ghost" size="icon" onClick={onBack} title="返回聊天">
-          <ArrowLeft size={18} />
-        </Button>
+        {!embedded && (
+          <Button variant="ghost" size="icon" onClick={onBack} title="返回聊天">
+            <ArrowLeft size={18} />
+          </Button>
+        )}
         <div className="flex-1">
           <h1 className="text-sm font-semibold">审批管控台</h1>
           <p className="text-[11px] text-muted-foreground">待确认 · 进行中 · 失败 · 链路健康</p>
+        </div>
+        <div className="flex items-center gap-1 ml-3">
+          <Button variant={filterMode === 'mine' ? 'secondary' : 'ghost'} size="sm" className="h-7 text-[11px]"
+            onClick={() => { setFilterMode('mine'); }}>
+            我的
+          </Button>
+          <Button variant={filterMode === 'all' ? 'secondary' : 'ghost'} size="sm" className="h-7 text-[11px]"
+            onClick={() => { setFilterMode('all'); }}>
+            全部
+          </Button>
         </div>
         <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
           <span>用户 ID</span>
@@ -252,7 +274,7 @@ export const OperationsConsole: React.FC<{ onBack: () => void }> = ({ onBack }) 
               />
               全选
             </label>
-            <Button variant="ghost" size="sm" className="h-7 text-[10px]" onClick={invertSelection} disabled={anyBusy}>
+            <Button variant="ghost" size="sm" className="h-7 text-[11px]" onClick={invertSelection} disabled={anyBusy}>
               反选
             </Button>
             <span className="text-muted-foreground">已选 {selectedList.length} 条</span>
@@ -265,7 +287,7 @@ export const OperationsConsole: React.FC<{ onBack: () => void }> = ({ onBack }) 
             <Button
               variant="default"
               size="sm"
-              className="h-7 text-[10px]"
+              className="h-7 text-[11px]"
               disabled={selectedList.length === 0 || anyBusy}
               onClick={handleBatchConfirm}
             >
@@ -274,7 +296,7 @@ export const OperationsConsole: React.FC<{ onBack: () => void }> = ({ onBack }) 
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-[10px] text-red-600"
+              className="h-7 text-[11px] text-red-600"
               disabled={selectedList.length === 0 || anyBusy}
               onClick={handleBatchReject}
             >
@@ -312,7 +334,7 @@ function AuditTrail({ row }: { row: OpRow }) {
   const hasApprover = !!(row.confirmed_by || row.rejected_by);
   if (!hasCreator && !hasApprover) return null;
   return (
-    <div className="text-[10px] text-muted-foreground space-y-0.5 pt-0.5">
+    <div className="text-[11px] text-muted-foreground space-y-0.5 pt-0.5">
       {hasCreator && (
         <div>
           创建者 <span className="font-mono text-foreground">{row.user_id}</span>
@@ -386,16 +408,27 @@ function OpSection({
                     disabled={batchBusy || busyOpId === o.id}
                   />
                 )}
-                <div className="flex-1 min-w-0 space-y-0.5">
-                  <div className="flex justify-between gap-2">
-                    <span className="font-mono truncate">{o.id}</span>
-                    <span className="shrink-0 text-muted-foreground">{o.status}</span>
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-xs">
+                      {o.kind === 'jira_bulk_create' ? '创建 Jira 子任务'
+                       : o.kind === 'add_jira_comment' ? '添加 Jira 评论'
+                       : o.kind || '操作'}
+                    </span>
+                    {o.operation?.issue_key && (
+                      <span className="font-mono text-[11px] text-blue-600 bg-blue-50 dark:bg-blue-950/30 px-1 rounded">{o.operation.issue_key}</span>
+                    )}
+                    {o.drafts_count != null && o.drafts_count > 0 && (
+                      <span className="text-[11px] text-muted-foreground">{o.drafts_count} 条</span>
+                    )}
+                    <span className="text-[11px] text-muted-foreground ml-auto">{o.status}</span>
                   </div>
-                  <div className="text-muted-foreground truncate">
-                    {o.kind}
-                    {o.operation?.issue_key ? ` · ${o.operation.issue_key}` : ''}
-                    {o.operation?.summary ? ` · ${o.operation.summary}` : ''}
-                    {o.conversation_id ? ` · ${o.conversation_id.slice(0, 8)}…` : ''}
+                  {o.operation?.summary && (
+                    <div className="text-[11px] text-muted-foreground truncate">{o.operation.summary}</div>
+                  )}
+                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                    <span>提交: {o.created_at?.slice(0, 16) || '—'}</span>
+                    {o.user_id && <span>发起人: {o.user_id}</span>}
                   </div>
                   <AuditTrail row={o} />
                 </div>
@@ -414,7 +447,7 @@ function OpSection({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 text-[10px] gap-1 px-2"
+                  className="h-7 text-[11px] gap-1 px-2"
                   onClick={() => onJumpToSession(o.conversation_id)}
                 >
                   <Link2 size={12} />
@@ -462,13 +495,13 @@ function PendingActions({
   return (
     <div className="pt-1 space-y-1.5">
       {progress && (
-        <div className="text-[10px] text-blue-600">{progress}</div>
+        <div className="text-[11px] text-blue-600">{progress}</div>
       )}
       {error && (
-        <div className="text-[10px] text-red-500">{error}</div>
+        <div className="text-[11px] text-red-500">{error}</div>
       )}
       {hasFormAction && (
-        <p className="text-[10px] text-muted-foreground">
+        <p className="text-[11px] text-muted-foreground">
           需补充信息的操作请在聊天会话中使用确认卡处理。
         </p>
       )}
@@ -478,7 +511,7 @@ function PendingActions({
             key={a.id}
             variant="outline"
             size="sm"
-            className="h-7 text-[10px]"
+            className="h-7 text-[11px]"
             disabled={busy}
             onClick={() => onConfirm(row.id, a.id)}
           >
@@ -488,7 +521,7 @@ function PendingActions({
         <Button
           variant="default"
           size="sm"
-          className="h-7 text-[10px] gap-1"
+          className="h-7 text-[11px] gap-1"
           disabled={busy}
           onClick={() => onConfirm(row.id)}
         >
@@ -498,7 +531,7 @@ function PendingActions({
         <Button
           variant="outline"
           size="sm"
-          className="h-7 text-[10px] gap-1 text-red-600 hover:text-red-700"
+          className="h-7 text-[11px] gap-1 text-red-600 hover:text-red-700"
           disabled={busy}
           onClick={() => onReject(row.id)}
         >

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, ChevronUp, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2, Pencil, Trash2 } from 'lucide-react';
 
 interface MemoryEntry {
   id: string;
@@ -17,7 +17,7 @@ interface MemoryMeta {
 }
 
 export const TeamMemoryPanel: React.FC = () => {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [meta, setMeta] = useState<MemoryMeta | null>(null);
   const [loading, setLoading] = useState(false);
@@ -113,21 +113,22 @@ export const TeamMemoryPanel: React.FC = () => {
         className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-foreground hover:bg-muted/50"
         onClick={() => setOpen((v) => !v)}
       >
-        <span>团队规则（服务端）</span>
+        <span>✨ 行为指令</span>
         {open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
       </button>
       {open && (
         <div className="px-3 pb-3 max-h-48 overflow-y-auto space-y-2">
-          <p className="text-[10px] text-muted-foreground leading-snug">
+          <p className="text-[11px] text-muted-foreground mb-2">教 Alice 你的回答偏好</p>
+          <p className="text-[11px] text-muted-foreground leading-snug">
             对话里「请记住」与此处同步；与浏览器本地记忆无关。
           </p>
           {meta && (
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-[11px] text-muted-foreground">
               共 {meta.count} 条 · {meta.inject_note}
               {meta.truncation_warning ? ` · ${meta.truncation_warning}` : ''}
             </p>
           )}
-          {error && <p className="text-[10px] text-destructive">{error}</p>}
+          {error && <p className="text-[11px] text-destructive">{error}</p>}
           {loading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
           <div className="flex gap-1">
             <input
@@ -136,8 +137,8 @@ export const TeamMemoryPanel: React.FC = () => {
               value={newText}
               onChange={(e) => setNewText(e.target.value)}
             />
-            <Button size="sm" variant="outline" className="h-7 px-2" onClick={handleAdd} disabled={loading}>
-              <Plus size={12} />
+            <Button size="sm" variant="outline" className="h-7 px-2" onClick={handleAdd} disabled={loading || !newText.trim()}>
+              + 新建指令
             </Button>
           </div>
           {entries.map((e) => (
@@ -150,10 +151,10 @@ export const TeamMemoryPanel: React.FC = () => {
                     onChange={(ev) => setEditText(ev.target.value)}
                   />
                   <div className="flex gap-1 justify-end">
-                    <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setEditingId(null)}>
+                    <Button size="sm" variant="ghost" className="h-6 text-[11px]" onClick={() => setEditingId(null)}>
                       取消
                     </Button>
-                    <Button size="sm" className="h-6 text-[10px]" onClick={() => handleSaveEdit(e.id)}>
+                    <Button size="sm" className="h-6 text-[11px]" onClick={() => handleSaveEdit(e.id)}>
                       保存
                     </Button>
                   </div>
@@ -183,8 +184,11 @@ export const TeamMemoryPanel: React.FC = () => {
             </div>
           ))}
           {!loading && entries.length === 0 && (
-            <p className="text-[10px] text-muted-foreground text-center py-2">暂无团队规则</p>
+            <p className="text-[11px] text-muted-foreground text-center py-2">
+              <span className="text-muted-foreground/40 italic">示例：始终用中文回答</span>
+            </p>
           )}
+          <p className="text-[11px] text-muted-foreground/40 mt-1">在对话中说「请记住」可自动添加</p>
         </div>
       )}
     </div>

@@ -37,7 +37,7 @@ export const CursorSettings: React.FC<Props> = ({ open, onClose }) => {
   const [showKey, setShowKey] = useState(false);
   const [testResult, setTestResult] = useState<'idle' | 'loading' | 'ok' | 'fail'>('idle');
   const [testError, setTestError] = useState('');
-  const [cursorModels, setCursorModels] = useState<string[]>(['composer-2.5', 'composer-2.5-fast', 'auto']);
+  const [cursorModels, setCursorModels] = useState<string[]>(['composer-2.5', 'auto']);
 
   useEffect(() => {
     if (!config.key) return;

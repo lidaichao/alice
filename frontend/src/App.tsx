@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+﻿import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { COMMANDS, type Command, useChatStore } from '@/store/useChatStore';
 import { Header } from '@/Header';
 import { Sidebar } from '@/Sidebar';
@@ -6,11 +6,9 @@ import { RightPanel } from '@/RightPanel';
 import { Button } from '@/components/ui/button';
 import { CommandPanel } from '@/components/CommandPanel';
 import ConfirmCard from '@/components/ConfirmCard';
-import DraftCard from '@/components/DraftCard';
 import JiraSearchSupplement from '@/components/JiraSearchSupplement';
-import type { DraftCardItem } from '@/store/slices/chatSlice';
-import { buildAliceUserHeaders, buildJiraWriteRequestBody } from '@/lib/runtimeConfig';
-import { buildConfirmCardFromApi, formatOperationResultMessage } from '@/lib/jiraConfirm';
+import { buildAliceUserHeaders } from '@/lib/runtimeConfig';
+import { formatOperationResultMessage } from '@/lib/jiraConfirm';
 import { useOperationActions } from '@/hooks/useOperationActions';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { PluginToolCard } from '@/components/MarkdownRenderer';
@@ -19,7 +17,8 @@ import { EngineSelector } from '@/components/EngineSelector';
 import { CursorSettings } from '@/components/CursorSettings';
 import { syncHubConfigFromHealth } from '@/lib/hubConfig';
 import { ThemeProvider } from '@lobehub/ui';
-import { Square, Copy, Check } from 'lucide-react';
+import { useToast } from '@/components/Toast';
+import { Square, Copy, Check, User, Bot, Settings, RefreshCcw, Pencil, X } from 'lucide-react';
 
 export const App: React.FC = () => {
   // ═══ 统一数据源：useChatStore（chatSlice + agentSlice + uiSlice + memorySlice）═══
@@ -31,7 +30,6 @@ export const App: React.FC = () => {
   const isGenerating = useChatStore((s) => s.generatingSessions[activeSessionId || ''] || false);
   const stopGenerating = useChatStore((s) => s.stopGenerating);
   const pendingConfirmations = useChatStore((s) => s.pendingConfirmations);
-  const pendingDraftCards = useChatStore((s) => s.pendingDraftCards);
   const pendingJiraSupplements = useChatStore((s) => s.pendingJiraSupplements);
   const mainView = useChatStore((s) => s.mainView);
   const setMainView = useChatStore((s) => s.setMainView);
@@ -59,6 +57,10 @@ export const App: React.FC = () => {
   const [userScrolledUp, setUserScrolledUp] = useState(false);
   const [showCursorSettings, setShowCursorSettings] = useState(false);
   const [copiedMessages, setCopiedMessages] = useState<Record<string, boolean>>({});
+  const [onboardingStep, setOnboardingStep] = useState(0);
+  const [onboardingDone, setOnboardingDone] = useState(() => {
+    return localStorage.getItem('alice_onboarding_done') === '1';
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -122,59 +124,21 @@ export const App: React.FC = () => {
       },
     });
 
-  const handleDraftSubmit = useCallback(
-    async (draftId: string, items: DraftCardItem[]) => {
-      const res = await fetch(`/drafts/${draftId}/confirm`, {
-        method: 'POST',
-        headers: buildAliceUserHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify(buildJiraWriteRequestBody({ items })),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.ok === false) {
-        throw new Error(data.error || res.statusText || '提交草稿失败');
-      }
-      const opId = data.operation_id as string;
-      const opPayload = {
-        ...(data.operation as Record<string, unknown>),
-        warnings: [
-          ...((data.warnings as string[]) || []),
-          ...(((data.operation as Record<string, unknown>)?.warnings as string[]) || []),
-        ],
-      };
-      const card = buildConfirmCardFromApi(opId, opPayload);
-      useChatStore.setState((s) => ({
-        pendingDraftCards: s.pendingDraftCards.filter((d) => d.draft_id !== draftId),
-        pendingConfirmations: s.pendingConfirmations.some((c) => c.op_id === opId)
-          ? s.pendingConfirmations
-          : [...s.pendingConfirmations, card],
-      }));
-      if (data.message) {
-        await appendAssistantMessage(String(data.message));
-      }
-    },
-    [appendAssistantMessage],
-  );
-
-  const handleDraftCancel = useCallback(async (draftId: string) => {
-    const res = await fetch(`/drafts/${draftId}/reject`, {
-      method: 'POST',
-      headers: buildAliceUserHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(buildJiraWriteRequestBody()),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || data.ok === false) {
-      throw new Error(data.error || '取消草稿失败');
-    }
-    useChatStore.setState((s) => ({
-      pendingDraftCards: s.pendingDraftCards.filter((d) => d.draft_id !== draftId),
-    }));
-  }, []);
-
-  const onConfirmResolved = useCallback((opId: string) => {
+  const onConfirmResolved = useCallback((opId: string, status: 'confirmed' | 'rejected') => {
     useChatStore.setState((s) => ({
       pendingConfirmations: s.pendingConfirmations.filter((c) => c.op_id !== opId),
+      sessions: s.sessions.map(sess => ({
+        ...sess,
+        messages: sess.messages.map(msg =>
+          msg.pendingCard?.op_id === opId
+            ? { ...msg, pendingCard: { ...msg.pendingCard, resolved: true, status } }
+            : msg
+        ),
+      })),
     }));
   }, []);
+
+  const { toast } = useToast();
 
   const wrappedHandleConfirm = useCallback(
     async (
@@ -182,17 +146,19 @@ export const App: React.FC = () => {
       opts?: { recoveryAction?: string; supplement?: Record<string, string> },
     ) => {
       await handleConfirm(opId, opts);
-      onConfirmResolved(opId);
+      onConfirmResolved(opId, 'confirmed');
+      toast('✅ 已放行操作', { type: 'success' });
     },
-    [handleConfirm, onConfirmResolved],
+    [handleConfirm, onConfirmResolved, toast],
   );
 
   const wrappedHandleReject = useCallback(
     async (opId: string) => {
       await handleReject(opId);
-      onConfirmResolved(opId);
+      onConfirmResolved(opId, 'rejected');
+      toast('❌ 已拒绝', { type: 'error' });
     },
-    [handleReject, onConfirmResolved],
+    [handleReject, onConfirmResolved, toast],
   );
 
   // ── 命令面板 ──
@@ -241,14 +207,67 @@ export const App: React.FC = () => {
     }
   };
 
+  const approvalPanelOpen = useChatStore((s) => s.approvalPanelOpen);
+  const setApprovalPanelOpen = useChatStore((s) => s.setApprovalPanelOpen);
+
   // ═══ 加载中 ═══
   if (!isDbLoaded) {
     return (
       <ThemeProvider themeMode="dark">
         <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
           <Sidebar />
-          <main className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
-            加载会话中...
+          <main className="flex-1 flex flex-col gap-4 p-6">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="flex gap-4 animate-pulse">
+                <div className="w-10 h-10 rounded-full bg-muted shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-muted rounded w-3/4" />
+                  <div className="h-4 bg-muted rounded w-1/2" />
+                  {i === 1 && <div className="h-4 bg-muted rounded w-5/6" />}
+                </div>
+              </div>
+            ))}
+          </main>
+        </div>
+      </ThemeProvider>
+    );
+  }
+
+  // ═══ 首次引导 ═══
+  if (!onboardingDone) {
+    return (
+      <ThemeProvider themeMode="dark">
+        <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
+          <Sidebar />
+          <main className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
+            {onboardingStep === 0 && (
+              <div className="text-center space-y-4 max-w-md animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <Bot size={48} className="mx-auto text-primary" />
+                <h2 className="text-2xl font-bold">认识 Alice</h2>
+                <p className="text-muted-foreground">我是你的研发助手，连接 Jira / SVN / Notion / Google Drive</p>
+                <Button onClick={() => setOnboardingStep(1)}>下一步 →</Button>
+              </div>
+            )}
+            {onboardingStep === 1 && (
+              <div className="text-center space-y-4 max-w-md animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <h2 className="text-2xl font-bold">试试这些</h2>
+                <div className="grid grid-cols-2 gap-3">
+                  {['查 Jira 任务', '分析 Bug', '生成周报', 'Code Review'].map(label => (
+                    <div key={label} className="p-3 rounded-xl border border-border/50 bg-card text-sm">{label}</div>
+                  ))}
+                </div>
+                <Button onClick={() => setOnboardingStep(2)}>下一步 →</Button>
+              </div>
+            )}
+            {onboardingStep === 2 && (
+              <div className="text-center space-y-4 max-w-md animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <h2 className="text-2xl font-bold">设置你的偏好</h2>
+                <p className="text-muted-foreground">选择引擎、配置 API Key、设置记忆</p>
+                <Button onClick={() => { localStorage.setItem('alice_onboarding_done', '1'); setOnboardingDone(true); }}>
+                  开始使用 →
+                </Button>
+              </div>
+            )}
           </main>
         </div>
       </ThemeProvider>
@@ -269,22 +288,41 @@ export const App: React.FC = () => {
     );
   }
 
+
   return (
     <ThemeProvider themeMode="dark">
       <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
         <Sidebar />
-        {mainView === 'operations' ? (
-          <main className="flex-1 flex flex-col min-w-0 border-r border-border">
-            <OperationsConsole onBack={() => setMainView('chat')} />
-          </main>
-        ) : (
         <>
         <main className="flex-1 flex flex-col min-w-0 bg-muted/10 relative border-r border-border">
           <Header />
 
           {/* ── 消息列表 ── */}
           <div ref={chatContainerRef} onScroll={handleChatScroll} className="flex-1 overflow-y-auto p-4 space-y-6">
-            {messages.map((m) => {
+            {messages.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-6 h-full min-h-[400px]">
+                <div className="text-center">
+                  <p className="text-lg font-medium text-foreground mb-2">👋 今天想做什么？</p>
+                  <p className="text-sm text-muted-foreground">输入 / 试试快捷指令，或直接告诉我你需要什么</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 max-w-md">
+                  {[
+                    { icon: '📋', label: '查 Jira 任务', msg: '/jira 查我的任务' },
+                    { icon: '🐛', label: '分析 Bug', msg: '/analyze ' },
+                    { icon: '📝', label: '生成周报', msg: '/weekly ' },
+                    { icon: '🔍', label: 'Code Review', msg: '/review ' },
+                  ].map((item) => (
+                    <button key={item.label}
+                      onClick={() => { setMyInput(item.msg); inputRef.current?.focus(); }}
+                      className="flex items-center gap-2 p-3 rounded-xl border border-border/50 bg-card hover:bg-accent hover:border-accent transition-all text-sm text-left">
+                      <span className="text-lg">{item.icon}</span>
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+            messages.map((m) => {
               const isUser = m.role === 'user';
               const isAssistant = m.role === 'assistant';
               const isStopped = isAssistant && m.content === '⏹ 已停止生成';
@@ -304,18 +342,18 @@ export const App: React.FC = () => {
               return (
                 <div key={m.id} className={`flex gap-4 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
                   {/* 头像 */}
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center bg-muted text-xl shrink-0 shadow-sm">
-                    {isUser ? '🧑‍💻' : '🐰'}
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center bg-secondary text-muted-foreground shrink-0 shadow-sm">
+                    {isUser ? <User size={20} /> : <Bot size={20} />}
                   </div>
 
                   {/* 气泡 */}
                   <div className={isUser ? 'max-w-[70%]' : 'max-w-[80%]'}>
                     <div className={`p-4 rounded-2xl ${
                       isUser
-                        ? 'bg-blue-600 text-white rounded-tr-none'
+                        ? 'bg-primary/90 text-primary-foreground rounded-tr-none'
                         : isStopped
-                          ? 'bg-muted/60 text-muted-foreground/60 rounded-tl-none'
-                          : 'bg-muted text-foreground rounded-tl-none'
+                          ? 'bg-card/60 text-muted-foreground/60 rounded-tl-none border border-border/30'
+                          : 'bg-card text-foreground rounded-tl-none border border-border/30'
                     }`}>
                       {hasContent ? (
                         <MarkdownRenderer content={m.content} citations={m.citations} plugin={m.plugin} />
@@ -328,19 +366,28 @@ export const App: React.FC = () => {
                         <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">{m.content}</div>
                       ) : isEmptyAssistant ? (
                         <span className="text-muted-foreground italic text-sm">正在思考...</span>
-                      ) : null}
-                    </div>
+                    ) : null}
 
-                    {/* 操作栏：复制按钮 + 来源指示 */}
+                    {/* 内联确认卡 */}
+                    {isAssistant && m.pendingCard && (
+                      <div className="mt-3 pt-3 border-t border-border/50">
+                        <ConfirmCard
+                          card={m.pendingCard}
+                          progressMessage={confirmProgress[m.pendingCard.op_id]}
+                          onConfirm={wrappedHandleConfirm}
+                          onReject={wrappedHandleReject}
+                          resolved={m.pendingCard.resolved}
+                          resolvedText={m.pendingCard.op_id
+                            ? (m.pendingCard.status === 'rejected' ? '❌ 已拒绝' : '✅ 已通过')
+                            : undefined}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                    {/* 操作栏 */}
                     {(isAssistant ? (hasContent || isStopped) : !!m.content) && (
-                      <div className="flex items-center gap-2 mt-1.5 px-1">
-                        {isAssistant && m.source === 'cursor' && (
-                          <span className="text-[10px] text-muted-foreground/70 select-none">🔬 Cursor SDK</span>
-                        )}
-                        {isAssistant && m.source === 'deepseek' && (
-                          <span className="text-[10px] text-muted-foreground/70 select-none">🐰 DeepSeek</span>
-                        )}
-                        <div className="flex-1" />
+                      <div className="flex items-center gap-3 mt-1.5 px-1">
                         <button
                           onClick={handleCopy}
                           className="text-muted-foreground/40 hover:text-muted-foreground transition-colors p-0.5 rounded"
@@ -348,41 +395,47 @@ export const App: React.FC = () => {
                         >
                           {isCopied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
                         </button>
+                        {hasContent && (
+                          <button
+                            onClick={() => {
+                              const msgIdx = messages.findIndex(x => x.id === m.id);
+                              const lastUserMsg = messages.slice(0, msgIdx).reverse().find(x => x.role === 'user');
+                              if (lastUserMsg) sendMessage(lastUserMsg.content);
+                            }}
+                            className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                            title="重新生成"
+                          >
+                            <RefreshCcw size={14} />
+                          </button>
+                        )}
+                        {isUser && (
+                          <button
+                            onClick={() => {
+                              const newText = window.prompt('编辑消息', m.content);
+                              if (newText && newText.trim()) sendMessage(newText.trim());
+                            }}
+                            className="p-1 rounded-md hover:bg-primary/20 text-muted-foreground hover:text-foreground transition-colors"
+                            title="编辑"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                        )}
+                        <div className="flex-1" />
+                        {isAssistant && m.source === 'cursor' && (
+                          <span className="text-[11px] text-muted-foreground/70 select-none">🔬 Cursor SDK</span>
+                        )}
+                        {isAssistant && m.source === 'deepseek' && (
+                          <span className="text-[11px] text-muted-foreground/70 select-none">🐰 DeepSeek</span>
+                        )}
                       </div>
                     )}
                   </div>
                 </div>
               );
-            })}
+            })
+            )}
 
-            {/* ── Jira 确认卡（内联在消息流末尾）── */}
-            {pendingDraftCards.map((draft) => (
-              <div key={draft.draft_id} className="flex gap-4 flex-row">
-                <div className="w-10 h-10 shrink-0" />
-                <div className="max-w-[75%] flex-1">
-                  <DraftCard
-                    draft={draft}
-                    onSubmit={handleDraftSubmit}
-                    onCancel={handleDraftCancel}
-                  />
-                </div>
-              </div>
-            ))}
-
-            {pendingConfirmations.map((card) => (
-              <div key={card.op_id} className="flex gap-4 flex-row">
-                <div className="w-10 h-10 shrink-0" />
-                <div className="max-w-[75%] flex-1">
-                  <ConfirmCard
-                    card={card}
-                    progressMessage={confirmProgress[card.op_id]}
-                    onConfirm={wrappedHandleConfirm}
-                    onReject={wrappedHandleReject}
-                  />
-                </div>
-              </div>
-            ))}
-
+            {/* ── Jira 搜索补充卡 ── */}
             {pendingJiraSupplements.map((card) => (
               <div key={card.id} className="flex gap-4 flex-row">
                 <div className="w-10 h-10 shrink-0" />
@@ -415,38 +468,81 @@ export const App: React.FC = () => {
           </div>
 
           {/* ── 输入区 ── */}
-          <div className="p-4 bg-background border-t border-border flex-shrink-0 flex flex-col gap-2 relative">
-            <div className="flex items-end gap-2 max-w-4xl mx-auto w-full relative">
-              {showCommands && <CommandPanel filterText={commandFilter} selectedIndex={selectedCmdIndex} onSelect={handleSelectCommand} />}
-              {/* 引擎选择器 + 停止按钮（贴在 textarea 左侧） */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                <EngineSelector onOpenSettings={() => setShowCursorSettings(true)} />
+          <div className="p-4 bg-background/60 backdrop-blur-sm border-t border-border flex-shrink-0 flex flex-col gap-1 max-w-4xl mx-auto w-full relative">
+            {showCommands && <CommandPanel filterText={commandFilter} selectedIndex={selectedCmdIndex} onSelect={handleSelectCommand} />}
+            <div className="flex items-end gap-2 w-full relative">
+              {/* 输入框包裹层（内含浮动 Settings 图标） */}
+              <div className="flex-1 relative">
+                <textarea
+                  ref={inputRef}
+                  value={myInput}
+                  onChange={handleInputChange}
+                  onKeyDown={handleKeyDown}
+                  placeholder="输入分析指令，或键入 / 呼出模板..." rows={1}
+                  className="w-full max-h-48 min-h-[56px] resize-none rounded-xl border border-input bg-background/50 backdrop-blur-sm px-4 py-4 pr-12 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring shadow-sm"
+                />
+                <button
+                  onClick={() => setShowCursorSettings(true)}
+                  className="absolute right-3 top-4 p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  title="引擎设置"
+                >
+                  <Settings size={16} />
+                </button>
+              </div>
+              {/* 停止 + 发送 并排 */}
+              <div className="flex items-center gap-1 shrink-0">
                 {isGenerating && (
-                  <Button variant="ghost" size="sm" onClick={stopGenerating} className="h-8 w-8 p-0 text-red-500 hover:text-red-700 rounded-lg" title="停止生成">
-                    <Square size={14} />
+                  <Button variant="ghost" size="sm" onClick={stopGenerating}
+                    className="h-10 w-10 p-0 text-red-500 hover:text-red-700 rounded-lg" title="停止生成">
+                    <Square size={16} />
                   </Button>
                 )}
+                <Button onClick={handleSend}
+                  disabled={isGenerating || !myInput || myInput.trim() === ''}
+                  className="h-12 w-12 shrink-0 rounded-xl shadow-md">
+                  <svg className="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                  </svg>
+                </Button>
               </div>
-              <textarea
-                ref={inputRef}
-                value={myInput}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder="输入分析指令，或键入 / 呼出模板..." rows={1}
-                className="flex-1 max-h-48 min-h-[56px] resize-none rounded-xl border border-input bg-background px-4 py-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring shadow-sm"
-              />
-              <Button onClick={handleSend}
-                disabled={isGenerating || !myInput || myInput.trim() === ''} className="h-12 w-12 shrink-0 rounded-xl shadow-md">
-                <svg className="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
-                </svg>
-              </Button>
+            </div>
+            {/* 引擎标签在输入框下方 */}
+            <div className="flex items-center gap-2">
+              <EngineSelector compact onOpenSettings={() => setShowCursorSettings(true)} />
             </div>
           </div>
         </main>
         <RightPanel />
-        </>
+
+        {/* 审批中心侧拉面板 */}
+        {approvalPanelOpen && (
+          <div className="relative z-40">
+            <div className="fixed inset-0 bg-black/20 transition-opacity duration-300"
+              onClick={() => setApprovalPanelOpen(false)} />
+            <aside className={`
+              fixed top-0 right-0 h-full w-[min(640px,90vw)]
+              bg-background border-l border-border
+              shadow-2xl
+              transform transition-transform duration-300 ease-out
+              ${approvalPanelOpen ? 'translate-x-0' : 'translate-x-full'}
+              flex flex-col
+            `}>
+              <div className="flex items-center justify-between p-4 border-b border-border">
+                <h2 className="text-lg font-semibold">审批中心</h2>
+                <Button variant="ghost" size="icon" onClick={() => setApprovalPanelOpen(false)}>
+                  <X size={18} />
+                </Button>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                <OperationsConsole
+                  embedded
+                  onBack={() => setApprovalPanelOpen(false)}
+                />
+              </div>
+            </aside>
+          </div>
         )}
+        </>
       </div>
       <CursorSettings open={showCursorSettings} onClose={() => setShowCursorSettings(false)} />
     </ThemeProvider>

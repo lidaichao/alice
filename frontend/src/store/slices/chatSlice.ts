@@ -135,6 +135,7 @@ export interface ConfirmCard {
   operation_status?: string;
   created_at?: string;
   status?: 'pending' | 'confirmed' | 'rejected';
+  resolved?: boolean;
 }
 
 export interface ChatSlice {
@@ -382,6 +383,11 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
               jira_url: rc.jira_url || '',
             };
             if (rc.user_id) cfg.user_id = rc.user_id;
+            // Cursor SDK Key（从客户端配置注入，供 cursor_agent_lane 消费）
+            try {
+              const cursorCfg = JSON.parse(localStorage.getItem('alice_cursor_config') || '{}');
+              if (cursorCfg.key) { cfg.cursor_api_key = cursorCfg.key; cfg.cursor_sdk_model = cursorCfg.model || 'composer-2.5'; }
+            } catch {}
             return cfg;
           })(),
           user_config: (() => {

@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useChatStore } from '@/store/useChatStore';
 import { Button } from '@/components/ui/button';
 import { useTheme } from 'next-themes';
-import { Sun, Moon, Monitor, Plus, Trash2, Edit2, Wifi, Bug, ClipboardList, LayoutDashboard, Workflow, Zap } from 'lucide-react';
+import { Sun, Moon, Monitor, Plus, Trash2, Edit2, Wifi, Bug, ClipboardList, Workflow, Zap, Bell, Settings, Search, X, MessageSquare, Activity } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { TeamMemoryPanel } from '@/components/TeamMemoryPanel';
+import { useToast } from '@/components/Toast';
 
 export const Sidebar: React.FC = () => {
   const sessions = useChatStore((s) => s.sessions);
@@ -15,18 +16,25 @@ export const Sidebar: React.FC = () => {
   const renameSession = useChatStore((s) => s.renameSession);
   const pendingConfirmations = useChatStore((s) => s.pendingConfirmations);
   const pendingDraftCards = useChatStore((s) => s.pendingDraftCards);
-  const mainView = useChatStore((s) => s.mainView);
-  const setMainView = useChatStore((s) => s.setMainView);
+  const pendingCount = pendingConfirmations.filter(c => c.status !== 'confirmed' && c.status !== 'rejected').length;
+  const approvalPanelOpen = useChatStore((s) => s.approvalPanelOpen);
+  const setApprovalPanelOpen = useChatStore((s) => s.setApprovalPanelOpen);
   const sendMessage = useChatStore((s) => s.sendMessage);
   const { theme, setTheme } = useTheme();
+  const { toast } = useToast();
 
   const pendingTotal = pendingConfirmations.length + pendingDraftCards.length;
 
+  const [searchQuery, setSearchQuery] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [wfTemplates, setWfTemplates] = useState<Array<{id: string; name: string; description: string}>>([]);
   const [wfOpen, setWfOpen] = useState(false);
   const [wfLoading, setWfLoading] = useState(false);
+  const [pinnedIds, setPinnedIds] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('alice_pinned_sessions') || '[]'); }
+    catch { return []; }
+  });
 
   // M5.4 — 加载工作流模板列表
   const loadWorkflowTemplates = async () => {
@@ -64,11 +72,38 @@ export const Sidebar: React.FC = () => {
     setEditTitle('');
   };
 
-  // Sort by updatedAt desc
-  const sorted = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
+  // Sort: pinned first, then by updatedAt desc; filter by search
+  const sorted = [...sessions]
+    .filter((s) => !searchQuery || s.title.toLowerCase().includes(searchQuery.toLowerCase()))
+    .sort((a, b) => {
+      const aPinned = pinnedIds.includes(a.id) ? 0 : 1;
+      const bPinned = pinnedIds.includes(b.id) ? 0 : 1;
+      if (aPinned !== bPinned) return aPinned - bPinned;
+      return b.updatedAt - a.updatedAt;
+    });
+  const pinSession = (id: string) => {
+    setPinnedIds(prev => {
+      const next = prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id];
+      localStorage.setItem('alice_pinned_sessions', JSON.stringify(next));
+      return next;
+    });
+  };
+  const handleDelete = async (id: string) => {
+    const session = sessions.find(s => s.id === id);
+    const title = session?.title || '会话';
+    toast(`已删除 "${title}"`, {
+      type: 'info',
+      action: {
+        label: '撤销',
+        onClick: () => { /* restore: create a new session - simplified */ },
+      },
+      duration: 3000,
+    });
+    await deleteSession(id);
+  };
 
   return (
-    <aside className="w-64 bg-background border-r border-border flex flex-col shrink-0 h-full">
+    <aside className="w-64 h-full border-r border-border/40 bg-background/85 backdrop-blur-md flex flex-col overflow-hidden">
       {/* Header + New Session */}
       <div className="p-3 border-b border-border flex items-center justify-between shrink-0">
         <span className="text-sm font-semibold text-foreground">会话列表</span>
@@ -78,19 +113,6 @@ export const Sidebar: React.FC = () => {
       </div>
 
       <div className="px-2 pt-2 space-y-1.5">
-        <Button
-          variant={mainView === 'operations' ? 'secondary' : 'outline'}
-          size="sm"
-          className="w-full justify-start gap-2 text-xs"
-          onClick={() => setMainView(mainView === 'operations' ? 'chat' : 'operations')}
-        >
-          <LayoutDashboard size={14} />
-          审批管控台
-          {pendingTotal > 0 && (
-            <span className="ml-auto rounded-full bg-amber-500/20 px-1.5 text-[10px]">{pendingTotal}</span>
-          )}
-        </Button>
-
         {/* M5.4 — 工作流启动器 */}
         <Popover open={wfOpen} onOpenChange={(open) => { setWfOpen(open); if (open) loadWorkflowTemplates(); }}>
           <PopoverTrigger asChild>
@@ -102,7 +124,7 @@ export const Sidebar: React.FC = () => {
               <Workflow size={14} />
               工作流
               {wfTemplates.length > 0 && (
-                <span className="ml-auto rounded-full bg-blue-500/20 px-1.5 text-[10px]">{wfTemplates.length}</span>
+                <span className="ml-auto rounded-full bg-blue-500/20 px-1.5 text-[11px]">{wfTemplates.length}</span>
               )}
             </Button>
           </PopoverTrigger>
@@ -125,14 +147,14 @@ export const Sidebar: React.FC = () => {
                 <Zap size={12} className="mt-0.5 shrink-0 text-blue-500" />
                 <div className="min-w-0">
                   <div className="font-medium text-foreground truncate">{tpl.name}</div>
-                  <div className="text-[10px] text-muted-foreground truncate">{tpl.description}</div>
+                  <div className="text-[11px] text-muted-foreground truncate">{tpl.description}</div>
                 </div>
               </button>
             ))}
             {wfTemplates.length > 0 && (
               <div className="mt-2 border-t border-border pt-1.5">
-                <div className="text-[10px] text-muted-foreground mb-1">或手动输入：</div>
-                <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded block text-center font-mono">
+                <div className="text-[11px] text-muted-foreground mb-1">或手动输入：</div>
+                <code className="text-[11px] bg-muted px-1.5 py-0.5 rounded block text-center font-mono">
                   [WORKFLOW:template-id]
                 </code>
               </div>
@@ -141,7 +163,7 @@ export const Sidebar: React.FC = () => {
         </Popover>
       </div>
 
-      {pendingTotal > 0 && mainView === 'chat' && (
+      {pendingTotal > 0 && !approvalPanelOpen && (
         <div className="mx-2 mt-2 mb-1 p-2 rounded-lg border border-amber-400/40 bg-amber-50/50 dark:bg-amber-950/30">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-800 dark:text-amber-200 mb-1.5">
             <ClipboardList size={14} />
@@ -164,6 +186,22 @@ export const Sidebar: React.FC = () => {
       )}
 
       {/* Session list */}
+      <div className="px-3 pb-2">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border/50 bg-muted/30 text-sm">
+          <Search size={14} className="text-muted-foreground shrink-0" />
+          <input
+            placeholder="搜索会话..."
+            className="bg-transparent border-none outline-none flex-1 text-[12px] text-foreground placeholder:text-muted-foreground"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} className="text-muted-foreground hover:text-foreground">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
       <div className="flex-1 overflow-y-auto py-1">
         {sorted.length === 0 ? (
           <div className="px-3 py-8 text-center text-xs text-muted-foreground">
@@ -199,8 +237,17 @@ export const Sidebar: React.FC = () => {
                 ) : (
                   <div className="flex items-center justify-between gap-2">
                     <div className="truncate flex-1 min-w-0">
-                      <div className="truncate text-[13px]">{session.title || '新会话'}</div>
-                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                      <div className="truncate text-[13px]">
+                        <span
+                          className="cursor-default"
+                          onDoubleClick={(e) => { e.stopPropagation(); handleRename(session.id, session.title); }}
+                          title="双击重命名"
+                        >
+                          {session.title || '新会话'}
+                          {pinnedIds.includes(session.id) && <span className="ml-1 text-[11px]">📌</span>}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
                         {new Date(session.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         {session.messages.length > 0 && ` · ${session.messages.length}条`}
                       </div>
@@ -217,13 +264,19 @@ export const Sidebar: React.FC = () => {
                       <PopoverContent className="w-32 p-1" align="start" side="right">
                         <button
                           className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-2"
+                          onClick={(e) => { e.stopPropagation(); pinSession(session.id); }}
+                        >
+                          <Edit2 size={12} /> {pinnedIds.includes(session.id) ? '取消置顶' : '📌 置顶'}
+                        </button>
+                        <button
+                          className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-2"
                           onClick={(e) => { e.stopPropagation(); handleRename(session.id, session.title); }}
                         >
                           <Edit2 size={12} /> 重命名
                         </button>
                         <button
                           className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-red-50 text-red-600 flex items-center gap-2"
-                          onClick={(e) => { e.stopPropagation(); void deleteSession(session.id); }}
+                          onClick={(e) => { e.stopPropagation(); void handleDelete(session.id); }}
                         >
                           <Trash2 size={12} /> 删除
                         </button>
@@ -237,10 +290,31 @@ export const Sidebar: React.FC = () => {
         )}
       </div>
 
+      {/* 审批中心入口 */}
+      <div className="px-3 py-1">
+        <Button
+          variant="ghost"
+          className="w-full justify-start gap-2 h-9 text-sm"
+          onClick={() => setApprovalPanelOpen(true)}
+        >
+          <Bell size={16} />
+          <span className="flex-1 text-left">审批中心</span>
+          {pendingCount > 0 && (
+            <span className="bg-red-500 text-white text-[11px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+              {pendingCount}
+            </span>
+          )}
+        </Button>
+      </div>
+
       <TeamMemoryPanel />
 
       {/* Footer */}
       <div className="p-3 border-t border-border shrink-0 flex flex-col gap-2 bg-background/50">
+        <div className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5 px-1">
+          <Settings size={12} />
+          <span>设置</span>
+        </div>
         <div className="flex items-center justify-center">
           <div className="flex items-center gap-1 bg-muted rounded-full p-1 border border-border/50 shadow-inner">
             <button onClick={() => setTheme('light')} className={`p-1.5 rounded-full transition-all ${theme === 'light' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground'}`} title="浅色"><Sun size={14} /></button>
@@ -249,7 +323,8 @@ export const Sidebar: React.FC = () => {
           </div>
         </div>
         <TestConnectionWidget />
-        <BugReportButton />
+        <FeedbackButton />
+        <DiagnosticsButton />
       </div>
     </aside>
   );
@@ -283,14 +358,59 @@ function TestConnectionWidget() {
         {status === 'testing' ? '检测中...' : 'Test Connection'}
       </button>
       {status !== 'idle' && (
-        <span className={`text-[10px] truncate max-w-[140px] ${status === 'ok' ? 'text-green-600' : 'text-red-500'}`}>{msg}</span>
+        <span className={`text-[11px] font-semibold truncate max-w-[140px] ${status === 'ok' ? 'text-green-600' : 'text-red-500'}`}>
+          {status === 'ok' ? '✅ 在线' : '❌ 不可达'}
+        </span>
       )}
     </div>
   );
 }
 
 // ── 灰度测试反馈黑匣子 ───────────────────────────
-function BugReportButton() {
+// ── 轻量反馈 ────────────────────────────
+function FeedbackButton() {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [sent, setSent] = useState(false);
+  const submit = () => {
+    const reports = JSON.parse(localStorage.getItem('alice_feedback') || '[]');
+    reports.push({ text, time: Date.now() });
+    localStorage.setItem('alice_feedback', JSON.stringify(reports));
+    setSent(true);
+    setTimeout(() => { setOpen(false); setSent(false); setText(''); }, 1500);
+  };
+  return (
+    <>
+      <button onClick={() => setOpen(true)}
+        className="flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-border/50 bg-muted/50 hover:bg-muted transition-colors">
+        <MessageSquare size={12} className="text-muted-foreground" /> 反馈
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setOpen(false)}>
+          <div className="bg-background border border-border rounded-xl shadow-2xl p-5 w-[400px] max-w-[92vw]" onClick={e => e.stopPropagation()}>
+            <div className="font-semibold mb-3">告诉我们你的想法</div>
+            <textarea className="w-full h-20 text-sm border border-border rounded-lg p-3 resize-none bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 mb-3"
+              placeholder="哪里让你觉得好用或不好用..." value={text} onChange={e => setText(e.target.value)} />
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <input type="checkbox" className="rounded" /> 附带诊断信息
+              </label>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>取消</Button>
+                <Button size="sm" onClick={submit} disabled={!text.trim()}>
+                  {sent ? '已发送' : '发送'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── 诊断工具 ───────────────────────────
+function DiagnosticsButton() {
   const [open, setOpen] = useState(false);
   const [desc, setDesc] = useState('');
   const [sent, setSent] = useState(false);
@@ -331,8 +451,8 @@ function BugReportButton() {
   return (
     <>
       <button onClick={() => { setOpen(true); setSent(false); setFullReport(''); }}
-        className="flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-border/50 bg-muted/50 hover:bg-muted transition-colors" title="反馈 Bug">
-        <Bug size={12} className="text-amber-500" /> 反馈
+        className="flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-border/50 bg-muted/50 hover:bg-muted transition-colors" title="诊断工具">
+        <Activity size={12} className="text-blue-500" /> 🔧 诊断工具
       </button>
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setOpen(false)}>

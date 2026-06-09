@@ -15,7 +15,7 @@ const ThinkingBlock = memo(({ content }: { content: string }) => {
       <button onClick={() => setOpen(!open)} className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/30 transition-colors">
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <span>💭 思考过程</span>
-        {!open && <span className="text-[10px] opacity-60 ml-2">{content.slice(0, 40)}...</span>}
+        {!open && <span className="text-[11px] opacity-60 ml-2">{content.slice(0, 40)}...</span>}
       </button>
       {open && <div className="px-4 py-3 text-sm text-muted-foreground whitespace-pre-wrap border-t border-border/40 leading-relaxed">{content}</div>}
     </div>
@@ -51,7 +51,7 @@ const ToolCallBlock = memo(({ name, status, result }: { name: string; status: st
       <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium">
         <Wrench size={14} className={isRunning ? 'text-blue-500 animate-spin' : 'text-green-500'} />
         <span className="text-blue-700 dark:text-blue-300">调用工具: {name}</span>
-        <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded ${isRunning ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
+        <span className={`ml-auto text-[11px] px-1.5 py-0.5 rounded ${isRunning ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
           {isRunning ? '执行中...' : '已完成'}
         </span>
       </div>
@@ -97,7 +97,7 @@ export const PluginToolCard = memo(({ plugin }: { plugin?: { name: string; statu
         </div>
 
         {/* 状态胶囊 */}
-        <span className={`shrink-0 text-[10px] px-2.5 py-1 rounded-full font-medium animate-in fade-in ${
+        <span className={`shrink-0 text-[11px] px-2.5 py-1 rounded-full font-medium animate-in fade-in ${
           isRunning
             ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
             : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
@@ -133,7 +133,7 @@ const TaskBlock = memo(({ tasks }: { tasks: string[] }) => {
       <div className="p-2 space-y-1">
         {tasks.map((t, i) => (
           <button key={i} onClick={() => toggle(i)} className="w-full flex items-start gap-2 px-2 py-1.5 rounded text-sm text-left hover:bg-muted/30 transition-colors">
-            <span className={`mt-0.5 shrink-0 w-4 h-4 rounded border flex items-center justify-center text-[10px] ${done.has(i) ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
+            <span className={`mt-0.5 shrink-0 w-4 h-4 rounded border flex items-center justify-center text-[11px] ${done.has(i) ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
               {done.has(i) ? '✓' : ''}
             </span>
             <span className={done.has(i) ? 'line-through text-muted-foreground' : 'text-foreground'}>{t}</span>
@@ -289,7 +289,7 @@ export const MarkdownRenderer = memo(({ content, citations, plugin }: { content:
               }`}>
               <FileText size={12} />
               <span className="max-w-[120px] truncate">{cit.title}</span>
-              <span className="bg-background px-1 rounded text-[10px] font-mono border border-border">[{cit.index}]</span>
+              <span className="bg-background px-1 rounded text-[11px] font-mono border border-border">[{cit.index}]</span>
             </button>
           ))}
         </div>
