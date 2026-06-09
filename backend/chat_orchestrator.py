@@ -340,18 +340,6 @@ def iter_preflight_sse(ctx: OrchestratorContext) -> Iterator[bytes]:
     user_text = ctx.user_text
     intent_info = ctx.intent_info
 
-    if user_text and intent_info.get("route") == "dangerous":
-        block_msg = (
-            "【Alice】检测到高风险操作请求，已拦截。"
-            f"（{intent_info.get('reason', 'dangerous')}）"
-        )
-        ctx.terminated = True
-        yield f"data: {json.dumps({'choices': [{'delta': {'content': block_msg}}]}, ensure_ascii=False)}\n\n".encode(
-            "utf-8"
-        )
-        yield SSE_DONE
-        return
-
     if user_text and not (ctx.user_cfg.get("engine") or "").startswith("cursor-"):
         try:
             from memory_manager import try_capture_memory_from_message

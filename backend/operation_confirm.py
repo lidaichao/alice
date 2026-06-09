@@ -72,11 +72,14 @@ def execute_operation_confirm(
                 except Exception as te:
                     logger.warning("[OpCard] resolve transition on confirm failed: %s", te)
 
+        logger.info("[OpConfirm] executing op_id=%s kind=%s drafts=%d", op_id, op.get("kind"), len(op.get("drafts", [])))
         op = mark_running(op)
         save_operation(op)
+        logger.info("[OpConfirm] calling execute_confirmed_operation op_id=%s", op_id)
         result = execute_confirmed_operation(
             jira_client, op, user_pat=user_pat, skip_labels=skip_labels
         )
+        logger.info("[OpConfirm] execute_confirmed_operation done op_id=%s created=%d", op_id, len(result.get("created_issues") or []))
         created = result.get("created_issues") or []
         op = (
             mark_created(op, created, confirmed_by=approver_id)
@@ -115,6 +118,7 @@ def execute_operation_confirm(
         }
     except Exception as e:
         err_msg = str(e)[:500]
+        logger.error("[OpConfirm] execute failed op_id=%s error=%s", op_id, err_msg, exc_info=True)
         op = mark_failed(op, err_msg)
         save_operation(op)
         logger.error("[OpCard] Execute failed: %s | %s", op_id, err_msg)

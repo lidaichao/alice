@@ -2533,6 +2533,7 @@ def confirm_op(op_id):
         or body.get("stream") is True
         or "text/event-stream" in (request.headers.get("Accept") or "")
     )
+    logger.info("[Confirm] gate passed op_id=%s approver=%s stream=%s", op_id, approver_id, want_stream)
     _deps = dict(
         save_operation=save_operation,
         mark_running=mark_running,
@@ -2546,6 +2547,7 @@ def confirm_op(op_id):
             mimetype="text/event-stream",
         )
     status, payload = execute_operation_confirm(jira, op, body, **_deps)
+    logger.info("[Confirm] response status=%s op_id=%s", status, op_id)
     return jsonify(payload), status
 
 @app.route("/operations/<op_id>/reject", methods=["POST"])
@@ -2783,9 +2785,11 @@ def list_ops_console():
         list_operations,
         operation_audit_fields,
         operation_to_confirm_ui,
+        _store,
     )
 
     conv_id = request.args.get("conversation_id", "")
+    user_id = request.args.get("user_id", "")
     raw_status = request.args.get("status", "")
     limit = int(request.args.get("limit", "50") or 50)
     if raw_status:
@@ -2798,7 +2802,8 @@ def list_ops_console():
             "failed",
             "created",
         ]
-    ops = list_operations(statuses=statuses, conversation_id=conv_id, limit=limit)
+    ops = list_operations(statuses=statuses, conversation_id=conv_id, user_id=user_id, limit=limit)
+    logger.info("[API] /operations returned %d ops, store_size=%d", len(ops), len(_store))
     return jsonify({
         "ok": True,
         "operations": [{

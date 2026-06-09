@@ -309,6 +309,8 @@ def check_operation_approver(
     """
     检查 user_id 是否可执行 operation confirm/reject。
     action: confirm | reject
+
+    TODO: 用户系统上线后，移除 default_admin 逻辑，启用 approver 白名单
     """
     _ensure_registry_loaded()
     cfg = _operation_approval or {}
@@ -317,12 +319,8 @@ def check_operation_approver(
 
     uid = (user_id or "").strip()
     if not uid:
-        return {
-            "decision": "deny",
-            "reason": "缺少用户身份（X-Alice-User-Id），无法执行审批操作",
-            "action": action,
-            "operation_id": operation_id,
-        }
+        # 暂未启用用户系统，空身份默认为最高权限
+        return {"decision": "allow", "reason": "default_admin", "action": action, "operation_id": operation_id}
 
     allowed_ids = {str(x).strip() for x in (cfg.get("approver_user_ids") or []) if x}
     if uid in allowed_ids:

@@ -853,6 +853,7 @@ def apply_supplement_to_operation(operation: dict, supplement: dict) -> dict:
 # ══════════════════════════════════════════════════════════════
 
 def _persist_operations_index():
+    logger.info("[OpManager] _persist_operations_index CALLED store_size=%d", len(_store))
     try:
         os.makedirs(_DATA_DIR, exist_ok=True)
         with _lock:
@@ -874,9 +875,12 @@ def _load_operations_index():
             for op in data.get("operations") or []:
                 if op.get("id"):
                     _store[op["id"]] = op
+            if path == _OPS_FILE:
+                logger.info(f"[OpCard] loaded {len(_store)} operations from {path}")
+                return
             if _store:
                 logger.info(f"[OpCard] loaded {len(_store)} operations from {path}")
-                if path == _LEGACY_OPS_INDEX and not os.path.isfile(_OPS_FILE):
+                if not os.path.isfile(_OPS_FILE):
                     _persist_operations_index()
                 return
         except Exception as e:
@@ -888,6 +892,8 @@ _load_draft_box()
 
 
 def save_operation(op: dict) -> dict:
+    logger.info("[OpManager] save_operation CALLED id=%s kind=%s status=%s",
+               op.get("id"), op.get("kind"), op.get("status"))
     with _lock:
         _store[op["id"]] = op
         _persist_operations_index()
@@ -914,16 +920,21 @@ def get_pending_operations(conversation_id: str = "") -> list:
 def list_operations(
     statuses: list[str] | None = None,
     conversation_id: str = "",
+    user_id: str = "",
     limit: int = 50,
 ) -> list:
     """按状态列出操作（M3 管控台）。"""
     want = set(statuses or [])
+    logger.info("[OpManager] list_operations called statuses=%s conv_id=%s user_id=%s limit=%s store_size=%d",
+               statuses, conversation_id, user_id, limit, len(_store))
     with _lock:
         ops = []
         for op in _store.values():
             if want and op.get("status") not in want:
                 continue
             if conversation_id and op.get("conversation_id") != conversation_id:
+                continue
+            if user_id and op.get("user_id") and op.get("user_id") != user_id:
                 continue
             ops.append(op)
         ops.sort(key=lambda o: o.get("updated_at") or o.get("created_at") or "", reverse=True)
@@ -937,6 +948,7 @@ def execute_confirmed_operation(jira_client, operation: dict, user_pat: str = ""
     返回: {created_issues: [...], comment: {...}, message: str}
     """
     kind = operation.get("kind", "")
+    logger.info("[OpExec] execute_confirmed_operation op_id=%s kind=%s pat=%s drafts=%d", operation.get("id"), kind, bool(user_pat), len(operation.get("drafts", [])))
     if kind == "jira_add_comment":
         draft = (operation.get("drafts") or [{}])[0]
         issue_key = draft.get("issue_key", "")
@@ -953,14 +965,17 @@ def execute_confirmed_operation(jira_client, operation: dict, user_pat: str = ""
         already = operation.get("created_issues") or []
         start_index = len(already)
         created_issues = list(already)
-        for index in range(start_index, len(drafts)):
+        total = len(drafts)
+        for index in range(start_index, total):
             draft = drafts[index]
+            logger.info("[OpExec] creating issue %d/%d summary=%s", index + 1, total, draft.get("summary", "")[:60])
             try:
                 item = jira_client.create_issue_from_draft(
                     draft, user_pat=user_pat, skip_labels=skip_labels,
                 )
                 created_issues.append(item)
                 register_ai_created_issue(item.get("key", ""))
+                logger.info("[OpExec] issue created key=%s", item.get("key", "FAILED"))
             except Exception as e:
                 err_msg = str(e)
                 if not skip_labels and "labels" in err_msg.lower():

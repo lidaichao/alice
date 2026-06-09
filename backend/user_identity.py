@@ -24,17 +24,25 @@ def parse_user_id_from_request(req=None, body: Optional[dict] = None) -> str:
     """
     优先级：X-Alice-User-Id > body.user_id > user_config.user_id > config.user_id
     空 user_id 允许降级（内网 Hub 过渡期），但打 info 日志。
+
+    当 body 已提供时（SSE 生成器等不在 request context 的路径），
+    只从 body 取值，不访问 flask_request，避免 RuntimeError。
     """
-    req = req or flask_request
+    candidates = []
+    # 只在未传 body 时才从 req.headers 读（非 SSE 路径用）
     if body is None:
-        body = req.get_json(silent=True) or {}
-    candidates = [
-        req.headers.get(ALICE_USER_ID_HEADER),
+        req = req or flask_request
+        if req:
+            candidates.append(req.headers.get(ALICE_USER_ID_HEADER))
+        body = req.get_json(silent=True) or {} if req else {}
+    candidates.extend([
         body.get("user_id"),
         (body.get("user_config") or {}).get("user_id"),
         (body.get("config") or {}).get("user_id"),
-    ]
+    ])
     uid = _sanitize_user_id(next((c for c in candidates if c), ""))
     if not uid:
-        logger.info("[UserId] empty user_id on %s %s", req.method, getattr(req, "path", "?"))
+        logger.info("[UserId] empty user_id on %s %s",
+                   getattr(req, "method", "?") if req else "body",
+                   getattr(req, "path", "?") if req else "?")
     return uid

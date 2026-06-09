@@ -864,6 +864,7 @@ flowchart LR
 | v1.9-P0 | 2026-06-09 | P0 视觉重构（卡罗尔方案）：暗色主题 navy→深灰紫（Slack 风格）、字体底线 11px（44处）、emoji→Lucide 图标（User/Bot）、消息气泡柔和配色（primary/card border）、侧边栏毛玻璃（backdrop-blur-md）+ 底部设置分组 |
 | v1.9-P1 | 2026-06-09 | P1 交互心流打磨（卡罗尔方案）：输入区 LobeHub 风格重构（引擎浮动右侧+标签下置+停止发送并排）、审批中心侧拉面板（backdrop-blur 滑入+OperationsConsole embedded）、新建会话欢迎面板（快捷指令卡片）、会话列表搜索/置顶/双击重命名/软删除撤销 Toast、消息重新生成/编辑按钮、CommandPanel 置顶 |
 | v1.9-P2 | 2026-06-09 | P2 体验增值（卡罗尔方案）：Onboarding 3步引导、Toast 通知系统（内联无依赖实现+sonner 已加入 package.json）、Skeleton 骨架屏、反馈功能拆分(诊断工具 Activity 图标+轻量反馈对话框)、浅色模式补全(暖灰+暖紫)、6 个体验瑕疵修复（TeamMemory button disabled/Hedaer light/RightPanel shadow/ConfirmCard orange/Sidebar TestConnection font/App copy position） |
+| v1.9-hotfix | 2026-06-09 | 审批中心：清理 e2e 测试数据（operations.json 重置）、修复 /operations user_id 过滤（ai_bridge list_ops_console + jira_operation_manager list_operations 新增参数）、批量操作 toast 反馈（批量/单个 confirm/reject 失败提示） |
 | v1.7-patch8 | 2026-06-09 | 修复 EngineSelector onMount 未同步 Zustand enginePreference 导致界面选 agent 但后端收不到 engine 参数 |
 | v1.7-patch7 | 2026-06-09 | 修复 Cursor SDK 未传 api_key 导致 Jira 任务创建失败——chatSlice.ts 从 localStorage 读取 cursor_api_key 注入 config |
 | v1.8-plan-note | 2026-06-09 | ⚠️ plan/agent/ask 模式同质化标记：P2-2 交付的三种模式当前在 SDK 层完全相同（cursor_agent_lane.py L474），仅启动消息文字不同（L541）。Phase B2 将实现差异化——plan（执行计划+执行按钮→管控台审批）、agent（直接执行+逐条确认卡）、ask（只读无写工具）。详见 RABBIT_ROADMAP.md §5.2。 |

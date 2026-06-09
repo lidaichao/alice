@@ -104,6 +104,11 @@ export const OperationsConsole: React.FC<{ onBack: () => void; embedded?: boolea
           ? `批量完成：成功 ${ok} 条，失败 ${fail} 条`
           : `批量完成：全部 ${ok} 条成功`,
       );
+      if (fail > 0) {
+        toast(`成功 ${ok} 个，失败 ${fail} 个`, { type: 'error' });
+      } else {
+        toast('全部已处理', { type: 'success' });
+      }
       refresh();
     },
   });
@@ -153,12 +158,14 @@ export const OperationsConsole: React.FC<{ onBack: () => void; embedded?: boolea
   const handleBatchConfirm = async () => {
     if (selectedList.length === 0 || batchBusy) return;
     setBatchSummary('');
+    toast('批量放行中...', { type: 'info' });
     await confirmBatch(selectedList);
   };
 
   const handleBatchReject = async () => {
     if (selectedList.length === 0 || batchBusy) return;
     setBatchSummary('');
+    toast('批量拒绝中...', { type: 'info' });
     await rejectBatch(selectedList);
   };
 
@@ -168,6 +175,7 @@ export const OperationsConsole: React.FC<{ onBack: () => void; embedded?: boolea
       await confirm(opId, recoveryAction ? { recoveryAction } : undefined);
     } catch (e) {
       console.error('[OpsConsole] confirm failed', e);
+      toast(`操作失败：${e instanceof Error ? e.message : String(e)}`, { type: 'error' });
     }
   };
 
@@ -177,6 +185,7 @@ export const OperationsConsole: React.FC<{ onBack: () => void; embedded?: boolea
       await reject(opId);
     } catch (e) {
       console.error('[OpsConsole] reject failed', e);
+      toast(`操作失败：${e instanceof Error ? e.message : String(e)}`, { type: 'error' });
     }
   };
 

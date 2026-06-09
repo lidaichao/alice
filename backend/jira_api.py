@@ -218,6 +218,10 @@ class JiraClient:
                 else {"name": draft.get("issueType") or default_issue_type}
             ),
         }
+        # 子任务：指定父 Issue Key
+        parent_key = draft.get("parentKey") or draft.get("parent_key") or ""
+        if parent_key:
+            fields["parent"] = {"key": parent_key}
         assignee = draft.get("assigneeName") or draft.get("assigneeAccountId") or draft.get("assignee")
         if assignee:
             if draft.get("assigneeAccountId"):
@@ -285,6 +289,24 @@ class JiraClient:
         if r.status_code not in (200, 204):
             raise RuntimeError(f"状态流转失败 (HTTP {r.status_code}): {r.text[:300]}")
         return {"issue_key": issue_key, "transition": body["transition"]}
+
+    def get_project_issuetypes(self, project_key: str, user_pat: str = None) -> list[dict]:
+        """查询项目可用 Issue 类型列表（含 subtask 标识）。"""
+        key = (project_key or "").strip()
+        if not key:
+            return []
+        r = self._request(
+            "GET",
+            f"/issue/createmeta?projectKeys={key}&expand=projects.issuetypes",
+            timeout=15,
+            user_pat=user_pat,
+        )
+        if r.status_code != 200:
+            return []
+        projects = (r.json() or {}).get("projects", [])
+        if not projects:
+            return []
+        return projects[0].get("issuetypes", [])
 
     def update_issue_fields(self, issue_key: str, fields: dict, user_pat: str = None) -> dict:
         r = self.jira_put(f"/issue/{issue_key}", json_data={"fields": fields or {}}, user_pat=user_pat)

@@ -199,6 +199,20 @@ def _handle_jira_read_issue_detail(args: dict, _ctx) -> str:
         return json.dumps({"status": "error", "result": f"获取 Issue 详情失败: {str(e)[:200]}"})
 
 
+def _handle_list_issuetypes(args: dict, _ctx) -> str:
+    """只读：查询 Jira 项目的可用 Issue 类型"""
+    project_key = (args.get("project_key") or "").strip()
+    if not project_key:
+        return json.dumps({"status": "error", "result": "缺少 project_key 参数"})
+    try:
+        from ai_bridge import jira
+        types = jira.get_project_issuetypes(project_key)
+        simple = [{"name": t.get("name", ""), "id": t.get("id", ""), "subtask": bool(t.get("subtask"))} for t in types]
+        return json.dumps({"status": "ok", "result": {"project_key": project_key, "issuetypes": simple, "total": len(simple)}}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"status": "error", "result": str(e)})
+
+
 def _handle_read_file(args: dict, _ctx) -> str:
     """只读：读取工作区文件"""
     from workspace_tools import _exec_read_file
@@ -271,14 +285,18 @@ def _make_write_handler(
             if isinstance(summaries, list):
                 project_key = args.get("project_key") or args.get("projectKey") or ""
                 issue_type = args.get("issue_type") or args.get("issueType") or "Task"
+                parent_key = args.get("parent_key") or args.get("parentKey") or ""
                 for s in summaries:
                     summary = s if isinstance(s, str) else s.get("summary", str(s))
-                    drafts.append({
+                    draft = {
                         "summary": summary,
                         "projectKey": project_key,
                         "issueType": issue_type,
                         "description": s.get("description", "") if isinstance(s, dict) else "",
-                    })
+                    }
+                    if parent_key:
+                        draft["parentKey"] = parent_key
+                    drafts.append(draft)
             else:
                 return json.dumps({"status": "error", "result": "summaries 必须是数组"})
 
@@ -314,6 +332,9 @@ def _make_write_handler(
                 "comment_body": comment_body,
             })
 
+        logger.info("[CursorTool] jira_write invoked kind=%s user_id=%s conv_id=%s drafts_count=%d",
+                   kind, user_id, conversation_id, len(drafts))
+
         audit_result = create_operation_card_with_audit(
             drafts=drafts,
             conversation_id=conversation_id,
@@ -322,6 +343,19 @@ def _make_write_handler(
             trigger_source="cursor_sdk",
             ai_created=True,
         )
+        logger.info("[CursorTool] audit_result status=%s op_id=%s",
+                   audit_result.get("status"), audit_result.get("operation", {}).get("id", "NONE"))
+        if audit_result.get("status") == "awaiting_confirmation":
+            op = audit_result.get("operation", {})
+            logger.info("[CursorTool] operation detail: id=%s kind=%s status=%s drafts=%s",
+                       op.get("id"), op.get("kind"), op.get("status"), len(op.get("drafts", [])))
+
+        op = audit_result.get("operation")
+        if op and op.get("id"):
+            from jira_operation_manager import save_operation
+            save_operation(op)
+            logger.info("[CursorTool] save_operation done op_id=%s", op["id"])
+
         return json.dumps({"status": audit_result.get("status", "unknown"), "detail": audit_result}, ensure_ascii=False)
 
     return _handler
@@ -351,6 +385,12 @@ def _build_custom_tools(
         execute=_handle_jira_read_issue_detail,
         description="获取指定 Jira Issue 的完整详情——标题、状态、经办人、优先级、描述摘要、最近评论。",
         input_schema=_obj({"issue_key": _str_param("Jira Issue Key，例如 CT-11112")}),
+    )
+
+    tools["list_jira_issuetypes"] = CustomTool(
+        execute=_handle_list_issuetypes,
+        description="查询指定 Jira 项目的可用问题类型列表（名称+ID）。用于在创建 Issue 前确认合法的 issuetype 名称。只读。",
+        input_schema=_obj({"project_key": _str_param("Jira 项目 Key，如 CT、GM")}),
     )
 
     tools["read_file"] = CustomTool(
@@ -433,6 +473,7 @@ def _build_custom_tools(
             },
             "project_key": _str_param("Jira 项目 Key（如 CT、GM）"),
             "issue_type": _str_param("Issue 类型，默认 Task"),
+            "parent_key": _str_param("父 Issue Key（子任务必填，如 CT-11152）"),
         }, required=["summaries"]),
     )
 
@@ -547,9 +588,34 @@ def iter_cursor_sdk_lane(
             api_key=api_key,
             local=LocalAgentOptions(cwd=workspace_cwd, custom_tools=custom_tools),
         ) as agent:
-            run = agent.send(user_text)
+            prefixed = (
+                "[系统指令] 你是 Alice 研发助手，必须使用提供的工具完成用户请求。"
+                "当用户要求创建/修改 Jira Issue 时，必须调用 jira_create_subtasks 等工具。"
+                "禁止说「我无法操作 Jira」——工具已提供给你。"
+                "禁止编造操作 ID 或虚构执行结果。"
+                "创建 Jira Issue 前，若不确定 issuetype 名称是否合法，先调用 list_jira_issuetypes 查询。\n---\n"
+                + user_text
+            )
+            run = agent.send(prefixed)
             text = (run.text() or "").strip()
             logger.info("[CursorLane] agent=%s run complete, text_len=%d", agent.agent_id, len(text))
+
+            # ── 工具调用校验 ─────────────────────────────────
+            tool_calls = []
+            try:
+                for msg in (run.messages() or []):
+                    if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                        tool_calls.append(msg.tool_calls)
+            except Exception:
+                pass
+
+            logger.info("[CursorLane] tool_calls: %s", tool_calls)
+
+            # 〃 注释：tool_calls 检查因 SDK API 兼容性问题目前不可靠，已禁用伪阳性提示
+            # jira_keywords = ['创建', '新建', '修改', '添加', '删除', 'jira', 'issue', '任务', '子任务', 'create', 'transition']
+            # wants_write = any(kw in (user_text or '').lower() for kw in jira_keywords)
+            # if wants_write and not tool_calls and text:
+            #     text += "\n\n⚠️ 未检测到工具调用。已记录的回复可能未真正执行操作。请重新描述你的需求。"
 
             if text:
                 for chunk in _sse_text_chunks(text, source="cursor"):
