@@ -36,10 +36,10 @@
       <el-main class="admin-main">
         <Transition name="page-fade" mode="out-in">
           <div :key="menuActive">
-            <SettingsView v-show="menuActive === 'settings'" />
-            <JiraQueryView v-show="menuActive === 'jiraQuery'" />
-            <KnowledgeView v-show="menuActive === 'kb'" />
-            <div v-show="menuActive === 'roles'" class="roles-tabs">
+            <SettingsView v-if="menuActive === 'settings'" />
+            <JiraQueryView v-if="menuActive === 'jiraQuery'" />
+            <KnowledgeView v-if="menuActive === 'kb'" />
+            <div v-if="menuActive === 'roles'" class="roles-tabs">
               <el-tabs v-model="rbacTab" class="rbac-tabs">
                 <el-tab-pane label="账号管理" name="accounts"><AccountsView /></el-tab-pane>
                 <el-tab-pane label="角色管理" name="roles"><RolesView /></el-tab-pane>
