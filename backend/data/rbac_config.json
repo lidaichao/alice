@@ -1,0 +1,60 @@
+{
+  "roles": [
+    {
+      "description": "全局最高权限，管理 Alice 所有配置",
+      "icon": "🛡️",
+      "id": "admin",
+      "member_count": 0,
+      "members": [],
+      "name": "管理员",
+      "permissions": {
+        "*": true
+      }
+    },
+    {
+      "description": "可直接读写 Jira、审批知识库变更",
+      "icon": "👔",
+      "id": "manager",
+      "member_count": 0,
+      "members": [],
+      "name": "项目主管",
+      "permissions": {
+        "audit.read": true,
+        "jira.read": true,
+        "jira.write_comment": true,
+        "jira.write_update": true,
+        "kb.manage": true,
+        "kb.read": true,
+        "workspace.read_code": true,
+        "workspace.run_workflow": true
+      }
+    },
+    {
+      "description": "可查 Jira / 知识库 / 工作区代码",
+      "icon": "💻",
+      "id": "developer",
+      "member_count": 0,
+      "members": [],
+      "name": "开发者",
+      "permissions": {
+        "jira.read": true,
+        "jira.write_create": true,
+        "kb.read": true,
+        "workspace.read_code": true,
+        "workspace.run_workflow": true
+      }
+    },
+    {
+      "description": "只读权限，可查 Jira 和知识库",
+      "icon": "👁️",
+      "id": "guest",
+      "member_count": 0,
+      "members": [],
+      "name": "访客",
+      "permissions": {
+        "jira.read": true,
+        "kb.read": true
+      }
+    }
+  ]
+}

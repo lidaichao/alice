@@ -1,9 +1,11 @@
 ---
-description: 用户授权按三期蓝图自动推进近期开发时遵循
+description: v1.0 历史内容 — 用户授权按三期蓝图自动推进近期开发时遵循（已被 v3.0 方案替代，保留供参考）
 alwaysApply: true
 ---
 
 # Alice 三期自主开发授权
+
+> ⚠️ 本文档为 v1.0 历史内容。v3.0 开发节奏见 `docs/v3.0/ALICE_V3_RESTRUCTURE_PLAN.md`（Phase 0-5 WBS）。
 
 当用户授权「按蓝图自动执行近期开发」时：
 

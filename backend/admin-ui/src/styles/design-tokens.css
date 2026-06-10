@@ -1,0 +1,67 @@
+/* ── Alice v2.0 设计令牌（卡罗尔 §3.2）── */
+/* Jira B300 配色 × Linear 动效体系 */
+
+:root {
+  /* ── 背景层级（Linear 式克制）── */
+  --saas-bg-base:        #f4f5f7;       /* 页面底 — Jira 浅灰蓝 */
+  --saas-bg-surface:     #ffffff;       /* 卡片、表格 */
+  --saas-bg-elevated:    #ffffff;       /* 弹窗、下拉 */
+  --saas-bg-hover:       #f1f2f4;       /* hover 行 — 比 Jira 稍暖 */
+  --saas-bg-selected:    #e9f2ff;       /* 选中行 — Jira 蓝底 */
+
+  /* ── 侧边栏 ── */
+  --saas-sidebar-bg:     #f4f5f7;       /* Jira 同款浅灰蓝侧边栏 */
+  --saas-sidebar-active: #e9f2ff;       /* 选中菜单项背景 */
+  --saas-sidebar-indicator: #0c66e4;    /* 选中指示条，Jira B300 蓝 */
+
+  /* ── 文字 ── */
+  --saas-text-primary:   #172b4d;       /* Jira 主文字深蓝灰 */
+  --saas-text-secondary: #626f86;       /* Jira 辅助文字 */
+  --saas-text-tertiary:  #8993a4;       /* 占位符 */
+  --saas-text-inverse:   #ffffff;       /* 深色底上文字 */
+
+  /* ── 主色：Jira B300 蓝 ── */
+  --saas-accent:         #0c66e4;       /* Jira primary blue */
+  --saas-accent-hover:   #0855c2;
+  --saas-accent-pressed: #0747a6;
+  --saas-accent-soft:    #e9f2ff;
+
+  /* ── 语义色 ── */
+  --saas-success:        #1f845a;
+  --saas-success-soft:   #dcfff1;
+  --saas-warning:        #e56910;
+  --saas-warning-soft:   #fff3e0;
+  --saas-danger:         #ae2a19;
+  --saas-danger-soft:    #ffe8e8;
+
+  /* ── 边框 ── */
+  --saas-border:         #dfe1e6;
+  --saas-border-focus:   #0c66e4;
+
+  /* ── 阴影 ── */
+  --saas-shadow-sm:      0 1px 2px rgba(9, 30, 66, 0.08);
+  --saas-shadow-md:      0 4px 12px rgba(9, 30, 66, 0.1);
+  --saas-shadow-lg:      0 12px 32px rgba(9, 30, 66, 0.14);
+
+  /* ── 圆角 ── */
+  --saas-radius-sm:      6px;
+  --saas-radius-md:      8px;
+  --saas-radius-lg:      12px;
+  --saas-radius-xl:      16px;
+
+  /* ── 动画曲线 ── */
+  --saas-ease-standard:  cubic-bezier(0.4, 0, 0.2, 1);
+  --saas-ease-bounce:    cubic-bezier(0.34, 1.56, 0.64, 1);
+  --saas-duration-fast:  120ms;
+  --saas-duration-normal: 200ms;
+  --saas-duration-slow:   300ms;
+
+  /* ── 别名：兼容旧变量 ── */
+  --admin-primary:       var(--saas-accent);
+  --admin-primary-soft:  var(--saas-accent-soft);
+  --admin-bg-page:       var(--saas-bg-base);
+  --admin-bg-card:       var(--saas-bg-surface);
+  --admin-border:        var(--saas-border);
+  --admin-text-primary:  var(--saas-text-primary);
+  --admin-text-secondary:var(--saas-text-secondary);
+}

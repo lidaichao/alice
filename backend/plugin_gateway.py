@@ -75,10 +75,40 @@ def collect_jira_write_sse_chunks(user_text, user_cfg, intent_info) -> list:
         f"（您拥有完整改状态权限，系统仅做安全确认，并非无权限。）"
     )
     payload = build_confirm_tool_response(op, preview)
-    return [
-        f"data: {json.dumps({'_event': 'confirm_card', 'op_id': op['id'], 'operation': payload.get('operation'), 'preview': preview}, ensure_ascii=False)}\n\n".encode("utf-8"),
+    # P0 RBAC: 检查用户写权限
+    _has_perm = False
+    try:
+        if creator_id:
+            from rbac import check_permission, check_permission_change
+            _has_perm = check_permission(creator_id, "jira.write_create")
+    except Exception:
+        pass
+    _chunks = []
+    # P1: 权限变更通知
+    try:
+        if creator_id:
+            changed, detail = check_permission_change(creator_id)
+            if changed and detail:
+                _chunks.append(
+                    f"data: {json.dumps({'_event': 'system', 'type': 'permission_changed', 'message': detail.get('role_name','') + ' 权限已更新', 'detail': detail}, ensure_ascii=False)}\n\n".encode("utf-8")
+                )
+    except Exception:
+        pass
+    card_json = {'_event': 'confirm_card', 'op_id': op['id'], 'operation': payload.get('operation'), 'preview': preview, 'has_permission': _has_perm}
+    # P1: 危险操作标记
+    try:
+        from jira_operation_manager import is_dangerous_kind
+        _op_kind = op.get("kind") or ""
+        if is_dangerous_kind(_op_kind):
+            card_json["dangerous"] = True
+            card_json["preview"] = "⚠️ 此操作不可逆，请确认\n\n" + (preview or "")
+    except Exception:
+        pass
+    _chunks.extend([
+        f"data: {json.dumps(card_json, ensure_ascii=False)}\n\n".encode("utf-8"),
         f"data: {json.dumps({'choices': [{'delta': {'content': preview}}]}, ensure_ascii=False)}\n\n".encode("utf-8"),
-    ]
+    ])
+    return _chunks
 
 
 def collect_draft_sse_chunks(

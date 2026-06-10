@@ -365,6 +365,27 @@ def iter_react_pipeline(ctx: ReactRunContext) -> Iterator[bytes]:
                             "message": _confirm_preview,
                             "preview": _confirm_preview,
                         }
+                        # P1: 危险操作标记
+                        try:
+                            from jira_operation_manager import is_dangerous_kind
+                            _op_kind = ui_op.get("kind") or ui_op.get("type", "")
+                            if is_dangerous_kind(_op_kind):
+                                card_evt["dangerous"] = True
+                                card_evt["message"] = "⚠️ 此操作不可逆，请确认\n\n" + (card_evt.get("message") or "")
+                        except Exception:
+                            pass
+                        # P0 RBAC: 附加用户权限标记
+                        try:
+                            _approver_id = ctx.user_cfg.get("user_id", "")
+                            if _approver_id:
+                                from rbac import check_permission, check_permission_change
+                                card_evt["has_permission"] = check_permission(_approver_id, "jira.write_create")
+                                # P1: 权限变更检测
+                                changed, detail = check_permission_change(_approver_id)
+                                if changed and detail:
+                                    yield f"data: {json.dumps({'_event': 'system', 'type': 'permission_changed', 'message': detail.get('role_name','') + ' 权限已更新', 'detail': detail}, ensure_ascii=False)}\n\n".encode('utf-8')
+                        except Exception:
+                            pass
                         yield f"data: {json.dumps(card_evt, ensure_ascii=False)}\n\n".encode('utf-8')
                         yield f"data: {json.dumps({'custom_type': 'confirm_required', 'operation': ui_op, 'operation_id': op_id, 'message': _confirm_preview}, ensure_ascii=False)}\n\n".encode('utf-8')
                         if _confirm_preview:

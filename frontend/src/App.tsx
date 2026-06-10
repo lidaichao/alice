@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { CommandPanel } from '@/components/CommandPanel';
 import ConfirmCard from '@/components/ConfirmCard';
 import JiraSearchSupplement from '@/components/JiraSearchSupplement';
+import LoginPanel from '@/components/LoginPanel';
 import { buildAliceUserHeaders } from '@/lib/runtimeConfig';
 import { formatOperationResultMessage } from '@/lib/jiraConfirm';
 import { useOperationActions } from '@/hooks/useOperationActions';
@@ -36,6 +37,7 @@ export const App: React.FC = () => {
 
   const currentSession = sessions.find((s) => s.id === activeSessionId);
   const messages = currentSession?.messages || [];
+  const isLoggedIn = useChatStore((s) => s.user.isLoggedIn);
 
   // ── 初始化：加载 DB + 首次启动自动建会话 ──
   useEffect(() => {
@@ -92,6 +94,16 @@ export const App: React.FC = () => {
     if (!activeSessionId) return;
     scrollToBottom(true);
   }, [activeSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── 权限变更 Toast ──
+  const lastSystemMsgRef = useRef('');
+  useEffect(() => {
+    const sysMsg = messages.filter(m => m.role === 'system').slice(-1)[0];
+    if (sysMsg && sysMsg.content !== lastSystemMsgRef.current) {
+      lastSystemMsgRef.current = sysMsg.content;
+      toast(sysMsg.content, { type: 'info', duration: 3000 });
+    }
+  }, [messages]);
 
   const handleChatScroll = () => {
     if (!chatContainerRef.current) return;
@@ -211,6 +223,10 @@ export const App: React.FC = () => {
   const setApprovalPanelOpen = useChatStore((s) => s.setApprovalPanelOpen);
 
   // ═══ 加载中 ═══
+  if (!isLoggedIn) {
+    return <LoginPanel />;
+  }
+
   if (!isDbLoaded) {
     return (
       <ThemeProvider themeMode="dark">
@@ -325,6 +341,7 @@ export const App: React.FC = () => {
             messages.map((m) => {
               const isUser = m.role === 'user';
               const isAssistant = m.role === 'assistant';
+              const isSystem = m.role === 'system';
               const isStopped = isAssistant && m.content === '⏹ 已停止生成';
               const hasContent = isAssistant && m.content && !isStopped;
               const hasPluginOnly = isAssistant && !m.content && m.plugin;
@@ -338,6 +355,16 @@ export const App: React.FC = () => {
                   setTimeout(() => setCopiedMessages((prev) => ({ ...prev, [m.id]: false })), 2000);
                 } catch {}
               };
+
+              if (isSystem) {
+                return (
+                  <div key={m.id} className="flex justify-center w-full">
+                    <div className="max-w-[75%] bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2 rounded-xl text-sm text-center">
+                      {m.content}
+                    </div>
+                  </div>
+                );
+              }
 
               return (
                 <div key={m.id} className={`flex gap-4 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -374,6 +401,7 @@ export const App: React.FC = () => {
                         <ConfirmCard
                           card={m.pendingCard}
                           progressMessage={confirmProgress[m.pendingCard.op_id]}
+                          permissionMode={m.pendingCard.permissionMode || 'approval'}
                           onConfirm={wrappedHandleConfirm}
                           onReject={wrappedHandleReject}
                           resolved={m.pendingCard.resolved}

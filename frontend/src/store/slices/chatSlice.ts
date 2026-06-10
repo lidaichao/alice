@@ -136,6 +136,9 @@ export interface ConfirmCard {
   created_at?: string;
   status?: 'pending' | 'confirmed' | 'rejected';
   resolved?: boolean;
+  has_permission?: boolean;            // P0 RBAC: 后端确认卡返回
+  permissionMode?: 'direct' | 'approval'; // P0 RBAC: 前端补全
+  dangerous?: boolean;                  // P1: 危险不可逆操作
 }
 
 export interface ChatSlice {
@@ -148,6 +151,7 @@ export interface ChatSlice {
   pendingDraftCards: DraftCard[];
   pendingJiraSupplements: JiraSearchSupplementCard[];
   enginePreference: { engine?: string; mode?: string };
+  hasJiraWritePermission: boolean;     // P0 RBAC
 
   initDB: () => Promise<void>;
   setActiveSession: (id: string) => void;
@@ -155,6 +159,8 @@ export interface ChatSlice {
   stopGenerating: () => void;
   sendMessage: (content: string, imageBase64?: string) => Promise<void>;
   setEngine: (engine: string, mode?: string) => void;
+  setJiraWritePermission: (val: boolean) => void;  // P0 RBAC
+  fetchUserPermissions: () => Promise<void>;       // P0 RBAC
 
   renameSession: (id: string, newTitle: string) => Promise<void>;
   togglePinSession: (id: string) => Promise<void>;
@@ -174,6 +180,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
   pendingDraftCards: [],
   pendingJiraSupplements: [],
   enginePreference: {},
+  hasJiraWritePermission: false,
 
   initDB: async () => {
     try {
@@ -284,6 +291,25 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
     set({ enginePreference: { engine, mode } });
   },
 
+  setJiraWritePermission: (val: boolean) => {
+    set({ hasJiraWritePermission: val });
+  },
+
+  fetchUserPermissions: async () => {
+    try {
+      const rc = loadRuntimeConfig();
+      const qs = rc.user_id ? `?user_id=${encodeURIComponent(rc.user_id)}` : '';
+      const res = await fetch(`/v1/user/permissions${qs}`);
+      const data = await res.json();
+      if (data.ok && data.permissions) {
+        const hasWrite = data.permissions.includes('jira.write_create');
+        set({ hasJiraWritePermission: hasWrite });
+      }
+    } catch {
+      set({ hasJiraWritePermission: false });
+    }
+  },
+
   sendMessage: async (content: string, imageBase64?: string) => {
     const { activeSessionId, abortController: prevAbort } = get();
     if (!activeSessionId) return;
@@ -362,6 +388,8 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
     set({ abortController: ctrl });
 
     try {
+      // P0 RBAC: fetch user permissions before sending
+      get().fetchUserPermissions().catch(() => {});
       const res = await fetch('/v1/chat/completions', {
         method: 'POST',
         headers: buildAliceUserHeaders({ 'Content-Type': 'application/json' }),
@@ -428,6 +456,24 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
                   continue;
                 }
 
+                // ── 系统事件（权限变更等）──
+                if (data._event === 'system' && data.type === 'permission_changed') {
+                  set((state) => ({
+                    sessions: state.sessions.map(s => {
+                      if (s.id !== activeSessionId) return s;
+                      const sysMsgId = 'sys-' + Date.now();
+                      const sysMsg: Message = {
+                        id: sysMsgId,
+                        role: 'system',
+                        content: '🔄 你的权限已更新，刷新后生效',
+                        timestamp: Date.now(),
+                      };
+                      return { ...s, messages: [...s.messages, sysMsg] };
+                    }),
+                  }));
+                  continue;
+                }
+
                 // ── 确认卡 SSE 事件（confirm_card 或 legacy confirm_required）──
                 const isConfirmCard = data._event === 'confirm_card'
                   || data.custom_type === 'confirm_required';
@@ -473,6 +519,16 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
                     drafts: rawOp.drafts,
                     warnings: rawOp.warnings,
                   });
+                  // P0 RBAC: 后端确认卡已附 has_permission 标记
+                  if (data.has_permission !== undefined) {
+                    card.has_permission = data.has_permission;
+                  }
+                  card.permissionMode = (data.has_permission || get().hasJiraWritePermission)
+                    ? 'direct' : 'approval';
+                  // P1: 危险操作标记
+                  if (data.dangerous) {
+                    card.dangerous = true;
+                  }
                   set((state) => ({
                     pendingConfirmations: [...state.pendingConfirmations, card],
                     sessions: state.sessions.map(s => {

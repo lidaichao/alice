@@ -10,7 +10,7 @@ import {
 const STORAGE_MENU = 'alice_admin_active_menu';
 const STORAGE_CONN = 'alice_admin_connection_ok';
 const STORAGE_HINTS = 'alice_admin_test_hints';
-const MENU_IDS = ['settings', 'jiraQuery', 'kb'];
+const MENU_IDS = ['settings', 'jiraQuery', 'kb', 'roles'];
 
 function readStoredMenu() {
   try {
@@ -27,6 +27,7 @@ function readStoredMenu() {
 export function useAdminStore() {
   const activeMenu = ref(readStoredMenu());
   const menus = [
+    { id: 'roles', name: '成员与权限', icon: 'User' },
     { id: 'settings', name: '系统集成配置', icon: 'Setting' },
     { id: 'jiraQuery', name: 'Alice-Jira查询配置', icon: 'Search' },
     { id: 'kb', name: '云端知识库源', icon: 'Collection' },
@@ -36,6 +37,8 @@ export function useAdminStore() {
   );
 
   const adminToken = ref(getAdminToken());
+  const isAuthenticated = () => !!adminToken.value;
+  const onAuthSuccess = () => { loadConfig(); fetchHealth(); };
   const healthSummary = ref(null);
   const healthLoading = ref(false);
 
@@ -115,6 +118,7 @@ export function useAdminStore() {
     jira: { show: false, msg: '', isError: false },
     jiraFields: { show: false, msg: '', isError: false },
     jiraProjects: { show: false, msg: '', isError: false },
+    issuetypes: { show: false, msg: '', isError: false },
     svn: { show: false, msg: '', isError: false },
     notion: { show: false, msg: '', isError: false },
     gdrive: { show: false, msg: '', isError: false },
@@ -170,8 +174,15 @@ export function useAdminStore() {
     extraPersonField: '',
     glossaryRows: [],
     showAdvancedJson: false,
+    issuetypeRowsByProject: {},
+    issuetypeDraftsByProject: {},
   });
   const jiraFieldOptions = ref([]);
+  const issuetypesLoading = ref(false);
+  const issuetypeActiveProject = ref('');
+  const issuetypeSaveMessage = ref('');
+  const issuetypeDraftText = reactive({});
+  const issuetypeItems = reactive({});  // { [projectKey]: [{name, editing, draftName}] }
   const jiraFieldFilter = ref('');
   const jiraProjectOptions = ref([]);
   const jiraProjectsLoading = ref(false);
@@ -721,6 +732,145 @@ export function useAdminStore() {
     }
   };
 
+  const fetchIssuetypes = async () => {
+    const projectKey = issuetypeActiveProject.value;
+    if (!projectKey) return;
+    if (!state.jira.JIRA_BASE_URL) return setActionHint('issuetypes', '请先填写 Jira 地址', true);
+    if (isMaskedPat(state.jira.JIRA_PAT) && !jiraPatOnServer.value) {
+      return setActionHint('issuetypes', '请先保存 PAT 后再加载', true);
+    }
+    issuetypesLoading.value = true;
+    try {
+      const res = await adminFetch(
+        `/v1/admin/jira/issuetypes?project_key=${encodeURIComponent(projectKey)}&${buildJiraApiQuery().toString()}`
+      );
+      const data = await parseAdminJson(res);
+      if (!res.ok || !data.success) throw new Error(data.error || '加载失败');
+      const raw = data.issuetypes || [];
+      if (!raw.length) {
+        setActionHint('issuetypes', '此项目没有可用的问题类型，请手动填写', true);
+      } else {
+        // 保留完整 Jira 对象（iconUrl / name / description / subtask）
+        issuetypeItems[projectKey] = raw.map((t) => ({
+          iconUrl: t.iconUrl || '',
+          name: t.name || '',
+          type: t.subtask ? '子任务' : '标准',
+          description: t.description || '',
+          editing: false,
+          draftName: '',
+        }));
+        issuetypeDraftText[projectKey] = raw.map((t) => t.name || '').filter(Boolean).join('\n');
+        setActionHint('issuetypes', `已加载 ${raw.length} 个类型`);
+      }
+    } catch (e) {
+      setActionHint('issuetypes', e.message || '加载失败', true);
+    } finally {
+      issuetypesLoading.value = false;
+    }
+  };
+
+  const syncIssuetypeItemsFromDraft = (projectKey) => {
+    const text = issuetypeDraftText[projectKey] || '';
+    const names = text.split('\n').map((l) => l.trim()).filter(Boolean);
+    // 保留已有完整对象的额外字段；纯文本条目补默认值
+    const existingMap = {};
+    (issuetypeItems[projectKey] || []).forEach((item) => {
+      if (item.name) existingMap[item.name] = item;
+    });
+    issuetypeItems[projectKey] = names.map((name) => {
+      const existing = existingMap[name];
+      if (existing && existing.iconUrl) return { ...existing, editing: false, draftName: '' };
+      return { iconUrl: '', name, type: '标准', description: '', editing: false, draftName: '' };
+    });
+  };
+
+  const addIssuetypeItem = (projectKey) => {
+    if (!projectKey) return;
+    if (!issuetypeItems[projectKey]) issuetypeItems[projectKey] = [];
+    issuetypeItems[projectKey].push({ iconUrl: '', name: '', type: '标准', description: '', editing: true, draftName: '' });
+  };
+
+  const startEditIssuetypeItem = (projectKey, idx) => {
+    const row = issuetypeItems[projectKey]?.[idx];
+    if (!row) return;
+    row.draftName = row.name;
+    row.editing = true;
+  };
+
+  const saveIssuetypeItem = (projectKey, idx) => {
+    const row = issuetypeItems[projectKey]?.[idx];
+    if (!row) return;
+    const newName = (row.draftName || '').trim();
+    if (newName) row.name = newName;
+    row.editing = false;
+    issuetypeDraftText[projectKey] = (issuetypeItems[projectKey] || [])
+      .filter((r) => r.name)
+      .map((r) => r.name)
+      .join('\n');
+    _doSaveIssuetypes();
+  };
+
+  const saveIssuetypes = async () => { await _doSaveIssuetypes(); };
+
+  const _doSaveIssuetypes = async () => {
+    const map = {};
+    for (const pk of jiraPmForm.selectedProjectKeys) {
+      const items = issuetypeItems[pk] || [];
+      const names = items.filter((r) => r.name).map((r) => r.name);
+      if (names.length) map[pk] = names;
+    }
+    jiraPmForm.issuetypeRowsByProject = map;
+    try {
+      await fetch('/v1/admin/config', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${adminToken.value}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          JIRA_ISSUETYPE_MAP: map,
+          JIRA_PROJECTS: (jiraPmForm.selectedProjectKeys || []).join(', '),
+          JIRA_DEADLINE_FIELD_BY_PROJECT: state.jira.JIRA_DEADLINE_FIELD_BY_PROJECT,
+          JIRA_FIELD_MAPPINGS: state.jira.JIRA_FIELD_MAPPINGS,
+          JIRA_PROJECT_CONFIG: state.jira.JIRA_PROJECT_CONFIG,
+          JIRA_FIELD_GLOSSARY: state.jira.JIRA_FIELD_GLOSSARY,
+        }),
+      });
+      issuetypeSaveMessage.value = '√ 保存成功';
+      setTimeout(() => { issuetypeSaveMessage.value = ''; }, 3000);
+    } catch {
+      issuetypeSaveMessage.value = '保存失败';
+      setTimeout(() => { issuetypeSaveMessage.value = ''; }, 3000);
+    }
+  };
+
+  const cancelEditIssuetypeItem = (projectKey, idx) => {
+    const row = issuetypeItems[projectKey]?.[idx];
+    if (!row) return;
+    row.editing = false;
+    row.draftName = '';
+    if (!row.name) {
+      issuetypeItems[projectKey].splice(idx, 1);
+    }
+  };
+
+  const removeIssuetypeItem = (projectKey, idx) => {
+    if (!issuetypeItems[projectKey]) return;
+    issuetypeItems[projectKey].splice(idx, 1);
+    issuetypeDraftText[projectKey] = (issuetypeItems[projectKey] || [])
+      .filter((r) => r.name)
+      .map((r) => r.name)
+      .join('\n');
+    _doSaveIssuetypes();
+  };
+
+  const onIssuetypeProjectChange = (projectKey) => {
+    if (!projectKey) return;
+    if (!issuetypeItems[projectKey] || !issuetypeItems[projectKey].length) {
+      syncIssuetypeItemsFromDraft(projectKey);
+    }
+  };
+
   const suggestDeadline = async (row) => {
     const pk = (row.projectKey || 'CT').trim().toUpperCase();
     if (!pk) return showToast('请先填写项目代号', 'error');
@@ -996,6 +1146,22 @@ export function useAdminStore() {
             ...data,
             JIRA_PROJECTS: data.JIRA_PROJECTS || '',
           });
+          // P1: 加载 issuetype 配置
+          if (data.JIRA_ISSUETYPE_MAP && typeof data.JIRA_ISSUETYPE_MAP === 'object') {
+            jiraPmForm.issuetypeRowsByProject = { ...data.JIRA_ISSUETYPE_MAP };
+            // 初始化表格渲染数据
+            for (const [pk, names] of Object.entries(data.JIRA_ISSUETYPE_MAP)) {
+              issuetypeItems[pk] = (names || []).map((n) => ({
+                iconUrl: '', name: typeof n === 'string' ? n : n.name || '', type: '标准',
+                description: '', editing: false, draftName: '',
+              }));
+            }
+            // 自动选中第一个项目
+            const firstKey = jiraPmForm.selectedProjectKeys[0];
+            if (firstKey && !issuetypeActiveProject.value) {
+              issuetypeActiveProject.value = firstKey;
+            }
+          }
           if (jiraCanUseFields.value) fetchJiraProjects().catch(() => {});
           state.svn = {
             SVN_URL: data.SVN_URL || '',
@@ -1299,9 +1465,54 @@ export function useAdminStore() {
 
   onMounted(() => {
     persistActiveMenu();
-    loadConfig();
-    fetchHealth();
+    if (isAuthenticated()) {
+      loadConfig();
+      fetchHealth();
+    }
   });
+
+  // ── 账号管理（v2.0-wave2）──
+  const accounts = ref([]);
+  const accountsLoading = ref(false);
+
+  const fetchAccounts = async () => {
+    accountsLoading.value = true;
+    try {
+      const res = await adminFetch('/v1/admin/accounts');
+      const data = await parseAdminJson(res);
+      if (data.ok) accounts.value = data.accounts || [];
+    } catch { /* ignore */ }
+    accountsLoading.value = false;
+  };
+
+  const createAccount = async (payload) => {
+    const res = await adminFetch('/v1/admin/accounts', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await parseAdminJson(res);
+    if (!data.ok) throw new Error(data.error || '创建失败');
+    fetchAccounts();
+    return data.account;
+  };
+
+  const updateAccount = async (id, payload) => {
+    const res = await adminFetch(`/v1/admin/accounts/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await parseAdminJson(res);
+    if (!data.ok) throw new Error(data.error || '更新失败');
+    fetchAccounts();
+    return data.account;
+  };
+
+  const deleteAccount = async (id) => {
+    const res = await adminFetch(`/v1/admin/accounts/${id}`, { method: 'DELETE' });
+    const data = await parseAdminJson(res);
+    if (!data.ok) throw new Error(data.error || '删除失败');
+    fetchAccounts();
+  };
 
   return {
     activeMenu,
@@ -1366,6 +1577,18 @@ export function useAdminStore() {
     filteredJiraProjectOptions,
     projectKeysText,
     fetchJiraProjects,
+    issuetypesLoading,
+    issuetypeActiveProject,
+    issuetypeSaveMessage,
+    saveIssuetypes,
+    issuetypeItems,
+    fetchIssuetypes,
+    addIssuetypeItem,
+    startEditIssuetypeItem,
+    saveIssuetypeItem,
+    cancelEditIssuetypeItem,
+    removeIssuetypeItem,
+    onIssuetypeProjectChange,
     toggleProjectKey,
     fetchJiraFieldOptions,
     suggestDeadline,
@@ -1386,5 +1609,9 @@ export function useAdminStore() {
     syncPmFormFromJson,
     syncGlossaryFromJson,
     normalizeAliasTags,
+    // accounts
+    isAuthenticated, onAuthSuccess,
+    accounts, accountsLoading, fetchAccounts,
+    createAccount, updateAccount, deleteAccount,
   };
 }

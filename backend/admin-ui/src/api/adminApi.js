@@ -1,9 +1,10 @@
 export function getAdminToken() {
-  return localStorage.getItem('wb_admin_token') || 'admin-admin';
+  return sessionStorage.getItem('wb_admin_token') || '';
 }
 
 export function setAdminToken(token) {
-  localStorage.setItem('wb_admin_token', token);
+  sessionStorage.setItem('wb_admin_token', token);
+  localStorage.removeItem('wb_admin_token');
 }
 
 export function apiBase() {

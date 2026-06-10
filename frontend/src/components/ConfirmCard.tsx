@@ -7,6 +7,7 @@ import type { ConfirmCard as ConfirmCardType, RecoveryAction } from '@/store/sli
 interface Props {
   card: ConfirmCardType;
   progressMessage?: string;
+  permissionMode?: 'direct' | 'approval'; // P0 RBAC: direct=绿色直批, approval=橙色审批
   onConfirm: (
     opId: string,
     opts?: { recoveryAction?: string; supplement?: Record<string, string> },
@@ -23,7 +24,7 @@ function actionNeedsForm(action: RecoveryAction): boolean {
   );
 }
 
-export default function ConfirmCard({ card, progressMessage, onConfirm, onReject, resolved, resolvedText }: Props) {
+export default function ConfirmCard({ card, progressMessage, permissionMode = 'approval', onConfirm, onReject, resolved, resolvedText }: Props) {
   const [loading, setLoading] = useState<'confirm' | 'reject' | string | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
 
@@ -90,14 +91,28 @@ export default function ConfirmCard({ card, progressMessage, onConfirm, onReject
   );
 
   return (
-    <div className="mt-3 border border-orange-400/50 bg-orange-50/30 dark:bg-orange-900/40 rounded-lg p-4 animate-in fade-in">
+    <div className={`mt-3 border rounded-lg p-4 animate-in fade-in ${
+      permissionMode === 'direct'
+        ? 'border-green-400/50 bg-green-50/30 dark:bg-emerald-950/30'
+        : 'border-orange-400/50 bg-orange-50/30 dark:bg-orange-900/40'
+    }`}>
       <div className="flex items-start gap-3 mb-3">
-        <ShieldAlert className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
+        {permissionMode === 'direct' ? (
+          <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
+        ) : (
+          <ShieldAlert className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
+        )}
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold text-orange-700 dark:text-orange-300">
-            {isRecovery ? '⚠️ 需要恢复 — ' : '🛡️ Jira 操作确认 — '}
-            {typeLabel}
-          </div>
+          {permissionMode === 'direct' ? (
+            <div className="text-sm font-semibold text-green-700 dark:text-green-300">
+              ✅ 你的角色拥有此操作权限 — {typeLabel}
+            </div>
+          ) : (
+            <div className="text-sm font-semibold text-orange-700 dark:text-orange-300">
+              {isRecovery ? '⚠️ 需要恢复 — ' : '🛡️ Jira 操作确认 — '}
+              {typeLabel}
+            </div>
+          )}
           {isRecovery && card.recovery?.summary && (
             <div className="text-xs text-amber-800 dark:text-amber-200 mt-1">
               {card.recovery.summary}
@@ -130,6 +145,15 @@ export default function ConfirmCard({ card, progressMessage, onConfirm, onReject
           )}
         </div>
       </div>
+
+      {card.dangerous && (
+        <div className="mb-3 flex items-start gap-2 p-2.5 bg-red-50 border border-red-200 dark:bg-red-950/30 dark:border-red-800/50 rounded-lg">
+          <ShieldAlert className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+          <span className="text-xs text-red-700 dark:text-red-300 font-medium">
+            ⚠️ 此操作不可逆，请确认
+          </span>
+        </div>
+      )}
 
       {op.drafts && op.drafts.length > 0 && (
         <div className="mb-3">
@@ -182,16 +206,18 @@ export default function ConfirmCard({ card, progressMessage, onConfirm, onReject
       )}
 
       <div className="flex flex-wrap gap-2 justify-end">
-        <Button
-          variant="destructive"
-          size="sm"
-          onClick={handleReject}
-          disabled={loading !== null}
-          className="gap-1.5"
-        >
-          <XCircle size={14} />
-          {loading === 'reject' ? '拒绝中...' : '拒绝拦截'}
-        </Button>
+        {permissionMode === 'approval' && (
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={handleReject}
+            disabled={loading !== null}
+            className="gap-1.5"
+          >
+            <XCircle size={14} />
+            {loading === 'reject' ? '拒绝中...' : '拒绝拦截'}
+          </Button>
+        )}
         {isRecovery && recoveryActions.length > 0 ? (
           recoveryActions.map((action) => (
             <Button
@@ -212,10 +238,18 @@ export default function ConfirmCard({ card, progressMessage, onConfirm, onReject
             size="sm"
             onClick={() => runConfirm()}
             disabled={loading !== null}
-            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+            className={`gap-1.5 text-white ${
+              permissionMode === 'direct'
+                ? 'bg-emerald-600 hover:bg-emerald-700'
+                : 'bg-emerald-600 hover:bg-emerald-700'
+            }`}
           >
             <CheckCircle size={14} />
-            {loading === 'confirm' ? '放行中...' : '授权放行'}
+            {loading === 'confirm'
+              ? '放行中...'
+              : permissionMode === 'direct'
+                ? '✅ 确认创建'
+                : '授权放行'}
           </Button>
         ) : null}
       </div>

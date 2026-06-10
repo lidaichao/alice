@@ -45,6 +45,14 @@ backend/logs/
 backend/data/operations.json
 backend/data/shallow_memory.json
 backend/data/jira_draft_box.json
+backend/data/accounts.json
+backend/data/mailbox.db
+backend/data/mailbox.db-shm
+backend/data/mailbox.db-wal
+
+# v3.0 本地克隆的开源参考仓库（体积大，不纳入版本库）
+specs/langgraph/
+specs/dify/
 
 # Frontend specific
 frontend/node_modules/

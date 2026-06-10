@@ -51,6 +51,16 @@ COMMENT_KINDS = frozenset(["jira_add_comment", "jira_delete_comment"])
 ISSUE_WRITE_KINDS = frozenset([
     "jira_bulk_create", "jira_update_issue", "jira_transition_issue", "jira_delete_issue",
 ])
+DANGEROUS_KINDS = frozenset([
+    "jira_bulk_delete",      # 批量删除 Jira Issue
+    "kb_clear_index",        # 清空知识库索引
+    "jira_delete_issue",     # 单个删除也是不可逆
+])
+
+
+def is_dangerous_kind(kind: str) -> bool:
+    """检查操作类型是否为不可逆危险操作。"""
+    return kind in DANGEROUS_KINDS
 
 
 def audit_jira_operation(

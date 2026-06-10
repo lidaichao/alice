@@ -3252,7 +3252,16 @@ ADMIN_PASS = os.getenv("ADMIN_PASS", "admin")
 def _admin_auth_ok(token_or_user, password=None):
     if password is not None:
         return token_or_user == ADMIN_USER and password == ADMIN_PASS
-    return token_or_user == ADMIN_PASS or token_or_user == (ADMIN_USER + "-" + ADMIN_PASS)
+    # 旧格式：纯密码或 user-pass 组合
+    if token_or_user == ADMIN_PASS or token_or_user == (ADMIN_USER + "-" + ADMIN_PASS):
+        return True
+    # v2.0 wave1: 账号 token 验证
+    try:
+        from accounts import verify_token
+        return verify_token(token_or_user) is not None
+    except Exception:
+        return False
+    return False
 def save_global_config(data):
     with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -3601,17 +3610,14 @@ def get_admin_stats():
 @app.route('/admin/', methods=['GET'])
 @app.route('/admin.html', methods=['GET'])
 def render_admin_page():
-    """Element Plus 管理后台（Vite 构建产物优先）— /admin 或 /admin.html"""
-    from flask import send_file, send_from_directory
+    """Element Plus 管理后台（Vite 构建产物）— /admin 或 /admin.html"""
+    from flask import send_file
     import os as _os
     _backend = _os.path.dirname(_os.path.abspath(__file__))
     spa_index = _os.path.join(_backend, 'static', 'admin', 'index.html')
     if _os.path.exists(spa_index):
         return send_file(spa_index)
-    admin_path = _os.path.join(_backend, 'admin.html')
-    if _os.path.exists(admin_path):
-        return send_file(admin_path)
-    return "admin UI not found", 404
+    return "admin UI not found — run `cd backend/admin-ui && npm run build`", 404
 
 
 @app.route('/admin-static/<path:filename>')
@@ -3856,6 +3862,32 @@ def admin_jira_deadline_suggest():
     })
 
 
+@app.route('/v1/admin/jira/issuetypes', methods=['GET', 'OPTIONS'])
+@require_admin
+def admin_jira_issuetypes():
+    """返回指定项目的可用 Issue 类型列表（供 Admin 后台 E 段调用）。"""
+    if request.method == 'OPTIONS':
+        return Response(status=204)
+    project_key = (request.args.get("project_key") or request.args.get("project") or "").strip()
+    if not project_key:
+        return jsonify({"success": False, "error": "缺少 project_key 参数"}), 400
+    jira_url = request.args.get("url", "").strip()
+    pat = request.args.get("pat", "").strip()
+    base = (jira_url or GLOBAL_CONFIG.get("JIRA_BASE_URL", os.getenv("JIRA_BASE_URL", ""))).rstrip("/")
+    if not base:
+        return jsonify({"success": False, "error": "Jira 地址未配置"}), 400
+    pat = pat or load_global_config().get("JIRA_PAT", os.getenv("JIRA_PAT", ""))
+    email = load_global_config().get("JIRA_EMAIL", os.getenv("JIRA_EMAIL", "")) or "alice-bot"
+    try:
+        from jira_api import JiraClient
+        client = JiraClient(base, email, pat)
+        issuetypes = client.get_project_issuetypes(project_key, user_pat=pat)
+        return jsonify({"success": True, "issuetypes": issuetypes, "project": project_key})
+    except Exception as e:
+        logger.error(f"admin_jira_issuetypes failed for {project_key}: {e}")
+        return jsonify({"success": False, "error": str(e)[:200]}), 500
+
+
 @app.route('/v1/admin/test/fisheye', methods=['POST'])
 @require_admin
 def test_fisheye():
@@ -4078,7 +4110,7 @@ def test_connection():
         jira_pat = jira_pat or _cfg.get("jira_pat", "") or os.getenv("JIRA_PAT", "")
     
     if not jira_url or not jira_pat:
-        return jsonify({"ok": False, "error": "Jira 未配置 — 请前往 /admin.html 填写凭据"}), 400
+        return jsonify({"ok": False, "error": "Jira 未配置 — 请前往 /admin 填写凭据"}), 400
     
     try:
         import urllib.request as _ur, json as _j, base64 as _b64
@@ -4119,6 +4151,206 @@ def update_admin_password():
     except Exception as e:
         logger.warning(f"Failed to persist ADMIN_PASS: {e}")
     return jsonify({"ok": True, "message": "密码已更新，下次登录请使用新密码"})
+
+
+# ═══════════════════════════════════════════════════════════
+#  /v1/admin/roles — RBAC 角色管理 API（v1.10-rbac）
+#  /v1/admin/permissions — 权限矩阵 API
+#  /v1/user/permissions — 前端权限查询
+# ═══════════════════════════════════════════════════════════
+
+@app.route('/v1/admin/roles', methods=['GET', 'POST', 'OPTIONS'])
+@require_admin
+def admin_roles():
+    if request.method == 'OPTIONS':
+        return Response(status=204)
+    if request.method == 'GET':
+        from rbac import get_roles_with_member_count, get_permission_defs
+        roles = get_roles_with_member_count()
+        perms = get_permission_defs()
+        return jsonify({"ok": True, "roles": roles, "permission_defs": perms})
+    # POST: 创建/更新角色（整表保存）
+    data = request.json or {}
+    roles = data.get("roles")
+    if not isinstance(roles, list):
+        return jsonify({"ok": False, "error": "roles 必须为数组"}), 400
+    from rbac import save_roles
+    save_roles(roles)
+    return jsonify({"ok": True, "message": f"已保存 {len(roles)} 个角色"})
+
+
+@app.route('/v1/admin/roles/<role_id>', methods=['DELETE', 'OPTIONS'])
+@require_admin
+def admin_role_delete(role_id):
+    if request.method == 'OPTIONS':
+        return Response(status=204)
+    from rbac import load_roles, save_roles
+    roles = load_roles()
+    target = next((r for r in roles if r.get("id") == role_id), None)
+    if not target:
+        return jsonify({"ok": False, "error": f"角色 {role_id} 不存在"}), 404
+    members = target.get("members", [])
+    if members:
+        return jsonify({"ok": False, "error": f"角色仍有 {len(members)} 名成员，请先清空成员", "members": members}), 409
+    roles = [r for r in roles if r.get("id") != role_id]
+    save_roles(roles)
+    return jsonify({"ok": True, "message": f"角色 {role_id} 已删除"})
+
+
+@app.route('/v1/admin/roles/<role_id>/members', methods=['PUT', 'OPTIONS'])
+@require_admin
+def admin_role_members(role_id):
+    if request.method == 'OPTIONS':
+        return Response(status=204)
+    data = request.json or {}
+    members = data.get("members")
+    if not isinstance(members, list):
+        return jsonify({"ok": False, "error": "members 必须为数组"}), 400
+    from rbac import load_roles, save_roles
+    roles = load_roles()
+    target = next((r for r in roles if r.get("id") == role_id), None)
+    if not target:
+        return jsonify({"ok": False, "error": f"角色 {role_id} 不存在"}), 404
+    target["members"] = [str(m).strip() for m in members if str(m).strip()]
+    save_roles(roles)
+    return jsonify({"ok": True, "members": target["members"], "message": f"已更新 {len(target['members'])} 名成员"})
+
+
+@app.route('/v1/admin/permissions', methods=['GET', 'POST', 'OPTIONS'])
+@require_admin
+def admin_permissions():
+    if request.method == 'OPTIONS':
+        return Response(status=204)
+    if request.method == 'GET':
+        from rbac import get_roles_with_member_count, get_permission_defs
+        roles = get_roles_with_member_count()
+        perms = get_permission_defs()
+        return jsonify({"ok": True, "roles": roles, "permissions": perms})
+    # POST: 更新某个角色的某个权限项
+    data = request.json or {}
+    role_id = (data.get("role_id") or "").strip()
+    perm_key = (data.get("permission_key") or "").strip()
+    value = data.get("value", False)
+    if not role_id or not perm_key:
+        return jsonify({"ok": False, "error": "缺少 role_id 或 permission_key"}), 400
+    from rbac import set_role_permission
+    try:
+        updated = set_role_permission(role_id, perm_key, bool(value))
+        return jsonify({"ok": True, "role": updated, "message": f"{role_id}.{perm_key} = {bool(value)}"})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+
+
+@app.route('/v1/user/permissions', methods=['GET', 'OPTIONS'])
+def user_permissions():
+    """前端调用：当前用户的权限清单。"""
+    if request.method == 'OPTIONS':
+        return Response(status=204)
+    from user_identity import parse_user_id_from_request
+    body = request.get_json(silent=True) or {}
+    # GET 请求时 query string 也支持 user_id
+    qs_user = (request.args.get("user_id") or "").strip()
+    if qs_user:
+        body = {**body, "user_id": qs_user}
+    user_id = parse_user_id_from_request(request, body=body)
+    from rbac import get_user_permissions, get_user_role
+    role = get_user_role(user_id) if user_id else None
+    perms = get_user_permissions(user_id) if user_id else []
+    return jsonify({
+        "ok": True,
+        "user_id": user_id or "",
+        "role": role,
+        "permissions": perms,
+    })
+
+
+# ═══════════════════════════════════════════════════════════
+#  /v1/auth/login — 账号登录（v2.0-wave1）
+# ═══════════════════════════════════════════════════════════
+@app.route('/v1/auth/login', methods=['POST', 'OPTIONS'])
+def auth_login():
+    if request.method == 'OPTIONS':
+        return Response(status=204)
+    body = request.get_json(silent=True) or {}
+    username = (body.get("username") or "").strip()
+    password = (body.get("password") or "")
+    if not username or not password:
+        return jsonify({"ok": False, "error": "用户名和密码不能为空"}), 400
+    from accounts import login as account_login
+    result = account_login(username, password)
+    if not result:
+        return jsonify({"ok": False, "error": "用户名或密码错误"}), 401
+    return jsonify({"ok": True, **result})
+
+
+# ═══════════════════════════════════════════════════════════
+#  /v1/admin/accounts — 账号管理 CRUD（v2.0-wave1）
+# ═══════════════════════════════════════════════════════════
+@app.route('/v1/admin/accounts', methods=['GET', 'POST', 'OPTIONS'])
+@require_admin
+def admin_accounts():
+    if request.method == 'OPTIONS':
+        return Response(status=204)
+    from accounts import load_accounts, create_account
+    if request.method == 'GET':
+        accounts = load_accounts()
+        # 脱敏：移除 password_hash 和 salt
+        safe = []
+        for a in accounts:
+            d = dict(a)
+            d.pop("password_hash", None)
+            d.pop("salt", None)
+            safe.append(d)
+        return jsonify({"ok": True, "accounts": safe})
+    # POST: 创建账号
+    body = request.get_json(silent=True) or {}
+    username = (body.get("username") or "").strip()
+    display_name = (body.get("display_name") or "").strip()
+    password = (body.get("password") or "")
+    role_ids = body.get("role_ids", [])
+    if not username or not password:
+        return jsonify({"ok": False, "error": "用户名和密码不能为空"}), 400
+    try:
+        account = create_account(username, display_name, password, role_ids)
+        safe = dict(account)
+        safe.pop("password_hash", None)
+        safe.pop("salt", None)
+        return jsonify({"ok": True, "account": safe})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 409
+
+
+@app.route('/v1/admin/accounts/<account_id>', methods=['PUT', 'DELETE', 'OPTIONS'])
+@require_admin
+def admin_account_by_id(account_id):
+    if request.method == 'OPTIONS':
+        return Response(status=204)
+    from accounts import get_account_by_id, update_account, delete_account
+    if request.method == 'DELETE':
+        try:
+            account = delete_account(account_id)
+            return jsonify({"ok": True, "account": account})
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 404
+    # PUT: 编辑账号
+    body = request.get_json(silent=True) or {}
+    try:
+        fields = {}
+        if "display_name" in body:
+            fields["display_name"] = body["display_name"]
+        if "role_ids" in body:
+            fields["role_ids"] = body["role_ids"]
+        if "disabled" in body:
+            fields["disabled"] = body["disabled"]
+        if "password" in body and body["password"]:
+            fields["password"] = body["password"]
+        account = update_account(account_id, **fields)
+        safe = dict(account)
+        safe.pop("password_hash", None)
+        safe.pop("salt", None)
+        return jsonify({"ok": True, "account": safe})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
 
 
 # ═══════════════════════════════════════════════════════════

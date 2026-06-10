@@ -1,11 +1,11 @@
 # Alice 三期蓝图计划
 
-> **文档性质**：产品开发白皮书 · 开发校准唯一路径  
-> **版本**：v1.7 | **日期**：2026-06-09 | **状态**：已批准执行（Cursor SDK Lane 通用执行引擎已打通 + 客户端本地 Cursor SDK 执行）  
+> **文档性质**：产品开发白皮书 · 修订记录与里程碑日志（v3.0 架构方案以 `docs/v3.0/ALICE_V3_RESTRUCTURE_PLAN.md` 为准）  
+> **版本**：v2.0（v3.0-rules-align） | **日期**：2026-06-10 | **状态**：v3.0 重构已启动，规则与文档全量对齐  
 > **部署形态**：私有化 Hub（单机）+ 各用户 Alice 客户端 + Admin 统一配链  
 > **成本约束**：基础设施仅开源可自托管；LLM 按量 API；不采购商业中间件/SaaS  
 
-**相关文档**：[Master PRD](Alice_Master_PRD_v1.0.md) · [技术架构](Alice_Master_Architecture_v1.0.md) · [API 契约](Alice_API_Contract_v1.0.md) · [灰盒 SOP](Alice_Graybox_SOP_v1.0.md) · [Baize 对照](Baize_Architecture_v1.0.md)
+**相关文档**：[技术架构](Alice_Master_Architecture_v1.0.md) · [API 契约](Alice_API_Contract_v1.0.md) · [v3.0 重构方案](../v3.0/ALICE_V3_RESTRUCTURE_PLAN.md)
 
 ---
 
@@ -241,7 +241,7 @@ flowchart LR
 | E3.1 | 扩展 `eval/datasets/kb_matrix.yaml` | 用例 ≥ 20 条 | CI 可跑通 | [x] v1.1 共 20 条 + validate 脚本 |
 | E3.2 | 闲聊误触发 Jira 用例 | `scripts/smoke_chat_only.py` 入 CI | 「你好」无 plugin_state | [x] ci-gate 可选集成 |
 | E3.3 | coordinator 金标子集 | `eval/reports/` 基线报告 | 通过率基线存档 | [x] coordinator_m1 + baseline_M1 |
-| E3.4 | 发布 checklist | `docs/master/Alice_Graybox_SOP_v1.0.md` §发布 | 发版必须勾选 | [x] §八 + release_checklist_M1 |
+| E3.4 | 发布 checklist | `Alice_Graybox_SOP_v1.0.md` §发布 | 发版必须勾选 | [x] §八 + release_checklist_M1 |
 | E3.5 | PR 门禁 | GitHub Actions / 本地 `run_eval` | main 合并前失败则阻断 | [x] ci-gate.yml + scripts/ci_gate.py |
 
 ---
@@ -298,7 +298,7 @@ flowchart LR
 |----|------|--------|-----|------|
 | E4.1 | 客户端移除 Jira PAT 必填 | `runtimeConfig` | 仅 Hub URL | [x] |
 | E4.2 | Hub 代理全部 Jira 写读 | `jira_api` | 客户端无 Jira 直连 | [x] ALICE_HUB_ONLY_JIRA |
-| E4.3 | 迁移指南 | 文档 | 现有用户升级步骤 | [x] E4_hub_credentials_migration.md |
+| E4.3 | 迁移指南 | 文档 | 现有用户升级步骤 | [x] `E4_hub_credentials_migration.md`（已归档） |
 
 ---
 
@@ -480,14 +480,10 @@ flowchart LR
 
 | 文档 | 用途 |
 |------|------|
-| **本文档** | 开发路径与白皮书（唯一校准源） |
-| [Alice_Master_PRD_v1.0.md](Alice_Master_PRD_v1.0.md) | 功能需求与角色场景 |
+| **本文档** | 修订记录与里程碑日志（历史 WBS 参考） |
 | [Alice_Master_Architecture_v1.0.md](Alice_Master_Architecture_v1.0.md) | 技术栈与模块图 |
 | [Alice_API_Contract_v1.0.md](Alice_API_Contract_v1.0.md) | 接口与 SSE 事件 |
-| [Alice_Graybox_SOP_v1.0.md](Alice_Graybox_SOP_v1.0.md) | 人工验收步骤 |
-| [TECHNICAL.md](TECHNICAL.md) | VIP / ReAct 实现细节 |
-| [README.md](README.md) | 本目录文档索引 |
-| [AGENTS.md](../../AGENTS.md) | 仓库 Agent 入口 |
+| [v3.0 重构方案](../v3.0/ALICE_V3_RESTRUCTURE_PLAN.md) | Phase 0-5 WBS、约束规则、Dify/n8n 方案 |
 
 ---
 
@@ -865,6 +861,12 @@ flowchart LR
 | v1.9-P1 | 2026-06-09 | P1 交互心流打磨（卡罗尔方案）：输入区 LobeHub 风格重构（引擎浮动右侧+标签下置+停止发送并排）、审批中心侧拉面板（backdrop-blur 滑入+OperationsConsole embedded）、新建会话欢迎面板（快捷指令卡片）、会话列表搜索/置顶/双击重命名/软删除撤销 Toast、消息重新生成/编辑按钮、CommandPanel 置顶 |
 | v1.9-P2 | 2026-06-09 | P2 体验增值（卡罗尔方案）：Onboarding 3步引导、Toast 通知系统（内联无依赖实现+sonner 已加入 package.json）、Skeleton 骨架屏、反馈功能拆分(诊断工具 Activity 图标+轻量反馈对话框)、浅色模式补全(暖灰+暖紫)、6 个体验瑕疵修复（TeamMemory button disabled/Hedaer light/RightPanel shadow/ConfirmCard orange/Sidebar TestConnection font/App copy position） |
 | v1.9-hotfix | 2026-06-09 | 审批中心：清理 e2e 测试数据（operations.json 重置）、修复 /operations user_id 过滤（ai_bridge list_ops_console + jira_operation_manager list_operations 新增参数）、批量操作 toast 反馈（批量/单个 confirm/reject 失败提示） |
+| v1.9-hotfix2 | 2026-06-09 | draft_to_fields 动态 issuetype 解析——不再硬编码 "Task"，改为调 get_project_issuetypes 动态匹配（精确→模糊→ValueError 含可用类型），修复中文项目类型创建失败 400。含 3 条单测。 |
+| v1.10-rbac | 2026-06-09 | RBAC P0 角色权限管理系统交付：rbac.py + 7 个 API 端点 + Admin 角色管理/权限矩阵 + ConfirmCard 双模式（direct/approval）+ issuetype 配置补丁（Admin E 段 + jira_api.py /issuetype 端点兼容 Jira Server 9.x）。对齐 Carroll PRD v1.0。含 18 条 E2E。<br>├ Admin UI 双轨清理 ✅（删旧 admin.html，SPA 单轨化） |
+| v1.11-p1 | 2026-06-09 | RBAC P1 卡罗尔 PRD 全部交付物竣工：<br>├ ☑ B5 权限变更被动检测通知（rbac.py hash 跟踪 + SSE `_event: system` + 前端 Toast + 系统消息气泡）<br>├ ☑ UX 3.2 审批中心侧拉面板（App.tsx 右侧抽屉 50% 宽度 + ConfirmCard "📋 查看审批状态" 链接）<br>├ ☑ issuetype Admin SPA 适配（JiraQueryView.vue E 段 + useAdminStore 拉取/保存 + jira_api.py JIRA_ISSUETYPE_MAP 双格式兼容）<br>├ ☑ B6 危险操作二次确认（DANGEROUS_KINDS + confirm_card `dangerous` 标记 + ConfirmCard 红色不可逆警告） |
+| v2.0-wave1 | 2026-06-10 | 账号体系第一波——后端 account 层竣工：<br>├ ☑ accounts.py（Account CRUD + sha256 密码哈希 + base64 token 24h + 首次自动创建 admin/admin）<br>├ ☑ 5 个 API 端点（POST /v1/auth/login + GET/POST/PUT/DELETE /v1/admin/accounts）<br>├ ☑ rbac.py get_user_role 升级为优先查 accounts role_ids<br>├ ☑ _admin_auth_ok 扩展支持 account token 鉴权<br>├ ☑ test_accounts.py 7 条单测全绿 |
+| v2.0-wave2+3 | 2026-06-10 | 账号体系第二波+第三波合并竣工——卡罗尔 v2.0 全部交付物：<br>├ ☑ AccountsView.vue（账号管理 Tab：表格+创建/编辑/禁用/删除弹窗+搜索+状态 Pill）<br>├ ☑ LoginView.vue（Admin 登录页：居中卡片+品牌+A 图标+密码显隐+错误态）<br>├ ☑ App.vue 登录拦截（sessionStorage token → LoginView/主内容切换）<br>├ ☑ 全站设计重构：侧边栏 #f4f5f7 浅灰蓝 + #0c66e4 指示条动画 + 按钮 hover 上浮 1px + 输入框 focus 光环<br>├ ☑ design-tokens.css（卡罗尔 §3.2 完整 CSS 变量）<br>├ ☑ 角色卡片 3px 彩色左边框（admin/project_manager/developer/guest）+ "管理账号"改名<br>├ ☑ 权限矩阵勾选弹跳动画 + admin 🔒 锁图标<br>├ ☑ 弹窗 scale(0.95→1) 动画 + Toast 右侧滑入 + 表格行 hover 过渡<br>├ ☑ userSlice.ts（Zustand 用户状态：login/logout + sessionStorage token 持久化）<br>├ ☑ LoginPanel.tsx（客户端登录框：居中卡片+A 品牌+密码显隐+旋转加载态+错误提示）<br>├ ☑ App.tsx 客户端登录拦截（isLoggedIn → LoginPanel/主布局切换）<br>├ ☑ adminApi.js → sessionStorage 读取 token<br>├ ☑ 双端 npm run build 通过 · test_accounts.py 7/7 全绿 · E2E_RBAC_ROLES_OK 18/18 全绿 |
+| v3.0-rules-align | 2026-06-10 | v3.0 规则对齐——所有 `.cursor/rules/*.mdc` 修正为引用 v3.0 方案：<br>├ ☑ alice-roadmap-calibration.mdc：L12 双文档引用（三期蓝图 + v3.0 方案）+ L28 删除废弃 PRD 引用 + L19 标注 v3.0 方案为准<br>├ ☑ alice-autonomous-roadmap.mdc：文件头加 v1.0 历史内容标记 + 引导到 v3.0 方案<br>├ ☑ squirtle-sop.mdc：测试关联表追加 agent_graph.py / jira_bridge.py 行<br>├ ☑ squirtle-persona.mdc：确认无需修改（技术栈/角色分工在 v3.0 不变）<br>├ ☑ 文档清理：归档 README · 14 个历史报告移入 archive/ · 10 个 DEPRECATED 标记 · AGENTS.md 删除 · docs/v3.0/ 新建 |
 | v1.7-patch8 | 2026-06-09 | 修复 EngineSelector onMount 未同步 Zustand enginePreference 导致界面选 agent 但后端收不到 engine 参数 |
 | v1.7-patch7 | 2026-06-09 | 修复 Cursor SDK 未传 api_key 导致 Jira 任务创建失败——chatSlice.ts 从 localStorage 读取 cursor_api_key 注入 config |
 | v1.8-plan-note | 2026-06-09 | ⚠️ plan/agent/ask 模式同质化标记：P2-2 交付的三种模式当前在 SDK 层完全相同（cursor_agent_lane.py L474），仅启动消息文字不同（L541）。Phase B2 将实现差异化——plan（执行计划+执行按钮→管控台审批）、agent（直接执行+逐条确认卡）、ask（只读无写工具）。详见 RABBIT_ROADMAP.md §5.2。 |

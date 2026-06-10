@@ -1,11 +1,11 @@
 # Alice AI Bridge — API 契约文档 (v1.0)
 
-> 版本：**v1.0（已冻结）** | 日期：2026-06-08 | 作者：可达鸭 (Psyduck)
+> 版本：**v1.0（已冻结）** | 日期：2026-06-10 | 维护：杰尼龟
 >
 > 本文档通过逆向读取 `backend/ai_bridge.py` 中的 Flask 路由装饰器生成。
-> ⚠️ SSE 接口标记为 `stream: text/event-stream`。
+> ⚠️ SSE 接口标记为 `stream: text/event-stream`。v3.0 新增端点（Dify 代理 / n8n 代理）将在 Phase 1-3 追加。
 
-**相关文档**：[三期蓝图计划（开发校准）](alice三期蓝图计划.md) · [Master 架构](Alice_Master_Architecture_v1.0.md) · [前端组件树](Alice_Frontend_Component_Tree_v1.0.md) · [灰盒 SOP](Alice_Graybox_SOP_v1.0.md)
+**相关文档**：[三期蓝图计划](alice三期蓝图计划.md) · [技术架构](Alice_Master_Architecture_v1.0.md) · [v3.0 重构方案](../v3.0/ALICE_V3_RESTRUCTURE_PLAN.md)
 
 > `intent_disambiguation` 已合入（蓝图 E5.2）。
 
@@ -630,6 +630,16 @@ Jira 操作:
   POST /operations/<id>/reject    拒绝操作（未授权 403）
   GET  /operations/pending        待确认列表（?conversation_id=）
   GET  /operations                管控台列表（?status= 逗号分隔）
+
+角色权限 (RBAC v1.10):
+  GET    /v1/admin/roles                 角色列表（含 member_count + permission_defs）
+  POST   /v1/admin/roles                 创建/更新角色（整表 { roles: [...] }）
+  DELETE /v1/admin/roles/<id>            删除角色（有成员时 409 + 成员列表）
+  PUT    /v1/admin/roles/<id>/members    更新角色成员 { members: [...] }
+  GET    /v1/admin/permissions           权限矩阵（roles×permission_defs）
+  POST   /v1/admin/permissions           更新权限项 { role_id, permission_key, value }
+  GET    /v1/user/permissions            当前用户权限 { user_id, role, permissions[] }
+                                         支持 ?user_id=XXX 查询指定用户
 
 MCP（M1 readonly + M2.7 mailbox worker）:
   GET  /mcp/v1/tools              工具清单（readonly + worker）

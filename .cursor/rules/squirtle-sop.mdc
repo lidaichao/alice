@@ -1,5 +1,5 @@
 ---
-description: 杰尼龟标准工作流 SOP（测试、Git、记忆归档）
+description: 杰尼龟标准工作流 SOP（测试、Git、记忆归档、跨仓库同步协议 R11）
 alwaysApply: true
 ---
 
@@ -12,9 +12,36 @@ alwaysApply: true
 | `frontend/src/` | `npm run dev` 编译通过 |
 | `backend/ai_bridge.py` / `intent_router.py` | `py test/e2e_v2.py` |
 | `jira_mcp_server.py` / `jira_api.py` | `py 归档/research/Claw/test_all_mcp_tools.py` |
+| `agent_graph.py` / v3.0 新增 | `pytest backend/tests/test_agent_graph.py` |
+| `jira_bridge.py` / v3.0 新增 | `pytest backend/tests/test_jira_bridge.py` |
 | SVN diff 相关 | `py 归档/research/Claw/test_jira_diff.py` |
 
 Windows 终端：`$env:PYTHONIOENCODING='utf-8'` 后再跑 Python 脚本。
+
+## 信息同步协议（跨仓库协作规则 · 兔子 R11）
+
+### 单一真源原则
+
+所有方案文档以兔子（`H:\workbuddy\coordinator-rabbit`）的版本为唯一权威。**禁止自行复制方案文档到 alice 仓库。** 完整注册表见 `coordinator-rabbit/SOURCE_OF_TRUTH.md`。
+
+### 你的权限范围
+
+| 你可以改 | 你只能读 |
+|---------|---------|
+| `alice/backend/` 所有 `.py` | `coordinator-rabbit/docs/ALICE_V3_RESTRUCTURE_PLAN.md` |
+| `alice/admin-ui/` 所有 `.vue/.ts` | `alice/specs/*.md`（兔子写，你对照） |
+| `alice/.cursor/rules/` 你的规则文件 | `coordinator-rabbit/.cursor/rules/rabbit-*.mdc` |
+| `alice/docs/v3.0/INDEX.md`（可建议，最终由兔子改） | `coordinator-rabbit/SOURCE_OF_TRUTH.md` |
+
+### 会话开工三检（每次新对话必须执行，优先级最高）
+
+1. 读 `alice/docs/v3.0/INDEX.md` → 确认方案文档权威位置
+2. 读 `coordinator-rabbit/docs/ALICE_V3_RESTRUCTURE_PLAN.md` → 确认当前版本号、WBS 阶段、自洽性清单
+3. 读 `coordinator-rabbit/SOURCE_OF_TRUTH.md` → 对照注册表检查自己仓库的文件：缺了去问、多了过期就去删
+
+### 收到兔子变更通知后的动作
+
+收到协调者转发的「🔔 兔子变更通知」后，立刻读取变更涉及的文档，确认自己的开发方向和约束是否仍然对齐。
 
 ## 完成后：Git（自动，无需用户再指示）
 

@@ -3,6 +3,7 @@ import { createUISlice, UISlice } from './slices/uiSlice';
 import { createChatSlice, ChatSlice } from './slices/chatSlice';
 import { createAgentSlice, AgentSlice } from './slices/agentSlice';
 import { createMemorySlice, MemorySlice } from './slices/memorySlice';
+import { createUserSlice, UserSlice } from './slices/userSlice';
 
 // ── 类型导出（保持向后兼容） ────────────────────────
 export interface Agent {
@@ -65,11 +66,12 @@ export interface Session {
 }
 
 // ── 组合 Store ────────────────────────
-type FullStore = UISlice & ChatSlice & AgentSlice & MemorySlice;
+type FullStore = UISlice & ChatSlice & AgentSlice & MemorySlice & UserSlice;
 
 export const useChatStore = create<FullStore>()((...a) => ({
   ...createUISlice(...a),
   ...createChatSlice(...a),
   ...createAgentSlice(...a),
   ...createMemorySlice(...a),
+  ...createUserSlice(...a),
 }));

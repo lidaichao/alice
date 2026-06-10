@@ -1,10 +1,16 @@
-# Alice AI Bridge — 技术架构文档 (V2.2)
+# Alice AI Bridge — 技术架构文档
 
-> 版本：v2.4 | 日期：2026-06-08 | 分支：master
+> 版本：v2.4 | 日期：2026-06-10 | 维护：杰尼龟
+>
+> ⚠️ **本文档描述 v2.x 当前运行架构。v3.0 重构后以下模块将被替换：**
+> - **Agent Loop**（react_runner + chat_orchestrator）→ **LangGraph**（StateGraph + tool loop，~300 行 Python，杰尼龟 100% 可控）
+> - **FAISS RAG**（rag_engine + knowledge_retriever）→ **Dify RAG**（仅用于知识库检索，有完整 REST API）
+> - **Jira API / SVN 集成**（jira_api + operation_manager）→ **n8n**（300+ 现成节点）
+> - Alice Hub 瘦身至 ~800 行（鉴权 + LangGraph Agent Loop + Dify RAG 调用器 + n8n Webhook 调用器 + HITL 桥接器）
+>
+> v3.0 目标架构 + 自洽性清单 + 卡罗尔审阅记录 → [ALICE_V3_RESTRUCTURE_PLAN.md](../v3.0/ALICE_V3_RESTRUCTURE_PLAN.md)
 
-**相关文档**：[三期蓝图计划（开发校准）](alice三期蓝图计划.md) · [Master PRD](Alice_Master_PRD_v1.0.md) · [文档索引](README.md) · [技术说明 TECHNICAL](TECHNICAL.md) · [API 契约](Alice_API_Contract_v1.0.md) · [MCP 接入](M1_MCP_Cursor_setup.md) · [灰盒 SOP](Alice_Graybox_SOP_v1.0.md) · [上游参考：白泽 Baize 架构](Baize_Architecture_v1.0.md)
-
-> **排期与模块拆分顺序**以蓝图为准（近期 E1 绞杀者：`chat_orchestrator` / `plugin_gateway`）。
+**相关文档**：[三期蓝图计划](alice三期蓝图计划.md) · [API 契约](Alice_API_Contract_v1.0.md) · [v3.0 重构方案](../v3.0/ALICE_V3_RESTRUCTURE_PLAN.md)
 
 ---
 
@@ -61,7 +67,7 @@
 | LangGraph Agent | `backend/agent/` | V2.0 Planner/Executor/Synthesizer |
 | RAG 引擎 | `backend/rag_engine.py` | FAISS 向量索引 + search_doc_chunks |
 | 意图路由 | `backend/intent_router.py` | 作业通道分诊；KB 列举走通用 L1（C9） |
-| 聊天编排 | `backend/chat_orchestrator.py` | VIP / ReAct 统一入口（E1） |
+| 聊天编排 | `backend/chat_orchestrator.py` | VIP / ReAct 统一入口 |
 | GDrive 知识库 | `backend/gdrive_knowledge.py` | catalog → read；表头槽位筛选（L2） |
 | MCP 注册 | `backend/mcp_registry.py` | Hub MCP 工具暴露（M1） |
 | 知识检索 | `backend/knowledge_retriever.py` | SVN/Notion/动态关键词 |
@@ -110,7 +116,3 @@ F5 刷新
 | 行级 DSML 过滤 | 修复跨行 .*? 吞噬全文 bug |
 
 ---
-
-## 上游参考：白泽（Baize）
-
-Alice 的 Jira 确定性查询、确认卡、工程意图拦截等能力，语义上移植自 **白泽 Baize**（Node.js + Claude Code 本地 Hub）。对照与模块映射见 [Baize_Architecture_v1.0.md](Baize_Architecture_v1.0.md) §11；Jira 准确性 A/B 见 [eval/reports/jira_baize_ab_latest.md](../../eval/reports/jira_baize_ab_latest.md)。

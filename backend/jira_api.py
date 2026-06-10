@@ -199,24 +199,60 @@ class JiraClient:
             url = endpoint
         return self._request("PUT", url, json_data=json_data, timeout=timeout, user_pat=user_pat)
 
-    @staticmethod
-    def draft_to_fields(draft: dict, default_issue_type: str = "Task", skip_labels: bool = False) -> dict:
-        """将确认卡草稿转为 Jira REST fields（对齐 Baize draftToJiraFields）"""
+    def draft_to_fields(self, draft: dict, default_issue_type: str = "Task",
+                        skip_labels: bool = False, user_pat: str = None) -> dict:
+        """将确认卡草稿转为 Jira REST fields（对齐 Baize draftToJiraFields）
+
+        issuetype 解析策略：
+          1. draft 有 issueTypeId → 直接用 {"id": ...}
+          2. 否则取 issueType / default_issue_type → 调 get_project_issuetypes 动态匹配
+             - 精确匹配（agent传入值 == 类型名）
+             - 模糊匹配（agent传入值 in 类型名 或 反向）
+             - 都不匹配 → ValueError 含全部可用类型名列表
+        """
         project_key = (draft.get("projectKey") or "").strip()
         if not project_key:
             raise ValueError("Jira 项目 Key 不能为空。")
         summary = (draft.get("summary") or "").strip()
         if not summary:
             raise ValueError("Issue 标题不能为空。")
+
+        # --- issuetype 动态解析 ---
+        if draft.get("issueTypeId"):
+            issuetype = {"id": draft["issueTypeId"]}
+        else:
+            agent_val = (draft.get("issueType") or default_issue_type).strip()
+            types = self.get_project_issuetypes(project_key, user_pat=user_pat)
+
+            def _fuzzy_match(needle: str, haystack: str) -> bool:
+                n, h = needle.lower(), haystack.lower()
+                return n == h or n in h or h in n
+
+            matched = None
+            for t in types:
+                if t.get("name") == agent_val:
+                    matched = t
+                    break
+            if not matched:
+                for t in types:
+                    if _fuzzy_match(agent_val, t.get("name", "")):
+                        matched = t
+                        break
+
+            if matched:
+                issuetype = {"id": matched["id"]}
+            else:
+                available = [t.get("name", "") for t in types]
+                raise ValueError(
+                    f"issueType '{agent_val}' 不在项目 {project_key} 的可用类型中。"
+                    f"可用：{', '.join(available) if available else '(无)'}"
+                )
+
         fields = {
             "project": {"key": project_key},
             "summary": summary,
             "description": draft.get("description") or "",
-            "issuetype": (
-                {"id": draft["issueTypeId"]}
-                if draft.get("issueTypeId")
-                else {"name": draft.get("issueType") or default_issue_type}
-            ),
+            "issuetype": issuetype,
         }
         # 子任务：指定父 Issue Key
         parent_key = draft.get("parentKey") or draft.get("parent_key") or ""
@@ -246,7 +282,8 @@ class JiraClient:
 
     def create_issue_from_draft(self, draft: dict, user_pat: str = None,
                                 default_issue_type: str = "Task", skip_labels: bool = False) -> dict:
-        fields = self.draft_to_fields(draft, default_issue_type=default_issue_type, skip_labels=skip_labels)
+        fields = self.draft_to_fields(draft, default_issue_type=default_issue_type,
+                                      skip_labels=skip_labels, user_pat=user_pat)
         created = self.create_issue(fields, user_pat=user_pat)
         created["summary"] = draft.get("summary", "")
         return created
@@ -291,22 +328,58 @@ class JiraClient:
         return {"issue_key": issue_key, "transition": body["transition"]}
 
     def get_project_issuetypes(self, project_key: str, user_pat: str = None) -> list[dict]:
-        """查询项目可用 Issue 类型列表（含 subtask 标识）。"""
+        """查询项目可用 Issue 类型列表（含 subtask 标识）。
+
+        优先从 global_config 的 JIRA_PROJECT_CONFIG[project_key].project_issuetypes 读取，
+        若无配置则降级调用 Jira GET /rest/api/2/issuetype（兼容 Server 9.x，/issue/createmeta 已移除）。
+        project_key 仅用于日志/错误信息，/issuetype 返回全局类型不分项目。
+        """
         key = (project_key or "").strip()
         if not key:
             return []
-        r = self._request(
-            "GET",
-            f"/issue/createmeta?projectKeys={key}&expand=projects.issuetypes",
-            timeout=15,
-            user_pat=user_pat,
-        )
+        # 优先读 global_config（Admin 后台 E 段配置）
+        try:
+            import json as _json
+            cfg_path = os.path.join(os.path.dirname(__file__), "global_config.json")
+            if os.path.exists(cfg_path):
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    cfg = _json.load(f)
+                # 1) JIRA_PROJECT_CONFIG[project_key].project_issuetypes（旧格式）
+                pc = cfg.get("JIRA_PROJECT_CONFIG", {})
+                if isinstance(pc, dict) and key in pc:
+                    types = pc[key].get("project_issuetypes")
+                    if types and isinstance(types, list):
+                        return types
+                # 2) 顶层 JIRA_ISSUETYPE_MAP（Admin SPA P1 格式）
+                issuetype_map = cfg.get("JIRA_ISSUETYPE_MAP", {})
+                if isinstance(issuetype_map, dict) and key in issuetype_map:
+                    types = issuetype_map[key]
+                    if types and isinstance(types, list):
+                        result = []
+                        for t in types:
+                            if isinstance(t, dict):
+                                result.append(t)
+                            else:
+                                result.append({"name": str(t), "id": str(t)})
+                        return result
+        except Exception:
+            pass
+        # 降级：调 Jira GET /issuetype（Server 9.x 兼容，/issue/createmeta 已移除）
+        r = self._request("GET", "/issuetype", timeout=15, user_pat=user_pat)
         if r.status_code != 200:
             return []
-        projects = (r.json() or {}).get("projects", [])
-        if not projects:
+        raw_types = (r.json() or []) if isinstance((r.json() or []), list) else []
+        if not raw_types:
             return []
-        return projects[0].get("issuetypes", [])
+        # 按 name 去重，保留第一个（处理 Jira Server 同名副类型如 id=10101/10102 都叫"客户端"）
+        seen = set()
+        deduped = []
+        for t in raw_types:
+            name = (t.get("name") or "").strip()
+            if name and name not in seen:
+                seen.add(name)
+                deduped.append(t)
+        return deduped
 
     def update_issue_fields(self, issue_key: str, fields: dict, user_pat: str = None) -> dict:
         r = self.jira_put(f"/issue/{issue_key}", json_data={"fields": fields or {}}, user_pat=user_pat)

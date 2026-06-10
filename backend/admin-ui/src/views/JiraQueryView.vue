@@ -29,7 +29,7 @@
       </div>
     </div>
 
-    <ConfigCard title="A. 参与查询的项目" :editing="s.editLock.jiraPmA">
+    <ConfigCard title="参与查询的项目" :editing="s.editLock.jiraPmA">
       <template #actions>
         <el-button v-if="!s.editLock.jiraPmA" class="card-btn" type="primary" @click="s.startEdit('jiraPmA')">
           编辑
@@ -86,7 +86,7 @@
       </template>
     </ConfigCard>
 
-    <ConfigCard title="B. 各项目截止时间字段" :editing="s.editLock.jiraPmB">
+    <ConfigCard title="各项目截止时间字段" :editing="s.editLock.jiraPmB">
       <template #actions>
         <el-button v-if="!s.editLock.jiraPmB" class="card-btn" type="primary" @click="s.startEdit('jiraPmB')">
           编辑
@@ -134,7 +134,7 @@
       </template>
     </ConfigCard>
 
-    <ConfigCard title="C. 按人名查任务" :editing="s.editLock.jiraPmC">
+    <ConfigCard title="按人名查任务" :editing="s.editLock.jiraPmC">
       <template #actions>
         <el-button v-if="!s.editLock.jiraPmC" class="card-btn" type="primary" @click="s.startEdit('jiraPmC')">
           编辑
@@ -169,7 +169,7 @@
       </template>
     </ConfigCard>
 
-    <ConfigCard title="D. 字段含义词典">
+    <ConfigCard title="字段含义词典">
       <template #actions>
         <div class="card-actions-inner">
           <div class="test-action-group">
@@ -187,6 +187,97 @@
       </template>
 
       <GlossaryTable />
+    </ConfigCard>
+
+    <ConfigCard title="问题类型配置">
+      <p class="section-hint">按项目配置可创建的问题类型，用于 agent 模糊匹配。支持从 Jira 自动加载或手动填写。</p>
+      <div class="section-toolbar mt-2">
+        <el-select v-model="s.issuetypeActiveProject" placeholder="选择项目" size="small" style="width: 160px" clearable @change="s.onIssuetypeProjectChange(s.issuetypeActiveProject)">
+          <el-option v-for="k in s.jiraPmForm.selectedProjectKeys" :key="k" :label="k" :value="k" />
+        </el-select>
+        <div class="test-action-group">
+          <TestActionHint action-key="issuetypes" />
+          <el-button size="small" :loading="s.issuetypesLoading" :disabled="!s.issuetypeActiveProject || !s.jiraCanUseFields" @click="s.fetchIssuetypes">
+            从 Jira 加载
+          </el-button>
+          <el-button size="small" type="primary" :disabled="!s.issuetypeActiveProject" @click="s.saveIssuetypes()">
+            保存
+          </el-button>
+          <span v-if="s.issuetypeSaveMessage" class="issuetype-save-msg" :class="{ 'issuetype-save-msg--ok': s.issuetypeSaveMessage.includes('成功') }">
+            {{ s.issuetypeSaveMessage }}
+          </span>
+        </div>
+      </div>
+
+      <div v-if="s.issuetypeActiveProject" class="issuetype-editor mt-3">
+        <div class="issuetype-project-name">
+          <span class="issuetype-project-label">{{ s.issuetypeActiveProject }}</span>
+        </div>
+
+        <el-table
+          :data="s.issuetypeItems[s.issuetypeActiveProject] || []"
+          size="small"
+          class="issuetype-table"
+          row-class-name="issuetype-table-row"
+        >
+          <el-table-column label="图标" width="56" align="center">
+            <template #default="{ row }">
+              <el-avatar v-if="row.iconUrl" :src="row.iconUrl" :size="24" shape="square" />
+              <span v-else class="issuetype-icon-plain">—</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="名称" min-width="140">
+            <template #default="{ row, $index }">
+              <template v-if="!row.editing">
+                <span class="issuetype-cell-name">{{ row.name }}</span>
+              </template>
+              <el-input
+                v-else
+                v-model="row.draftName"
+                size="small"
+                placeholder="输入名称"
+                @keyup.enter="s.saveIssuetypeItem(s.issuetypeActiveProject, $index)"
+              />
+            </template>
+          </el-table-column>
+
+          <el-table-column label="类型" width="80" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.type === '子任务' ? 'warning' : ''" effect="plain">
+                {{ row.type || '标准' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="描述" min-width="180">
+            <template #default="{ row }">
+              <span class="issuetype-cell-desc">{{ row.description || '—' }}</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="操作" width="150" align="center" fixed="right">
+            <template #default="{ row, $index }">
+              <template v-if="!row.editing">
+                <el-button link type="primary" size="small" @click="s.startEditIssuetypeItem(s.issuetypeActiveProject, $index)">编辑</el-button>
+                <el-button link type="danger" size="small" @click="s.removeIssuetypeItem(s.issuetypeActiveProject, $index)">删除</el-button>
+              </template>
+              <template v-else>
+                <el-button link type="success" size="small" @click="s.saveIssuetypeItem(s.issuetypeActiveProject, $index)">保存</el-button>
+                <el-button link type="info" size="small" @click="s.cancelEditIssuetypeItem(s.issuetypeActiveProject, $index)">取消</el-button>
+              </template>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div class="issuetype-add-row mt-2">
+          <el-button size="small" @click="s.addIssuetypeItem(s.issuetypeActiveProject)">+ 添加</el-button>
+        </div>
+
+        <p v-if="!(s.issuetypeItems[s.issuetypeActiveProject] || []).length" class="text-muted mt-3">
+          暂无条目，点击「从 Jira 加载」或下方「+ 添加」开始配置
+        </p>
+      </div>
     </ConfigCard>
 
     <el-collapse v-model="advancedOpen" class="advanced-collapse">
@@ -287,5 +378,87 @@ const advancedOpen = ref([]);
 .advanced-collapse {
   margin-top: -8px;
   margin-bottom: 16px;
+}
+.issuetype-group {
+  margin-bottom: 12px;
+}
+.issuetype-project-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--admin-text-primary);
+  margin-bottom: 6px;
+}
+.issuetype-project-name.with-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.issuetype-project-label {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--admin-text-primary);
+}
+.issuetype-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.issuetype-editor {
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  padding: 16px;
+  background: #f8fafc;
+}
+.issuetype-table {
+  margin-top: 4px;
+}
+.issuetype-table :deep(.el-table__header th) {
+  background: #f1f5f9;
+  font-weight: 600;
+  font-size: 12px;
+  color: #475569;
+  border-bottom: 1px solid #e2e8f0;
+}
+.issuetype-table :deep(.el-table__body td) {
+  border-bottom: 1px solid #f1f5f9;
+  padding: 8px 0;
+}
+.issuetype-table-row:hover > td {
+  background: #f8fafc !important;
+}
+.issuetype-cell-name {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--admin-text-primary);
+}
+.issuetype-cell-desc {
+  font-size: 12px;
+  color: #64748b;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.issuetype-icon-plain {
+  font-size: 12px;
+  color: #94a3b8;
+}
+.issuetype-textarea {
+  margin-top: 8px;
+}
+.issuetype-add-row {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+}
+.issuetype-save-msg {
+  font-size: 12px;
+  color: var(--el-color-danger, #f56c6c);
+  margin-left: 4px;
+  white-space: nowrap;
+}
+.issuetype-save-msg--ok {
+  color: var(--el-color-success, #67c23a);
 }
 </style>

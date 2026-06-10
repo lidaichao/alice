@@ -10,5 +10,14 @@ export function useAdminInject() {
       if (isRef(v)) return v.value;
       return v;
     },
+    set(target, prop, value) {
+      const v = target[prop];
+      if (isRef(v)) {
+        v.value = value;
+        return true;
+      }
+      target[prop] = value;
+      return true;
+    },
   });
 }
