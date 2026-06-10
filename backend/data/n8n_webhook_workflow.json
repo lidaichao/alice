@@ -1,0 +1,1 @@
+{"name":"Alice Hub Webhook","nodes":[{"parameters":{"httpMethod":"POST","path":"alice-hub-callback","options":{}},"id":"wh-001","name":"Webhook","type":"n8n-nodes-base.webhook","typeVersion":2,"position":[250,300]}],"connections":{},"settings":{"executionOrder":"v1"}}
