@@ -4316,6 +4316,36 @@ def serve_admin_vite_assets(filename):
     )
     return send_from_directory(asset_root, filename)
 
+
+# ═══════════════════════════════════════════════════════════════
+# v3.1-rc5：Chat 前端静态文件服务（Vite build → frontend/dist/）
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/chat/<path:filename>')
+def serve_chat_static(filename):
+    """Chat SPA 静态资源（前端 Vite build → frontend/dist/）"""
+    from flask import send_from_directory
+    import os as _os
+    chat_root = _os.path.join(
+        _os.path.dirname(_os.path.abspath(__file__)),
+        '..', 'frontend', 'dist',
+    )
+    return send_from_directory(chat_root, filename)
+
+
+@app.route('/chat')
+@app.route('/chat/')
+def serve_chat_index():
+    """Chat SPA 入口页"""
+    from flask import send_from_directory
+    import os as _os
+    chat_root = _os.path.join(
+        _os.path.dirname(_os.path.abspath(__file__)),
+        '..', 'frontend', 'dist',
+    )
+    return send_from_directory(chat_root, 'index.html')
+
+
 @app.route('/static/<path:filename>')
 def serve_static(filename):
     """离线静态资源: Vue 3 + Tailwind CDN 本地化"""
