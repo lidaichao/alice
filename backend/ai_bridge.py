@@ -64,7 +64,7 @@ from jira_api import JiraClient
 # v3.0 Phase 0-1 新增：loguru 日志基建（约束#16-17）
 # ═══════════════════════════════════════════════════════════════
 from loguru import logger as loguru_logger
-import uuid as _uuid_module
+import uuid
 
 loguru_logger.remove()  # 移除默认 handler
 loguru_logger.add(
@@ -76,6 +76,18 @@ loguru_logger.add(
     format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {extra[trace_id]: <8} | {message}",
 )
 loguru_logger.configure(extra={"trace_id": "--------"})
+
+# H6: loguru → logging 桥接（v3.0 loguru 日志同步到 logging，保证监控/审计统一）
+class _LoguruToLoggingHandler:
+    """将 loguru 消息转发到 Python logging。"""
+    def write(self, msg: str):
+        msg = msg.strip()
+        if msg:
+            logging.getLogger("v3").info(msg)
+    def flush(self):
+        pass
+
+loguru_logger.add(_LoguruToLoggingHandler(), level="INFO", format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {extra[trace_id]: <8} | {message}")
 
 # ═══════════════════════════════════════════════════════════════
 # v3.0 Phase 0.11：Pydantic API 契约校验（约束#20）
@@ -235,35 +247,42 @@ from chat_orchestrator import (
 #  此处提供最小兼容桩，保证 ai_bridge.py 可编译运行。
 # ═══════════════════════════════════════════════════════════════
 
-# ── 简单 LRU 缓存 ──
+# ── 简单 LRU 缓存（H5: threading.Lock 保护读写） ──
 class BoundedCache:
     """简单 LRU 缓存桩。"""
     def __init__(self, maxsize=128, ttl=300):
         self._store = {}
         self.maxsize = maxsize
         self.ttl = ttl
+        self._lock = threading.Lock()
     def get(self, key):
-        entry = self._store.get(key)
-        if entry:
-            ts, val = entry
-            if time.time() - ts < self.ttl:
-                return val
-            del self._store[key]
-        return None
+        with self._lock:
+            entry = self._store.get(key)
+            if entry:
+                ts, val = entry
+                if time.time() - ts < self.ttl:
+                    return val
+                del self._store[key]
+            return None
     def set(self, key, value):
-        if len(self._store) >= self.maxsize:
-            oldest = min(self._store.keys(), key=lambda k: self._store[k][0], default=None)
-            if oldest:
-                del self._store[oldest]
-        self._store[key] = (time.time(), value)
+        with self._lock:
+            if len(self._store) >= self.maxsize:
+                oldest = min(self._store.keys(), key=lambda k: self._store[k][0], default=None)
+                if oldest:
+                    del self._store[oldest]
+            self._store[key] = (time.time(), value)
     def __len__(self):
-        return len(self._store)
+        with self._lock:
+            return len(self._store)
     def keys(self):
-        return self._store.keys()
+        with self._lock:
+            return list(self._store.keys())
     def items(self):
-        return {k: v[1] for k, v in self._store.items()}.items()
+        with self._lock:
+            return {k: v[1] for k, v in self._store.items()}.items()
     def clear(self):
-        self._store.clear()
+        with self._lock:
+            self._store.clear()
 
 CACHE_TTL = 300
 _CONTEXT_CACHE = BoundedCache(maxsize=128, ttl=CACHE_TTL)
@@ -1627,8 +1646,12 @@ def _exec_get_issue_commits(args: dict, **kwargs) -> str:
     if not issue_key:
         return json.dumps({"status": "error", "result": "缺少 issue_key 参数"})
     try:
-        from knowledge_retriever import fetch_precise_commits_via_fisheye
-        result = fetch_precise_commits_via_fisheye(issue_key)
+        try:
+            from knowledge_retriever import fetch_precise_commits_via_fisheye
+            result = fetch_precise_commits_via_fisheye(issue_key)
+        except (ImportError, ModuleNotFoundError):
+            loguru_logger.warning(f"knowledge_retriever 不可用（v3.0 已迁移），issue_key={issue_key}")
+            return json.dumps({"status": "error", "result": "SVN 变更检索不可用（v3.0 已迁移至 FishEye 代理）"})
         if result and len(str(result)) > 20:
             text = str(result)[:8000]
             return json.dumps({"status": "ok", "llm_text": text}, ensure_ascii=False)
@@ -1642,8 +1665,12 @@ def _exec_get_single_commit_diff(args: dict, **kwargs) -> str:
     if not revision_id:
         return json.dumps({"status": "error", "result": "缺少 revision_id 参数"})
     try:
-        from knowledge_retriever import get_single_commit_diff
-        diff_text = get_single_commit_diff(revision_id)
+        try:
+            from knowledge_retriever import get_single_commit_diff
+            diff_text = get_single_commit_diff(revision_id)
+        except (ImportError, ModuleNotFoundError):
+            loguru_logger.warning(f"knowledge_retriever 不可用（v3.0 已迁移），revision_id={revision_id}")
+            return json.dumps({"status": "error", "result": "Diff 检索不可用（v3.0 已迁移至 SVN Proxy）"})
         if diff_text and len(str(diff_text)) > 20:
             text = str(diff_text)[:8000]
             return json.dumps({"status": "ok", "llm_text": text}, ensure_ascii=False)
@@ -1830,14 +1857,18 @@ def _exec_search_docs_catalog(args: dict, user_text: str = "", **kwargs) -> str:
     hybrid_appendix = ""
     faiss_primary = ""
     try:
-        import rag_engine as _rag_mod
+        import rag_engine as _rag_mod  # noqa: F811
+    except (ImportError, ModuleNotFoundError):
+        _rag_mod = None
 
-        if _rag_mod.is_index_ready():
-            chunk_text = _rag_mod.search_doc_chunks(query, top_k=5)
-            if chunk_text and not chunk_text.startswith("[RAG]"):
-                faiss_primary = f"【FAISS 语义检索 · 主路径】\n{chunk_text}"
-    except Exception as he:
-        logger.debug("[Catalog] FAISS primary failed: %s", he)
+    if _rag_mod is not None:
+        try:
+            if _rag_mod.is_index_ready():
+                chunk_text = _rag_mod.search_doc_chunks(query, top_k=5)
+                if chunk_text and not chunk_text.startswith("[RAG]"):
+                    faiss_primary = f"【FAISS 语义检索 · 主路径】\n{chunk_text}"
+        except Exception as he:
+            loguru_logger.debug("[Catalog] FAISS primary failed: %s", he)
 
     if not faiss_primary:
         # FAISS 不可用 — 降级回 catalog 关键词路径
@@ -2783,7 +2814,6 @@ def _gate_operation_approval(actor_id: str, action: str, op_id: str):
 # ═══════════════════════════════════════════════════════════════
 
 import re as _re_module
-import uuid as _uuid_module
 
 _MOCK_N8N = os.getenv("ALICE_MOCK_N8N", "False").lower() in ("true", "1", "yes")
 
@@ -2925,11 +2955,11 @@ def agent_confirm():
             logger.info(f"[{trace_id}] Mock n8n: action={payload.action}")
             result = _send_to_n8n_mock(payload.action, payload.issue_data)
         else:
-            idempotency_key = _generate_idempotency_key()
+            # H1: 复用 payload 中的 idempotency_key 保证幂等去重（非生成新 Key）
             result_raw = n8n_webhook_call(
                 "alice-jira-create",
                 {
-                    "idempotency_key": idempotency_key,
+                    "idempotency_key": payload.idempotency_key,
                     "project_key": payload.issue_data.get("project_key", ""),
                     "summary": payload.issue_data.get("summary", ""),
                     "issue_type": payload.issue_data.get("issue_type", "Task"),
@@ -2943,11 +2973,11 @@ def agent_confirm():
             result_data = result_raw.get("data", {})
             result = result_data.get("data") if isinstance(result_data, dict) else result_data
 
-        # 恢复 LangGraph 执行
+        # 恢复 LangGraph 执行（C3: 必须 as_node="action" 才能从 interrupt 恢复）
         if thread_id:
             config = {"configurable": {"thread_id": thread_id}}
             try:
-                graph.update_state(config, values=None)
+                graph.update_state(config, values=None, as_node="action")
             except Exception as e:
                 logger.warning(f"[{trace_id}] graph.update_state 失败: {e}")
 
@@ -2980,7 +3010,8 @@ def agent_reject():
 
     try:
         config = {"configurable": {"thread_id": thread_id}}
-        graph.update_state(config, values={"confirm_result": "rejected", "draft": None})
+        # C3: as_node="action" 必填——否则 agent 不会从 interrupt 恢复
+        graph.update_state(config, values={"confirm_result": "rejected", "draft": None}, as_node="action")
         logger.info(f"[Agent] 已拒绝操作 thread={thread_id} reason={reason[:80]}")
         return jsonify({"ok": True, "message": "已拒绝操作"})
     except Exception as e:
@@ -3621,34 +3652,42 @@ def admin_proxy_dify_upload():
     if not doc_id:
         return jsonify({"ok": False, "error": "文档上传成功但未返回 document_id", "raw": upload_data}), 502
 
-    # Step 2: 轮询索引状态（每 2s，最多 30 次 = 60s）
+    # Step 2: SSE 索引进度推送（H3: 替代 sleep 同步轮询）
     status_url = f"{DIFY_BASE_URL}/v1/datasets/{DIFY_DATASET_ID}/documents/{doc_id}/indexing-status"
-    logger.info(f"[{trace_id}] Dify upload doc_id={doc_id}, polling indexing status...")
+    logger.info(f"[{trace_id}] Dify upload doc_id={doc_id}, SSE polling indexing status...")
 
-    for attempt in range(30):
-        time.sleep(2)
-        try:
-            status_resp = http.get(
-                status_url,
-                headers={"Authorization": f"Bearer {api_key}"},
-                timeout=10.0,
-            )
-            if status_resp.status_code == 200:
-                status_data = status_resp.json()
-                status_val = status_data.get("status") or status_data.get("indexing_status", "")
-                logger.info(f"[{trace_id}] Dify indexing attempt={attempt+1} status={status_val}")
-                if status_val in ("completed", "enabled"):
-                    return jsonify({"ok": True, "document_id": doc_id, "indexing_status": status_val})
-        except Exception as e:
-            logger.warning(f"[{trace_id}] Dify indexing poll attempt={attempt+1} error: {e}")
+    def _indexing_stream():
+        for attempt in range(1, 31):
+            time.sleep(2)
+            try:
+                status_resp = _httpx_module.get(
+                    status_url,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=10.0,
+                )
+                if status_resp.status_code == 200:
+                    status_data = status_resp.json()
+                    status_val = status_data.get("status") or status_data.get("indexing_status", "")
+                    logger.info(f"[{trace_id}] Dify indexing attempt={attempt} status={status_val}")
+                    yield f"data: {json.dumps({'type': 'progress', 'attempt': attempt, 'status': status_val}, ensure_ascii=False)}\n\n"
+                    if status_val in ("completed", "enabled", "warning", "partial"):
+                        yield f"data: {json.dumps({'type': 'done', 'ok': True, 'document_id': doc_id, 'indexing_status': status_val}, ensure_ascii=False)}\n\n"
+                        return
+            except Exception as e:
+                logger.warning(f"[{trace_id}] Dify indexing poll attempt={attempt} error: {e}")
+                yield f"data: {json.dumps({'type': 'progress', 'attempt': attempt, 'status': 'error', 'error': str(e)[:100]}, ensure_ascii=False)}\n\n"
 
-    logger.warning(f"[{trace_id}] Dify indexing timeout for doc_id={doc_id}")
-    return jsonify({
-        "ok": True,
-        "document_id": doc_id,
-        "indexing_status": "pending",
-        "warning": "文档索引超时，请在 Dify 控制台手动检查",
-    })
+        logger.warning(f"[{trace_id}] Dify indexing timeout for doc_id={doc_id}")
+        yield f"data: {json.dumps({'type': 'done', 'ok': True, 'document_id': doc_id, 'indexing_status': 'pending', 'warning': '索引轮询超时（60s），请在 Dify 控制台确认'}, ensure_ascii=False)}\n\n"
+
+    return Response(
+        stream_with_context(_indexing_stream()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -3766,7 +3805,10 @@ def _probe_kb_health() -> dict:
 
 def _get_faiss_doc_count() -> int:
     try:
-        import rag_engine as _rag_mod
+        import rag_engine as _rag_mod  # noqa: F811
+    except (ImportError, ModuleNotFoundError):
+        return 0
+    try:
         return _rag_mod.get_indexed_doc_count() if _rag_mod.is_index_ready() else 0
     except Exception:
         return 0
@@ -3778,15 +3820,19 @@ def _build_faiss_index_on_startup():
     无 GDrive 配置 → 跳过不崩；API 错误 → 跳过不崩。
     """
     try:
-        import rag_engine as _rag_mod
+        import rag_engine as _rag_mod  # noqa: F811
+    except (ImportError, ModuleNotFoundError):
+        loguru_logger.info("[FAISS] rag_engine 不可用（v3.0 已迁移至 Dify RAG），跳过索引构建")
+        return
+    try:
         GK = os.getenv("GDRIVE_KEY") or getattr(jira, '_global_cfg', {}).get("GDRIVE_KEY", "")
         if not GK:
-            logger.info("[FAISS] GDrive KEY not configured, skipping startup index build")
+            loguru_logger.info("[FAISS] GDrive KEY not configured, skipping startup index build")
             return
         raw_folders = os.getenv("GDRIVE_FOLDERS") or getattr(jira, '_global_cfg', {}).get("GDRIVE_FOLDERS", "")
         folders = [f.strip() for f in re.split(r'[\n,]+', raw_folders) if f.strip()]
         if not folders:
-            logger.info("[FAISS] GDRIVE_FOLDERS empty, skipping startup index build")
+            loguru_logger.info("[FAISS] GDRIVE_FOLDERS empty, skipping startup index build")
             return
         proxies = get_http_proxies()
         all_files = {}
@@ -3801,9 +3847,9 @@ def _build_faiss_index_on_startup():
                     for f in gr.json().get("files", []):
                         all_files[f["id"]] = f
             except Exception as fe:
-                logger.warning("[FAISS] folder %s fetch failed: %s", fid, fe)
+                loguru_logger.warning("[FAISS] folder %s fetch failed: %s", fid, fe)
         if not all_files:
-            logger.info("[FAISS] no GDrive files found, skipping startup index build")
+            loguru_logger.info("[FAISS] no GDrive files found, skipping startup index build")
             return
         catalog_items = []
         for fid, f in all_files.items():
@@ -3821,9 +3867,9 @@ def _build_faiss_index_on_startup():
                 len(_rag_mod._vector_store.get("chunks", [])),
             )
         else:
-            logger.info("[FAISS] startup index build returned empty — no crash")
+            loguru_logger.info("[FAISS] startup index build returned empty — no crash")
     except Exception as e:
-        logger.warning("[FAISS] startup index build failed (non-fatal): %s", e)
+        loguru_logger.warning("[FAISS] startup index build failed (non-fatal): %s", e)
 
 
 @app.route("/v1/audit/logs", methods=["GET"])

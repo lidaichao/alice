@@ -300,8 +300,11 @@ def _fast_path_intent(user_text: str) -> Optional[str]:
 
         if is_generic_knowledge_list_query(t):
             # M5.x KB 优化令 — FAISS 可用时优先走 knowledge_query
-            import rag_engine as _rag_mod
-            return "knowledge_query" if _rag_mod.is_index_ready() else "doc_search"
+            try:
+                import rag_engine as _rag_mod  # noqa: F811
+            except (ImportError, ModuleNotFoundError):
+                _rag_mod = None
+            return "knowledge_query" if (_rag_mod is not None and _rag_mod.is_index_ready()) else "doc_search"
     except ImportError:
         pass
     return None

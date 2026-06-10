@@ -11,6 +11,14 @@ from typing import Any, Callable, Iterator, Optional, Set
 
 logger = logging.getLogger(__name__)
 
+# v3.1 w3: knowledge_retriever 废弃模块的兼容桩
+try:
+    from knowledge_retriever import get_single_commit_diff, fetch_precise_commits_via_fisheye, extract_dynamic_keywords
+except (ImportError, ModuleNotFoundError):
+    get_single_commit_diff = lambda rev_id: "[v3.0 已迁移至 SVN Proxy]"
+    fetch_precise_commits_via_fisheye = lambda issue_key: []
+    extract_dynamic_keywords = lambda query: []
+
 # Q8 单点穿透：仅 CT 项目 Issue Key（对齐 Baize 确定性检索）
 _CT_ISSUE_KEY_RE = re.compile(r"(CT-\d+)", re.I)
 
@@ -221,8 +229,6 @@ def _run_revision_analysis_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
     yield _plugin_sse("get_single_commit_diff", "running")
     raw_diff = ""
     try:
-        from knowledge_retriever import get_single_commit_diff
-
         _d = get_single_commit_diff(_rev_id)
         raw_diff = str(_d)[:8000] if _d and len(str(_d)) > 20 else ""
     except Exception as e:
@@ -235,8 +241,6 @@ def _run_revision_analysis_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
         _ik = _ik_list[0]
         yield _plugin_sse("get_issue_commits", "running")
         try:
-            from knowledge_retriever import fetch_precise_commits_via_fisheye
-
             _issue_ctx = (fetch_precise_commits_via_fisheye(_ik) or "")[:3000]
         except Exception as e:
             _issue_ctx = f"Issue {_ik} 提交上下文获取失败: {e}"
@@ -315,8 +319,6 @@ def _run_diff_rag_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
 
     raw_diff = ""
     try:
-        from knowledge_retriever import get_single_commit_diff
-
         _d = get_single_commit_diff(_rev_id)
         raw_diff = str(_d)[:3000] if _d and len(str(_d)) > 20 else ""
     except Exception as e:
@@ -326,8 +328,6 @@ def _run_diff_rag_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
     _ik_list = list(ctx.issue_keys_found)[:1]
     _ik_str = _ik_list[0] if _ik_list else ""
     try:
-        from knowledge_retriever import extract_dynamic_keywords
-
         _search_kw = extract_dynamic_keywords(ctx.user_text or "", _ik_str)
     except Exception:
         _search_kw = _ik_str or (ctx.user_text or "")[:30]
@@ -536,8 +536,6 @@ def _run_tech_doc_commit_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
     commit_block = ""
     yield _plugin_sse("get_issue_commits", "running")
     try:
-        from knowledge_retriever import fetch_precise_commits_via_fisheye
-
         commit_block = fetch_precise_commits_via_fisheye(_ik) or ""
     except Exception as e:
         commit_block = f"提交记录获取失败: {e}"
@@ -553,8 +551,6 @@ def _run_tech_doc_commit_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
         _rid = _rev_m.group(1)
         yield _plugin_sse("get_single_commit_diff", "running")
         try:
-            from knowledge_retriever import get_single_commit_diff
-
             _d = get_single_commit_diff(_rid)
             _diff_block = str(_d)[:4000] if _d else ""
         except Exception as e:
@@ -601,8 +597,6 @@ def _run_commit_lane(ctx: VipFastpathContext) -> Iterator[bytes]:
     yield _plugin_sse("get_issue_commits", "running")
     _commit_block = ""
     try:
-        from knowledge_retriever import fetch_precise_commits_via_fisheye
-
         _commit_block = fetch_precise_commits_via_fisheye(_ik) or ""
     except Exception as e:
         _commit_block = f"提交记录拉取异常: {str(e)[:200]}"

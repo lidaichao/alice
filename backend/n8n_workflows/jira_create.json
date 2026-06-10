@@ -1,5 +1,5 @@
 {
-  "name": "Alice Jira 创建与幂等去重",
+  "name": "Alice Jira Create",
   "nodes": [
     {
       "name": "Webhook",
@@ -18,18 +18,18 @@
       "typeVersion": 1,
       "position": [450, 300],
       "parameters": {
-        "functionCode": "// P3 修正：保存原始 Webhook payload 到 _original_payload\n// IF 节点 false 分支输出空 items，下游节点仍需引用原始数据\nconst item = $input.first();\nitem.json._original_payload = { ...item.json };\nreturn item.json;"
+        "functionCode": "// v3.1 w3 C5-C7 重构：保存原始 payload + 并行分支\nconst item = $input.first();\nitem.json._original = item.json.idempotency_key\n  ? item.json\n  : { ...item.json, idempotency_key: item.json.idempotency_key || '' };\nreturn item.json;"
       }
     },
     {
       "name": "Idempotency Check",
       "type": "n8n-nodes-base.jira",
       "typeVersion": 1,
-      "position": [650, 300],
+      "position": [650, 200],
       "parameters": {
         "resource": "issue",
         "operation": "getAll",
-        "jql": "={{ 'labels=\"alice-tx-' + $json._original_payload.idempotency_key + '\"' }}",
+        "jql": "={{ 'labels=\"alice-tx-' + $json.idempotency_key + '\"' }}",
         "returnAll": true,
         "limit": 5
       },
@@ -41,16 +41,34 @@
       "name": "IF - Already Exists?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [850, 300],
+      "position": [850, 200],
       "parameters": {
         "conditions": {
           "string": [
             {
-              "value1": "={{ $json.length }}",
-              "operation": "larger",
-              "value2": "0"
+              "value1": "={{ $json.key }}",
+              "operation": "isNotEmpty"
             }
           ]
+        }
+      }
+    },
+    {
+      "name": "Return Existing",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 120],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": {
+          "values": {
+            "string": [
+              { "name": "success", "value": "true" },
+              { "name": "idempotent", "value": "true" },
+              { "name": "message", "value": "任务已存在（幂等检出），跳过创建" },
+              { "name": "issue_key", "value": "={{ $json.key }}" }
+            ]
+          }
         }
       }
     },
@@ -62,39 +80,20 @@
       "parameters": {
         "resource": "issue",
         "operation": "create",
-        "projectKey": "={{ $json._original_payload.project_key }}",
-        "summary": "={{ $json._original_payload.summary }}",
-        "issueType": "={{ $json._original_payload.issue_type }}",
-        "description": "={{ $json._original_payload.description }}",
+        "projectKey": "={{ $json._original.project_key }}",
+        "summary": "={{ $json._original.summary }}",
+        "issueType": "={{ $json._original.issue_type }}",
+        "description": "={{ $json._original.description }}",
         "additionalFields": {
           "labels": {
             "labelProperties": [
-              { "values": { "label": "={{ 'alice-tx-' + $json._original_payload.idempotency_key }}" } }
+              { "values": { "label": "={{ 'alice-tx-' + $json._original.idempotency_key }}" } }
             ]
           }
         }
       },
       "credentials": {
         "jiraSoftwareApi": { "id": "CREDENTIAL_ID_PLACEHOLDER", "name": "Alice Jira PAT" }
-      }
-    },
-    {
-      "name": "Return Existing",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [1050, 200],
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": {
-          "values": {
-            "string": [
-              { "name": "success", "value": "true" },
-              { "name": "idempotent", "value": "true" },
-              { "name": "message", "value": "任务已存在（幂等检出），跳过创建" },
-              { "name": "issue_key", "value": "={{ $json[0].key }}" }
-            ]
-          }
-        }
       }
     },
     {
@@ -122,7 +121,10 @@
       "main": [[{ "node": "Save Original", "type": "main", "index": 0 }]]
     },
     "Save Original": {
-      "main": [[{ "node": "Idempotency Check", "type": "main", "index": 0 }]]
+      "main": [
+        [{ "node": "Idempotency Check", "type": "main", "index": 0 }],
+        [{ "node": "Jira Create", "type": "main", "index": 0 }]
+      ]
     },
     "Idempotency Check": {
       "main": [[{ "node": "IF - Already Exists?", "type": "main", "index": 0 }]]
@@ -130,7 +132,7 @@
     "IF - Already Exists?": {
       "main": [
         [{ "node": "Return Existing", "type": "main", "index": 0 }],
-        [{ "node": "Jira Create", "type": "main", "index": 0 }]
+        []
       ]
     },
     "Jira Create": {

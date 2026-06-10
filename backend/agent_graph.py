@@ -44,6 +44,9 @@ DEEPSEEK_URL = os.getenv("DEEPSEEK_URL", _config.get("DEEPSEEK_URL", "https://ap
 DEEPSEEK_KEY = os.getenv("DEEPSEEK_KEY", _config.get("DEEPSEEK_KEY", ""))
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", _config.get("DEEPSEEK_MODEL", "deepseek-chat"))
 
+# 确保 base_url 是纯 /v1 根路径（处理 global_config.json 中误带 /chat/completions 后缀的情况）
+_DEEPSEEK_BASE = DEEPSEEK_URL.removesuffix("/chat/completions").rstrip("/")
+
 # Dify RAG 配置（供工具节点使用）
 DIFY_BASE_URL = os.getenv("DIFY_BASE_URL", _config.get("DIFY_BASE_URL", "http://localhost:5001"))
 DIFY_API_KEY = os.getenv("DIFY_API_KEY", _config.get("DIFY_API_KEY", ""))
@@ -55,10 +58,10 @@ def _agent_dify_key() -> str:
     """Agent 工具节点 Dify Key（v3.1 双模：dataset-* 优先 → app-* 降级）"""
     return DIFY_DATASET_API_KEY or DIFY_API_KEY
 
-# n8n 配置（Phase 2 占位）
+# n8n 配置
 N8N_BASE_URL = os.getenv("N8N_BASE_URL", _config.get("N8N_BASE_URL", "http://localhost:5678"))
 N8N_API_KEY = os.getenv("N8N_API_KEY", _config.get("N8N_API_KEY", ""))
-N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", _config.get("N8N_WEBHOOK_URL", ""))
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_BASE_URL", N8N_BASE_URL)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -75,10 +78,10 @@ class AgentState(TypedDict):
 
 # ═══════════════════════════════════════════════════════════════
 # n8n Webhook 调用器（Phase 2.4 · 约束#6 超时+中文翻译）
+#   Webhook 节点默认不要求认证头；X-N8N-API-KEY 仅用于 REST API。
 # ═══════════════════════════════════════════════════════════════
 
-_N8N_WEBHOOK_BASE = os.getenv("N8N_WEBHOOK_BASE_URL", os.getenv("N8N_BASE_URL", _config.get("N8N_BASE_URL", "http://localhost:5678")))
-_N8N_API_KEY = os.getenv("N8N_API_KEY", _config.get("N8N_API_KEY", ""))
+_N8N_WEBHOOK_BASE = N8N_WEBHOOK_URL  # 复用顶层配置
 
 
 def n8n_webhook_call(workflow_path: str, payload: dict, timeout: int = 3) -> dict:
@@ -91,12 +94,8 @@ def n8n_webhook_call(workflow_path: str, payload: dict, timeout: int = 3) -> dic
     trace_id = payload.get("trace_id", "unknown")
     logger.info(f"[{trace_id}] n8n Webhook 调用: {workflow_path}")
     try:
-        resp = requests.post(
-            url,
-            json=payload,
-            timeout=timeout,
-            headers={"X-N8N-API-KEY": _N8N_API_KEY} if _N8N_API_KEY else {},
-        )
+        # H7: Webhook 节点默认无认证，去掉 X-N8N-API-KEY（仅用于 REST API）
+        resp = requests.post(url, json=payload, timeout=timeout)
         if resp.status_code == 200:
             data = resp.json()
             logger.info(f"[{trace_id}] n8n Webhook 完成: {workflow_path} {resp.elapsed.total_seconds():.1f}s")
@@ -213,13 +212,11 @@ def _create_llm():
     """创建 ChatOpenAI 实例，绑定 Alice 工具"""
     if not DEEPSEEK_KEY:
         logger.warning("DEEPSEEK_KEY 未配置，Agent 将无法调用 LLM")
-    base_url = DEEPSEEK_URL.rstrip("/") if DEEPSEEK_URL.endswith("/chat/completions") else DEEPSEEK_URL
-    if not base_url.endswith("/v1"):
-        base_url = DEEPSEEK_URL
+    # v3.1 w3: 使用预处理过的 _DEEPSEEK_BASE（已去掉 /chat/completions 后缀）
     return ChatOpenAI(
         model=DEEPSEEK_MODEL,
         api_key=DEEPSEEK_KEY,
-        base_url=base_url,
+        base_url=_DEEPSEEK_BASE,
         temperature=0.0,
     ).bind_tools(tools)
 
@@ -238,15 +235,19 @@ def agent_node(state: AgentState) -> dict:
     messages = state["messages"]
     logger.info(f"[{trace_id}] Agent 节点开始推理，消息数={len(messages)}")
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+    # C1: 显式 executor 管理——超时时 cancel_futures 防止僵尸线程堆积
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
         future = executor.submit(llm.invoke, messages)
-        try:
-            response = future.result(timeout=60)
-            logger.info(f"[{trace_id}] Agent 推理完成，输出 {len(str(response))} 字符")
-            return {"messages": [response]}
-        except concurrent.futures.TimeoutError:
-            logger.error(f"[{trace_id}] LLM 响应超时 >60s")
-            raise TimeoutError("LLM 响应超时（>60s），请稍后重试")
+        response = future.result(timeout=60)
+        logger.info(f"[{trace_id}] Agent 推理完成，输出 {len(str(response))} 字符")
+        return {"messages": [response]}
+    except concurrent.futures.TimeoutError:
+        logger.error(f"[{trace_id}] LLM 响应超时 >60s")
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise TimeoutError("LLM 响应超时（>60s），请稍后重试")
+    finally:
+        executor.shutdown(wait=False)
 
 
 def should_continue(state: AgentState) -> Literal["continue", "end"]:
@@ -288,9 +289,10 @@ def build_agent_graph(checkpointer=None):
     # 工具执行后回到 agent
     builder.add_edge("action", "agent")
 
-    # SqliteSaver 持久化 Checkpointer（§2.5.2）
+    # SqliteSaver 持久化 Checkpointer（§2.5.2 / C2: 显式绝对路径，避免 CWD 漂移）
     if checkpointer is None:
-        conn = sqlite3.connect("alice_agent.db", check_same_thread=False)
+        db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "alice_agent.db")
+        conn = sqlite3.connect(db_path, check_same_thread=False)
         checkpointer = SqliteSaver(conn)
 
     # HITL 中断：工具执行前暂停（interrupt_before=["action"]）
