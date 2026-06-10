@@ -13,14 +13,23 @@
       }
     },
     {
-      "name": "Idempotency Check",
-      "type": "n8n-nodes-base.jira",
+      "name": "Save Original",
+      "type": "n8n-nodes-base.function",
       "typeVersion": 1,
       "position": [450, 300],
       "parameters": {
+        "functionCode": "// P3 修正：保存原始 Webhook payload 到 _original_payload\n// IF 节点 false 分支输出空 items，下游节点仍需引用原始数据\nconst item = $input.first();\nitem.json._original_payload = { ...item.json };\nreturn item.json;"
+      }
+    },
+    {
+      "name": "Idempotency Check",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "parameters": {
         "resource": "issue",
         "operation": "getAll",
-        "jql": "={{ 'labels=\"alice-tx-' + $json.idempotency_key + '\"' }}",
+        "jql": "={{ 'labels=\"alice-tx-' + $json._original_payload.idempotency_key + '\"' }}",
         "returnAll": true,
         "limit": 5
       },
@@ -32,7 +41,7 @@
       "name": "IF - Already Exists?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [650, 300],
+      "position": [850, 300],
       "parameters": {
         "conditions": {
           "string": [
@@ -49,18 +58,18 @@
       "name": "Jira Create",
       "type": "n8n-nodes-base.jira",
       "typeVersion": 1,
-      "position": [450, 500],
+      "position": [650, 500],
       "parameters": {
         "resource": "issue",
         "operation": "create",
-        "projectKey": "={{ $json.project_key }}",
-        "summary": "={{ $json.summary }}",
-        "issueType": "={{ $json.issue_type }}",
-        "description": "={{ $json.description }}",
+        "projectKey": "={{ $json._original_payload.project_key }}",
+        "summary": "={{ $json._original_payload.summary }}",
+        "issueType": "={{ $json._original_payload.issue_type }}",
+        "description": "={{ $json._original_payload.description }}",
         "additionalFields": {
           "labels": {
             "labelProperties": [
-              { "values": { "label": "={{ 'alice-tx-' + $json.idempotency_key }}" } }
+              { "values": { "label": "={{ 'alice-tx-' + $json._original_payload.idempotency_key }}" } }
             ]
           }
         }
@@ -73,7 +82,7 @@
       "name": "Return Existing",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [850, 200],
+      "position": [1050, 200],
       "parameters": {
         "respondWith": "json",
         "responseBody": {
@@ -92,7 +101,7 @@
       "name": "Return Created",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [850, 500],
+      "position": [1050, 500],
       "parameters": {
         "respondWith": "json",
         "responseBody": {
@@ -110,6 +119,9 @@
   ],
   "connections": {
     "Webhook": {
+      "main": [[{ "node": "Save Original", "type": "main", "index": 0 }]]
+    },
+    "Save Original": {
       "main": [[{ "node": "Idempotency Check", "type": "main", "index": 0 }]]
     },
     "Idempotency Check": {

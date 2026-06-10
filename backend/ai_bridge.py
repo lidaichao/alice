@@ -109,6 +109,23 @@ DIFY_BASE_URL = os.getenv("DIFY_BASE_URL", _DIFY_CONFIG.get("DIFY_BASE_URL", "ht
 DIFY_API_KEY = os.getenv("DIFY_API_KEY", _DIFY_CONFIG.get("DIFY_API_KEY", ""))
 DIFY_DATASET_ID = os.getenv("DIFY_DATASET_ID", _DIFY_CONFIG.get("DIFY_DATASET_ID", ""))
 
+# ── n8n 配置（.env.n8n，Phase 0.4-0.6 产出） ───────────────
+_N8N_DOTENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env.n8n")
+_NEARBY_DOTENV_DIR = os.path.dirname(os.path.abspath(__file__))
+if os.path.exists(_N8N_DOTENV_PATH):
+    with open(_N8N_DOTENV_PATH, "r", encoding="utf-8") as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _key, _, _val = _line.partition("=")
+                _key, _val = _key.strip(), _val.strip()
+                if _key and _key not in os.environ:
+                    os.environ[_key] = _val
+
+N8N_BASE_URL = os.getenv("N8N_BASE_URL", "http://localhost:5678")
+N8N_API_KEY = os.getenv("N8N_API_KEY", "")
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
+
 
 def dify_retrieve(query: str, trace_id: str = "", top_k: int = 5) -> dict:
     """Dify 知识库 RAG 检索（仅检索，不使用对话/工作流端点·约束#2）"""
@@ -3101,6 +3118,106 @@ def proxy_jira_test():
         return jsonify({"ok": False, "error": f"HTTP {r.status_code} {r.reason}"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Phase 3.1 — Dify RAG 代理端点（Admin → Hub → Dify）
+# ═══════════════════════════════════════════════════════════════
+
+from pydantic import BaseModel, Field as _PydanticField
+
+class DifyRagProxyRequest(BaseModel):
+    query: str
+    top_k: int = 5
+
+class N8nJiraProxyRequest(BaseModel):
+    jql: str
+    max_results: int = 15
+
+
+@app.route("/v1/admin/proxy/dify/rag", methods=["POST", "OPTIONS"])
+def admin_proxy_dify_rag():
+    """
+    Admin 前端 → Hub 代理 → Dify 知识库 RAG 检索。
+    入参: {"query": "...", "top_k": 5}
+    出参: {"ok": true/false, "records": [...] / "error": "中文错误"}
+    """
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    try:
+        req = DifyRagProxyRequest(**request.get_json(silent=True) or {})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"参数校验失败: {e}"}), 400
+    if not DIFY_API_KEY or not DIFY_DATASET_ID:
+        return jsonify({"ok": False, "error": "知识库服务未配置，请联系管理员"}), 503
+    url = f"{DIFY_BASE_URL}/v1/datasets/{DIFY_DATASET_ID}/retrieve"
+    try:
+        resp = http.post(
+            url,
+            headers={"Authorization": f"Bearer {DIFY_API_KEY}"},
+            json={"query": req.query, "retrieval_model": {
+                "search_method": "hybrid_search",
+                "reranking_enable": True,
+                "top_k": req.top_k,
+            }},
+            timeout=10.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            records = data.get("records", [])
+            return jsonify({"ok": True, "records": records, "total": len(records)})
+        logger.error(f"[Admin] Dify RAG proxy HTTP {resp.status_code}: {resp.text[:200]}")
+        return jsonify({"ok": False, "error": "知识库服务异常，请联系管理员"}), 502
+    except http.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "知识库检索超时，请稍后重试"}), 504
+    except http.exceptions.ConnectionError:
+        return jsonify({"ok": False, "error": "无法连接到知识库服务"}), 503
+    except Exception as e:
+        logger.error(f"[Admin] Dify RAG proxy exception: {e}")
+        return jsonify({"ok": False, "error": "知识库服务异常，请联系管理员"}), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Phase 3.2 — n8n Jira 代理端点（Admin → Hub → n8n Webhook）
+# ═══════════════════════════════════════════════════════════════
+
+@app.route("/v1/admin/proxy/n8n/jira", methods=["POST", "OPTIONS"])
+def admin_proxy_n8n_jira():
+    """
+    Admin 前端 → Hub 代理 → n8n Jira Search Webhook。
+    入参: {"jql": "project=CT", "max_results": 15}
+    出参: {"ok": true/false, "issues": [...] / "error": "中文错误"}
+    """
+    if request.method == "OPTIONS":
+        return Response(status=204)
+    try:
+        req = N8nJiraProxyRequest(**request.get_json(silent=True) or {})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"参数校验失败: {e}"}), 400
+    if not N8N_BASE_URL:
+        return jsonify({"ok": False, "error": "n8n 服务未配置，请联系管理员"}), 503
+    url = f"{N8N_BASE_URL}/webhook/alice-jira-search"
+    try:
+        resp = http.post(
+            url,
+            json={"jql": req.jql, "limit": req.max_results},
+            headers={"X-N8N-API-KEY": N8N_API_KEY} if N8N_API_KEY else {},
+            timeout=3.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            issues = data.get("issues", [])
+            return jsonify({"ok": True, "issues": issues, "total": len(issues)})
+        logger.error(f"[Admin] n8n Jira proxy HTTP {resp.status_code}: {resp.text[:200]}")
+        return jsonify({"ok": False, "error": "外部服务异常，请联系管理员"}), 502
+    except http.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "n8n 服务响应超时，请稍后重试"}), 504
+    except http.exceptions.ConnectionError:
+        return jsonify({"ok": False, "error": "无法连接到 n8n 服务，请确认 n8n 已启动"}), 503
+    except Exception as e:
+        logger.error(f"[Admin] n8n Jira proxy exception: {e}")
+        return jsonify({"ok": False, "error": "外部服务异常，请联系管理员"}), 500
+
 
 @app.route("/test")
 def test_suite():
