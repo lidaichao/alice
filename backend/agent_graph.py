@@ -136,9 +136,11 @@ def dify_rag_retrieval(query: str, trace_id: str = "unknown") -> str:
             json={
                 "query": query,
                 "retrieval_model": {
-                    "search_method": "hybrid_search",
-                    "reranking_enable": True,
+                    "search_method": "keyword_search",
+                    "reranking_enable": False,
                     "top_k": 5,
+                    "score_threshold_enabled": False,
+                    "score_threshold": 0.0,
                 },
             },
             timeout=10.0,

@@ -179,9 +179,11 @@ def dify_retrieve(query: str, trace_id: str = "", top_k: int = 5) -> dict:
             json={
                 "query": query,
                 "retrieval_model": {
-                    "search_method": "hybrid_search",
-                    "reranking_enable": True,
+                    "search_method": "keyword_search",
+                    "reranking_enable": False,
                     "top_k": top_k,
+                    "score_threshold_enabled": False,
+                    "score_threshold": 0.0,
                 },
             },
             timeout=10.0,  # 约束#8c
@@ -3569,9 +3571,11 @@ def admin_proxy_dify_rag():
             url,
             headers={"Authorization": f"Bearer {api_key}"},
             json={"query": req.query, "retrieval_model": {
-                "search_method": "hybrid_search",
-                "reranking_enable": True,
+                "search_method": "keyword_search",
+                "reranking_enable": False,
                 "top_k": req.top_k,
+                "score_threshold_enabled": False,
+                "score_threshold": 0.0,
             }},
             timeout=10.0,
         )

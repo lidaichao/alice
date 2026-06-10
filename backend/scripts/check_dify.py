@@ -72,9 +72,11 @@ def check_dataset_access(base_url: str, api_key: str, dataset_id: str) -> dict:
             json={
                 "query": "healthcheck",
                 "retrieval_model": {
-                    "search_method": "hybrid_search",
+                    "search_method": "keyword_search",
                     "reranking_enable": False,
                     "top_k": 1,
+                    "score_threshold_enabled": False,
+                    "score_threshold": 0.0,
                 },
             },
             timeout=10,
