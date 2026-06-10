@@ -120,6 +120,19 @@ if os.path.exists(_config_path):
 DIFY_BASE_URL = os.getenv("DIFY_BASE_URL", _DIFY_CONFIG.get("DIFY_BASE_URL", "http://localhost:5001"))
 DIFY_API_KEY = os.getenv("DIFY_API_KEY", _DIFY_CONFIG.get("DIFY_API_KEY", ""))
 DIFY_DATASET_ID = os.getenv("DIFY_DATASET_ID", _DIFY_CONFIG.get("DIFY_DATASET_ID", ""))
+DIFY_DATASET_API_KEY = os.getenv("DIFY_DATASET_API_KEY", _DIFY_CONFIG.get("DIFY_DATASET_API_KEY", ""))
+
+
+def _dify_dataset_api_key() -> str:
+    """获取 Dify 数据集 API 可用的 Key（v3.1 双模）。
+    优先 Dataset Key（dataset-*），为空则回退 App Key（app-*）。
+    """
+    return DIFY_DATASET_API_KEY or DIFY_API_KEY
+
+
+def _dify_check_configured() -> bool:
+    """Dify 是否已配置（至少有一个 Key 和一个 Dataset ID）。"""
+    return bool((DIFY_DATASET_API_KEY or DIFY_API_KEY) and DIFY_DATASET_ID)
 
 # ── n8n 配置（.env.n8n，Phase 0.4-0.6 产出） ───────────────
 _N8N_DOTENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env.n8n")
@@ -141,7 +154,8 @@ N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def dify_retrieve(query: str, trace_id: str = "", top_k: int = 5) -> dict:
     """Dify 知识库 RAG 检索（仅检索，不使用对话/工作流端点·约束#2）"""
-    if not DIFY_API_KEY or not DIFY_DATASET_ID:
+    api_key = _dify_dataset_api_key()
+    if not api_key or not DIFY_DATASET_ID:
         loguru_logger.warning(f"[{trace_id}] Dify RAG 未配置，返回空结果")
         return {"error": "知识库未配置，请联系管理员。"}
 
@@ -149,7 +163,7 @@ def dify_retrieve(query: str, trace_id: str = "", top_k: int = 5) -> dict:
     try:
         resp = _httpx_module.post(
             url,
-            headers={"Authorization": f"Bearer {DIFY_API_KEY}"},
+            headers={"Authorization": f"Bearer {api_key}"},
             json={
                 "query": query,
                 "retrieval_model": {
@@ -160,6 +174,10 @@ def dify_retrieve(query: str, trace_id: str = "", top_k: int = 5) -> dict:
             },
             timeout=10.0,  # 约束#8c
         )
+        if resp.status_code == 401:
+            _hint = "（RAG API 需 dataset-* 开头的 Key，当前仅配置了 app-* Key）" if not DIFY_DATASET_API_KEY else ""
+            loguru_logger.error(f"[{trace_id}] Dify RAG 401: Key 权限不足{_hint}")
+            return {"error": f"Dify Key 权限不足（RAG API 需 dataset-* 开头的 Key）"}
         if resp.status_code != 200:
             loguru_logger.error(f"[{trace_id}] Dify RAG 检索失败: HTTP {resp.status_code}")
             return {"error": "知识库服务暂时不可用，请稍后重试"}  # 约束#8c 中文翻译
@@ -3511,13 +3529,14 @@ def admin_proxy_dify_rag():
         req = DifyRagProxyRequest(**request.get_json(silent=True) or {})
     except Exception as e:
         return jsonify({"ok": False, "error": f"参数校验失败: {e}"}), 400
-    if not DIFY_API_KEY or not DIFY_DATASET_ID:
-        return jsonify({"ok": False, "error": "知识库服务未配置，请联系管理员"}), 503
+    if not _dify_check_configured():
+        return jsonify({"ok": False, "error": "知识库服务未配置，请联系管理员（需 DIFY_API_KEY 或 DIFY_DATASET_API_KEY + DIFY_DATASET_ID）"}), 503
+    api_key = _dify_dataset_api_key()
     url = f"{DIFY_BASE_URL}/v1/datasets/{DIFY_DATASET_ID}/retrieve"
     try:
         resp = http.post(
             url,
-            headers={"Authorization": f"Bearer {DIFY_API_KEY}"},
+            headers={"Authorization": f"Bearer {api_key}"},
             json={"query": req.query, "retrieval_model": {
                 "search_method": "hybrid_search",
                 "reranking_enable": True,
@@ -3525,6 +3544,10 @@ def admin_proxy_dify_rag():
             }},
             timeout=10.0,
         )
+        if resp.status_code == 401:
+            _hint = "（RAG API 需 dataset-* 开头的 Key，当前仅配置了 app-* Key）" if not DIFY_DATASET_API_KEY else ""
+            logger.error(f"[Admin] Dify RAG proxy HTTP 401: Key 权限不足{_hint}")
+            return jsonify({"ok": False, "error": "Dify Key 权限不足（RAG API 需 dataset-* 开头的 Key）"}), 502
         if resp.status_code == 200:
             data = resp.json()
             records = data.get("records", [])
@@ -3550,7 +3573,7 @@ def admin_proxy_dify_upload():
     if request.method == "OPTIONS":
         return Response(status=204)
 
-    if not DIFY_API_KEY or not DIFY_DATASET_ID:
+    if not _dify_check_configured():
         return jsonify({"ok": False, "error": "Dify 知识库未配置，请联系管理员"}), 503
 
     try:
@@ -3559,6 +3582,7 @@ def admin_proxy_dify_upload():
         return jsonify({"ok": False, "error": f"参数校验失败: {e}"}), 400
 
     trace_id = str(uuid.uuid4())[:8]
+    api_key = _dify_dataset_api_key()
     upload_url = f"{DIFY_BASE_URL}/v1/datasets/{DIFY_DATASET_ID}/documents/create-by-text"
 
     # Step 1: 上传文档
@@ -3566,7 +3590,7 @@ def admin_proxy_dify_upload():
         resp = http.post(
             upload_url,
             headers={
-                "Authorization": f"Bearer {DIFY_API_KEY}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
             json={
@@ -3577,6 +3601,10 @@ def admin_proxy_dify_upload():
             },
             timeout=30.0,
         )
+        if resp.status_code == 401:
+            _hint = "（需 dataset-* 开头的 Key）" if not DIFY_DATASET_API_KEY else ""
+            logger.error(f"[{trace_id}] Dify upload HTTP 401: Key 权限不足{_hint}")
+            return jsonify({"ok": False, "error": "Dify Key 权限不足（RAG API 需 dataset-* 开头的 Key）"}), 502
         if resp.status_code not in (200, 201):
             logger.error(f"[{trace_id}] Dify upload HTTP {resp.status_code}: {resp.text[:200]}")
             return jsonify({"ok": False, "error": f"文档上传失败（{resp.status_code}），请稍后重试"}), 502
@@ -3602,7 +3630,7 @@ def admin_proxy_dify_upload():
         try:
             status_resp = http.get(
                 status_url,
-                headers={"Authorization": f"Bearer {DIFY_API_KEY}"},
+                headers={"Authorization": f"Bearer {api_key}"},
                 timeout=10.0,
             )
             if status_resp.status_code == 200:

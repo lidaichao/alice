@@ -48,7 +48,7 @@ def test_extract_issue_keys():
     assert "CT-10888" in keys
 
 
-@pytest.mark.skip(reason="v3.0 Phase 4.3: 危险操作拦截逻辑需迭代，勿阻塞 CI")
+@pytest.mark.xfail(reason="v3.0 Phase 4.3: 危险操作拦截逻辑需迭代")
 def test_dangerous_preflight_terminates():
     ctx = prepare_orchestrator_context(
         [{"role": "user", "content": "rm -rf /tmp"}],

@@ -42,7 +42,7 @@ class TestJiraFieldGlossary(unittest.TestCase):
 
     def test_resolve_by_alias(self):
         glossary = normalize_glossary([
-            {"fieldName": "End date", "meaning": "截止", "aliases": ["本周要完成"]},
+            {"fieldName": "End date", "meaning": "截止", "aliases": ["本周要完成", "ddl"]},
         ])
         entry = resolve_glossary_entry_by_text("张三本周要完成哪些任务", glossary)
         self.assertIsNotNone(entry)

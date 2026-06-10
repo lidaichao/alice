@@ -448,7 +448,7 @@ def parse_query_from_natural_language(user_text: str, config: JiraRuntimeConfig)
         q.assignees = []  # 关键词搜索不与经办人 OR 混用，避免误 JQL
 
     if re.search(r"需要完成|待办|本周.*任务|本周.*哪些", text) and not q.assignees:
-        if re.search(r"我|本人|当前用户", text):
+        if re.search(r"我|本人|当前用户|本周", text):
             q.assignee_is_current_user = True
         q.unresolved_only = True
 

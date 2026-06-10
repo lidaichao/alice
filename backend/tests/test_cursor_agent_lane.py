@@ -14,13 +14,13 @@ class TestCursorAgentLaneTools(unittest.TestCase):
     """测试 cursor_agent_lane 工具注册与审计路径"""
 
     def test_custom_tool_registration(self):
-        """13 个 CustomTool name/parameters/handler callable 正确"""
+        """14 个 CustomTool name/parameters/handler callable 正确"""
         from cursor_agent_lane import _build_custom_tools
 
         tools = _build_custom_tools(conversation_id="test-cid", user_id="test-uid")
-        self.assertEqual(len(tools), 13)
+        self.assertEqual(len(tools), 14)
         expected_names = {
-            "jira_search_issues", "jira_read_issue_detail",
+            "jira_search_issues", "jira_read_issue_detail", "list_jira_issuetypes",
             "read_file", "search_code", "svn_log", "list_directory",
             "get_issue_commits", "get_single_commit_diff",
             "search_docs_catalog", "read_specific_doc",

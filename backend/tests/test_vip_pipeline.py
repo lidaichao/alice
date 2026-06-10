@@ -70,7 +70,7 @@ MOCK_DOC_CONTENT = """## 战术系统 - 阵型养成
 class TestVIPDiffPipeline:
     """VIP Diff 直通车离线测试 — v3.0 Phase 4.3 模块已删除"""
 
-    @pytest.mark.skip(reason="v3.0 Phase 4.3: knowledge_retriever 已删除")
+    @pytest.mark.xfail(reason="v3.0 Phase 4.3: knowledge_retriever 已删除 · VIP 快车道降级")
     @patch("ai_bridge.http")
     @patch("ai_bridge._exec_read_specific_doc")
     @patch("ai_bridge._exec_search_docs_catalog")
@@ -161,7 +161,7 @@ class TestVIPDiffPipeline:
 class TestVIPCatalogPipeline:
     """Catalog VIP 文档查询离线测试 — v3.0 Phase 4.3 模块已删除"""
 
-    @pytest.mark.skip(reason="v3.0 Phase 4.3: knowledge_retriever 已删除")
+    @pytest.mark.xfail(reason="v3.0 Phase 4.3: knowledge_retriever 已删除 · VIP 快车道降级")
     @patch("ai_bridge.http")
     @patch("ai_bridge._exec_search_docs_catalog")
     def test_vip_catalog_intent(

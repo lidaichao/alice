@@ -27,6 +27,7 @@ services:
       # Dify RAG
       DIFY_BASE_URL: http://dify-api:5001
       DIFY_API_KEY: ${DIFY_API_KEY}
+      DIFY_DATASET_API_KEY: ${DIFY_DATASET_API_KEY:-}
       DIFY_DATASET_ID: ${DIFY_DATASET_ID}
       # n8n
       N8N_BASE_URL: http://n8n:5678
