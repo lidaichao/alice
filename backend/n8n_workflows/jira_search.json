@@ -1,0 +1,74 @@
+{
+  "name": "Alice Jira 查询与清洗",
+  "nodes": [
+    {
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "parameters": {
+        "path": "alice-jira-search",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "name": "Jira Search",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "parameters": {
+        "resource": "issue",
+        "operation": "getAll",
+        "jql": "={{ $json.jql }}",
+        "returnAll": true,
+        "limit": 15
+      },
+      "credentials": {
+        "jiraSoftwareApi": { "id": "CREDENTIAL_ID_PLACEHOLDER", "name": "Alice Jira PAT" }
+      }
+    },
+    {
+      "name": "Data Cleaner",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "parameters": {
+        "functionCode": "// 裁剪 Jira 返回数据，防止撑爆上下文（约束#6）\nconst issues = $input.all();\nconst cleaned = issues.map(i => ({\n  key: i.json.key,\n  summary: (i.json.fields?.summary || '').slice(0, 150),\n  status: i.json.fields?.status?.name || '',\n  assignee: i.json.fields?.assignee?.displayName || '',\n  priority: i.json.fields?.priority?.name || ''\n}));\nreturn { issues: cleaned, total: cleaned.length };\n"
+      }
+    },
+    {
+      "name": "Respond to Hub",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": {
+          "values": {
+            "string": [
+              { "name": "success", "value": "true" },
+              { "name": "data", "value": "={{ JSON.stringify($json) }}" }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Jira Search", "type": "main", "index": 0 }]]
+    },
+    "Jira Search": {
+      "main": [[{ "node": "Data Cleaner", "type": "main", "index": 0 }]]
+    },
+    "Data Cleaner": {
+      "main": [[{ "node": "Respond to Hub", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "executionTimeout": 60
+  }
+}

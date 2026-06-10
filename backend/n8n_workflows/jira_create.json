@@ -1,0 +1,133 @@
+{
+  "name": "Alice Jira 创建与幂等去重",
+  "nodes": [
+    {
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "parameters": {
+        "path": "alice-jira-create",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "name": "Idempotency Check",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "parameters": {
+        "resource": "issue",
+        "operation": "getAll",
+        "jql": "={{ 'labels=\"alice-tx-' + $json.idempotency_key + '\"' }}",
+        "returnAll": true,
+        "limit": 5
+      },
+      "credentials": {
+        "jiraSoftwareApi": { "id": "CREDENTIAL_ID_PLACEHOLDER", "name": "Alice Jira PAT" }
+      }
+    },
+    {
+      "name": "IF - Already Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.length }}",
+              "operation": "larger",
+              "value2": "0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Jira Create",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 1,
+      "position": [450, 500],
+      "parameters": {
+        "resource": "issue",
+        "operation": "create",
+        "projectKey": "={{ $json.project_key }}",
+        "summary": "={{ $json.summary }}",
+        "issueType": "={{ $json.issue_type }}",
+        "description": "={{ $json.description }}",
+        "additionalFields": {
+          "labels": {
+            "labelProperties": [
+              { "values": { "label": "={{ 'alice-tx-' + $json.idempotency_key }}" } }
+            ]
+          }
+        }
+      },
+      "credentials": {
+        "jiraSoftwareApi": { "id": "CREDENTIAL_ID_PLACEHOLDER", "name": "Alice Jira PAT" }
+      }
+    },
+    {
+      "name": "Return Existing",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 200],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": {
+          "values": {
+            "string": [
+              { "name": "success", "value": "true" },
+              { "name": "idempotent", "value": "true" },
+              { "name": "message", "value": "任务已存在（幂等检出），跳过创建" },
+              { "name": "issue_key", "value": "={{ $json[0].key }}" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "Return Created",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 500],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": {
+          "values": {
+            "string": [
+              { "name": "success", "value": "true" },
+              { "name": "idempotent", "value": "false" },
+              { "name": "issue_key", "value": "={{ $json.key }}" },
+              { "name": "issue_id", "value": "={{ $json.id }}" }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Idempotency Check", "type": "main", "index": 0 }]]
+    },
+    "Idempotency Check": {
+      "main": [[{ "node": "IF - Already Exists?", "type": "main", "index": 0 }]]
+    },
+    "IF - Already Exists?": {
+      "main": [
+        [{ "node": "Return Existing", "type": "main", "index": 0 }],
+        [{ "node": "Jira Create", "type": "main", "index": 0 }]
+      ]
+    },
+    "Jira Create": {
+      "main": [[{ "node": "Return Created", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "executionTimeout": 60
+  }
+}

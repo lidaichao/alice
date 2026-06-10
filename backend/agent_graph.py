@@ -13,6 +13,7 @@ import concurrent.futures
 from collections.abc import Sequence
 from typing import Annotated, Literal, TypedDict
 
+import requests
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
@@ -20,6 +21,8 @@ from langgraph.graph import END, StateGraph, add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.sqlite import SqliteSaver
 from loguru import logger
+
+from svn_proxy import svn_log
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -62,6 +65,48 @@ class AgentState(TypedDict):
     draft: dict | None
     confirm_result: str | None
     trace_id: str
+
+
+# ═══════════════════════════════════════════════════════════════
+# n8n Webhook 调用器（Phase 2.4 · 约束#6 超时+中文翻译）
+# ═══════════════════════════════════════════════════════════════
+
+_N8N_WEBHOOK_BASE = os.getenv("N8N_WEBHOOK_BASE_URL", os.getenv("N8N_BASE_URL", _config.get("N8N_BASE_URL", "http://localhost:5678")))
+_N8N_API_KEY = os.getenv("N8N_API_KEY", _config.get("N8N_API_KEY", ""))
+
+
+def n8n_webhook_call(workflow_path: str, payload: dict, timeout: int = 3) -> dict:
+    """
+    调用 n8n Webhook 工作流，含超时 + 中文错误翻译。
+    
+    返回 dict: {"ok": True/False, "data": ... / "error": "中文错误信息"}
+    """
+    url = f"{_N8N_WEBHOOK_BASE}/webhook/{workflow_path}"
+    trace_id = payload.get("trace_id", "unknown")
+    logger.info(f"[{trace_id}] n8n Webhook 调用: {workflow_path}")
+    try:
+        resp = requests.post(
+            url,
+            json=payload,
+            timeout=timeout,
+            headers={"X-N8N-API-KEY": _N8N_API_KEY} if _N8N_API_KEY else {},
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            logger.info(f"[{trace_id}] n8n Webhook 完成: {workflow_path} {resp.elapsed.total_seconds():.1f}s")
+            return {"ok": True, "data": data}
+        else:
+            logger.error(f"[{trace_id}] n8n Webhook 失败: HTTP {resp.status_code} {resp.text[:200]}")
+            return {"ok": False, "error": "外部服务异常，请联系管理员"}
+    except requests.exceptions.Timeout:
+        logger.error(f"[{trace_id}] n8n Webhook 超时 >{timeout}s: {workflow_path}")
+        return {"ok": False, "error": "n8n 服务响应超时，请稍后重试"}
+    except requests.exceptions.ConnectionError:
+        logger.error(f"[{trace_id}] n8n Webhook 连接失败: {workflow_path}")
+        return {"ok": False, "error": "无法连接到 n8n 服务，请确认 n8n 已启动"}
+    except Exception as e:
+        logger.error(f"[{trace_id}] n8n Webhook 异常: {e}")
+        return {"ok": False, "error": "外部服务异常，请联系管理员"}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -114,16 +159,35 @@ def dify_rag_retrieval(query: str, trace_id: str = "unknown") -> str:
 
 @tool
 def n8n_jira_query(jql: str, trace_id: str = "unknown") -> str:
-    """通过 n8n Webhook 查询 Jira 任务。Phase 2 实现，当前为占位。"""
-    logger.info(f"[{trace_id}] n8n Jira 查询（占位）: jql={jql[:80]}")
-    return "[Jira 查询功能待 Phase 2 实现]"
+    """通过 n8n Webhook 查询 Jira 任务。JQL 从 Agent 推理生成。"""
+    logger.info(f"[{trace_id}] n8n Jira 查询: jql={jql[:80]}")
+    result = n8n_webhook_call("alice-jira-search", {"jql": jql, "trace_id": trace_id}, timeout=3)
+    if not result.get("ok"):
+        return f"[Jira 查询失败: {result.get('error', '未知错误')}]"
+    data = result.get("data", {})
+    issues = data.get("issues", [])
+    if not issues:
+        return "未找到匹配的 Jira 任务。"
+    lines = [f"共找到 {len(issues)} 条 Jira 任务："]
+    for issue in issues[:10]:
+        key = issue.get("key", "?")
+        summary = issue.get("summary", "")[:80]
+        status = issue.get("status", "?")
+        lines.append(f"- {key} [{status}] {summary}")
+    return "\n".join(lines)
 
 
 @tool
 def svn_query(path: str, trace_id: str = "unknown") -> str:
-    """查询 SVN 代码仓库。Phase 2 实现，当前为占位。"""
-    logger.info(f"[{trace_id}] SVN 查询（占位）: path={path[:80]}")
-    return "[SVN 查询功能待 Phase 2 实现]"
+    """查询 SVN 代码仓库日志。路径必须先通过 workspace_manager 白名单校验。"""
+    logger.info(f"[{trace_id}] SVN 查询: path={path[:80]}")
+    entries = svn_log(path, limit=10, trace_id=trace_id)
+    if not entries:
+        return f"[SVN 查询无结果: 路径未授权或查询失败] path={path[:80]}"
+    lines = [f"SVN 最近 {len(entries)} 条提交："]
+    for entry in entries:
+        lines.append(f"- {entry['revision']} {entry['author']} {entry['date']}: {entry['message'][:60]}")
+    return "\n".join(lines)
 
 
 # 工具列表
