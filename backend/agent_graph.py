@@ -48,6 +48,12 @@ DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", _config.get("DEEPSEEK_MODEL", "deep
 DIFY_BASE_URL = os.getenv("DIFY_BASE_URL", _config.get("DIFY_BASE_URL", "http://localhost:5001"))
 DIFY_API_KEY = os.getenv("DIFY_API_KEY", _config.get("DIFY_API_KEY", ""))
 DIFY_DATASET_ID = os.getenv("DIFY_DATASET_ID", _config.get("DIFY_DATASET_ID", ""))
+DIFY_DATASET_API_KEY = os.getenv("DIFY_DATASET_API_KEY", _config.get("DIFY_DATASET_API_KEY", ""))
+
+
+def _agent_dify_key() -> str:
+    """Agent 工具节点 Dify Key（v3.1 双模：dataset-* 优先 → app-* 降级）"""
+    return DIFY_DATASET_API_KEY or DIFY_API_KEY
 
 # n8n 配置（Phase 2 占位）
 N8N_BASE_URL = os.getenv("N8N_BASE_URL", _config.get("N8N_BASE_URL", "http://localhost:5678"))
@@ -117,8 +123,9 @@ def n8n_webhook_call(workflow_path: str, payload: dict, timeout: int = 3) -> dic
 def dify_rag_retrieval(query: str, trace_id: str = "unknown") -> str:
     """搜索 Alice 知识库。调用 Dify RAG API：POST /datasets/{id}/retrieve"""
     import httpx
-    if not DIFY_API_KEY or not DIFY_DATASET_ID:
-        logger.warning(f"[{trace_id}] Dify RAG 未配置（DIFY_API_KEY/DIFY_DATASET_ID 为空），返回空结果")
+    key = _agent_dify_key()
+    if not key or not DIFY_DATASET_ID:
+        logger.warning(f"[{trace_id}] Dify RAG 未配置（Key/DATASET_ID 为空），返回空结果")
         return "知识库未配置，请联系管理员。"
 
     url = f"{DIFY_BASE_URL}/v1/datasets/{DIFY_DATASET_ID}/retrieve"
@@ -126,7 +133,7 @@ def dify_rag_retrieval(query: str, trace_id: str = "unknown") -> str:
     try:
         resp = httpx.post(
             url,
-            headers={"Authorization": f"Bearer {DIFY_API_KEY}"},
+            headers={"Authorization": f"Bearer {key}"},
             json={
                 "query": query,
                 "retrieval_model": {
@@ -137,6 +144,10 @@ def dify_rag_retrieval(query: str, trace_id: str = "unknown") -> str:
             },
             timeout=10.0,
         )
+        if resp.status_code == 401:
+            _hint = "（Agent 工具节点 RAG 需 dataset-* 开头的 Key，当前仅 app-* Key）" if not DIFY_DATASET_API_KEY else ""
+            logger.error(f"[{trace_id}] Dify RAG 401: Key 权限不足{_hint}")
+            return "知识库 Key 权限不足（RAG 需 dataset-* 开头的 Key），请联系管理员配置 DIFY_DATASET_API_KEY。"
         if resp.status_code != 200:
             logger.error(f"[{trace_id}] Dify RAG 检索失败: HTTP {resp.status_code} {resp.text[:200]}")
             return f"[知识库检索失败: HTTP {resp.status_code}]"
