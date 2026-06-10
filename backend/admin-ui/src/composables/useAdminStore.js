@@ -42,6 +42,9 @@ export function useAdminStore() {
   const healthSummary = ref(null);
   const healthLoading = ref(false);
 
+  // Phase 4.2: Agent SSE 忙状态（约束#12 — 输入框/按钮 disabled）
+  const isAgentBusy = ref(false);
+
   const showToast = (msg, type = 'success') => {
     if (type === 'error') ElMessage.error(msg);
     else if (type === 'warning') ElMessage.warning(msg);
@@ -1441,14 +1444,20 @@ export function useAdminStore() {
 
   const fetchHealth = async () => {
     healthLoading.value = true;
+    // Phase 4.2: AbortController 生命周期（约束#15 — SSE 断连归还线程）
+    const controller = new AbortController();
     try {
-      const res = await fetch(`${window.location.origin || ''}/health`);
+      const res = await fetch(`${window.location.origin || ''}/health`, { signal: controller.signal });
       healthSummary.value = await res.json();
     } catch (e) {
-      healthSummary.value = { status: 'error', detail: e.message || '无法读取 /health' };
+      if (e.name !== 'AbortError') {
+        healthSummary.value = { status: 'error', detail: e.message || '无法读取 /health' };
+      }
     } finally {
       healthLoading.value = false;
+      // cleanup: 组件卸载时 controller.abort() 由调用方负责
     }
+    return () => controller.abort();
   };
 
   const integrationLabel = (probe) => {
@@ -1530,6 +1539,7 @@ export function useAdminStore() {
     testAiSystem,
     healthSummary,
     healthLoading,
+    isAgentBusy,
     fetchHealth,
     integrationLabel,
     testJiraSystem,

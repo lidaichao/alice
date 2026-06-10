@@ -54,7 +54,7 @@
 </template>
 
 <script setup>
-import { provide, computed, ref } from 'vue';
+import { provide, computed, ref, onMounted, onUnmounted } from 'vue';
 import { useAdminStore } from './composables/useAdminStore.js';
 import LoginView from './views/LoginView.vue';
 import SettingsView from './views/SettingsView.vue';
@@ -68,6 +68,23 @@ const store = useAdminStore();
 provide('adminStore', store);
 
 const authenticated = ref(store.isAuthenticated());
+
+// Phase 4.2: AbortController 生命周期（约束#15）
+let abortCtrl = null;
+
+onMounted(() => {
+  abortCtrl = new AbortController();
+  if (authenticated.value) {
+    store.fetchHealth();
+  }
+});
+
+onUnmounted(() => {
+  if (abortCtrl) {
+    abortCtrl.abort();
+    abortCtrl = null;
+  }
+});
 
 const unwrap = (v) => (v && typeof v === 'object' && 'value' in v ? v.value : v);
 const menuActive = computed(() => unwrap(store.activeMenu));

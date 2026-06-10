@@ -17,7 +17,7 @@ repos:
     hooks:
       - id: no-dead-imports
         name: "死代码 Import 扫描（Phase 0.9 · 约束#21）"
-        entry: bash -c '! rg -n "import faiss|from jira_api import|knowledge_retriever|rag_engine|react_runner|workflow_engine" backend/ || exit 0'
+        entry: bash -c '! rg -n "import faiss|from jira_api import|knowledge_retriever|rag_engine|react_runner|plugin_gateway|workflow_engine" backend/ || exit 0'
         language: system
         types: [python]
         pass_filenames: false

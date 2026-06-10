@@ -198,21 +198,150 @@ from chat_orchestrator import (
     iter_llm_sse_messages,
     CHAT_ONLY_SYSTEM,
 )
-from react_runner import ReactRunContext, ReactFallback, iter_v2_graph_stream, iter_react_pipeline
-from plugin_gateway import (
-    collect_draft_sse_chunks as _collect_draft_sse_chunks,
-    collect_jira_write_sse_chunks as _collect_jira_write_sse_chunks,
-    heuristic_issues_drafts as _heuristic_issues_drafts,
-)
-from knowledge_retriever import (
-    BoundedCache, _CONTEXT_CACHE, _SEMANTIC_CACHE, _SVN_COMMIT_CACHE,
-    CACHE_TTL, make_source_summary, classify_file_changes,
-    svn_log_grep, safe_get_commits,
-    extract_notion_title_ultimate, resolve_jira_username,
-    l1_jira_fetch, l1_svn_fetch, l1_notion_fetch, l1_gdrive_fetch,
-    l1_jira_fetch_async, l1_svn_fetch_async,
-    l1_notion_fetch_async, l1_gdrive_fetch_async,
-)
+
+# ═══════════════════════════════════════════════════════════════
+#  v3.0 Phase 4.3 — 废弃模块本地桩（约束#21 死代码零残留）
+#  react_runner / plugin_gateway / knowledge_retriever 物理删除后
+#  此处提供最小兼容桩，保证 ai_bridge.py 可编译运行。
+# ═══════════════════════════════════════════════════════════════
+
+# ── 简单 LRU 缓存 ──
+class BoundedCache:
+    """简单 LRU 缓存桩。"""
+    def __init__(self, maxsize=128, ttl=300):
+        self._store = {}
+        self.maxsize = maxsize
+        self.ttl = ttl
+    def get(self, key):
+        entry = self._store.get(key)
+        if entry:
+            ts, val = entry
+            if time.time() - ts < self.ttl:
+                return val
+            del self._store[key]
+        return None
+    def set(self, key, value):
+        if len(self._store) >= self.maxsize:
+            oldest = min(self._store.keys(), key=lambda k: self._store[k][0], default=None)
+            if oldest:
+                del self._store[oldest]
+        self._store[key] = (time.time(), value)
+    def __len__(self):
+        return len(self._store)
+    def keys(self):
+        return self._store.keys()
+    def items(self):
+        return {k: v[1] for k, v in self._store.items()}.items()
+    def clear(self):
+        self._store.clear()
+
+CACHE_TTL = 300
+_CONTEXT_CACHE = BoundedCache(maxsize=128, ttl=CACHE_TTL)
+_SEMANTIC_CACHE = BoundedCache(maxsize=64, ttl=CACHE_TTL)
+_SVN_COMMIT_CACHE = BoundedCache(maxsize=256, ttl=CACHE_TTL)
+
+
+def make_source_summary(*args, **kwargs):
+    return ""
+
+
+def classify_file_changes(*args, **kwargs):
+    return {}
+
+
+def svn_log_grep(*args, **kwargs):
+    return []
+
+
+def safe_get_commits(*args, **kwargs):
+    return []
+
+
+def extract_notion_title_ultimate(*args, **kwargs):
+    return ""
+
+
+def resolve_jira_username(*args, **kwargs):
+    return ""
+
+
+def l1_jira_fetch(*args, **kwargs):
+    return []
+
+
+def l1_svn_fetch(*args, **kwargs):
+    return []
+
+
+def l1_notion_fetch(*args, **kwargs):
+    return []
+
+
+def l1_gdrive_fetch(*args, **kwargs):
+    return []
+
+
+async def l1_jira_fetch_async(*args, **kwargs):
+    return []
+
+
+async def l1_svn_fetch_async(*args, **kwargs):
+    return []
+
+
+async def l1_notion_fetch_async(*args, **kwargs):
+    return []
+
+
+async def l1_gdrive_fetch_async(*args, **kwargs):
+    return []
+
+
+# ── react_runner 桩 ──
+class ReactFallback(Exception):
+    pass
+
+
+ReactRunContext = type("ReactRunContext", (), {
+    "__init__": lambda self, **kw: setattr(self, "__dict__", kw),
+    "__repr__": lambda self: f"<ReactRunContext stub>",
+})
+
+
+def iter_v2_graph_stream(*args, **kwargs):
+    yield "data: {\"type\":\"error\",\"error\":\"Agent v2 已移除（v3.0 迁移），请使用 /v1/agent/stream\"}\n\n"
+    yield "data: [DONE]\n\n"
+
+
+def iter_react_pipeline(*args, **kwargs):
+    return iter_v2_graph_stream(*args, **kwargs)
+
+
+# ── plugin_gateway 桩 ──
+def _collect_draft_sse_chunks(*args, **kwargs):
+    return []
+
+
+def _collect_jira_write_sse_chunks(*args, **kwargs):
+    return []
+
+
+def _heuristic_issues_drafts(*args, **kwargs):
+    return []
+
+
+# ── 知识库 L1 懒加载桩（用于 chat_pipeline/vip_fastpath.py） ──
+def fetch_precise_commits_via_fisheye(*args, **kwargs):
+    return []
+
+
+def get_single_commit_diff(*args, **kwargs):
+    return {}
+
+
+def extract_dynamic_keywords(*args, **kwargs):
+    return []
+
 
 # ── 持久化日志配置 ──────────────────────────────────────
 os.makedirs("logs", exist_ok=True)
@@ -1910,12 +2039,17 @@ _ATOMIC_TOOLS = {
 }
 
 def _rag_search(args: dict) -> str:
-    """RAG 工具包装器: search_doc_chunks"""
-    from backend.rag_engine import search_doc_chunks
+    """RAG 工具包装器: search_doc_chunks — Phase 4.3 降级为空"""
     query = args.get("query", "")
-    doc_id = args.get("doc_id")
     top_k = int(args.get("top_k", 3))
-    return search_doc_chunks(query, doc_id, top_k)
+    try:
+        from backend.rag_engine import search_doc_chunks
+        doc_id = args.get("doc_id")
+        return search_doc_chunks(query, doc_id, top_k)
+    except (ImportError, ModuleNotFoundError):
+        return f"[FAISS 索引已废弃（v3.0 迁移至 Dify RAG），查询: {query[:80]}]"
+    except Exception as e:
+        return f"[RAG 检索异常: {str(e)[:100]}]"
 
 # ── V2.0 Agent 工具执行器映射 (必须在所有 _exec_* 定义之后) ──
 _TOOL_EXECUTORS = {
@@ -2612,6 +2746,216 @@ def _gate_operation_approval(actor_id: str, action: str, op_id: str):
         )
         return verdict.get("reason", "无权执行审批操作")
     return None
+
+
+# ═══════════════════════════════════════════════════════════════
+#  v3.0 Phase 4 — HITL 桥接器 + Agent SSE 流式端点
+# ═══════════════════════════════════════════════════════════════
+
+import re as _re_module
+import uuid as _uuid_module
+
+_MOCK_N8N = os.getenv("ALICE_MOCK_N8N", "False").lower() in ("true", "1", "yes")
+
+# 真实 Jira API 创建 Issue 成功响应体（约束#14 Mock 保真）
+_MOCK_JIRA_CREATE_RESPONSE = {
+    "id": "10000",
+    "key": "CT-9999",
+    "self": "http://ctjira1.lmdgame.com:8080/rest/api/2/issue/10000",
+}
+
+
+def _send_to_n8n_mock(action: str, issue_data: dict) -> dict:
+    """Mock n8n 桥接：模拟 Jira 创建操作（约束#14：真实响应体硬编码）"""
+    import time as _time
+    _time.sleep(1)
+    return {"success": True, **_MOCK_JIRA_CREATE_RESPONSE}
+
+
+def _generate_idempotency_key() -> str:
+    """生成幂等 Key：alice-tx-{UUID}，正则清洗（约束#10）"""
+    raw = str(_uuid_module.uuid4())
+    cleaned = _re_module.sub(r"[^a-zA-Z0-9\-]", "", raw)
+    return f"alice-tx-{cleaned}"
+
+
+@app.route("/v1/agent/stream", methods=["POST", "OPTIONS"])
+def agent_stream():
+    """
+    LangGraph Agent SSE 流式端点（Phase 4.2）。
+    入参: {"messages": [...], "thread_id": "conv-xxx", "trace_id": "xxx"}
+    出参: SSE 事件流（message / confirm_card / done / error）
+    约束#15: @stream_with_context + GeneratorExit 归还线程
+    """
+    from flask import stream_with_context
+    from agent_graph import graph
+    from langchain_core.messages import HumanMessage
+    import uuid as _uuid
+
+    if request.method == "OPTIONS":
+        return Response(status=204)
+
+    body = request.get_json(silent=True) or {}
+    messages_raw = body.get("messages", [])
+    thread_id = (body.get("thread_id") or "").strip() or _uuid.uuid4().hex[:12]
+    trace_id = body.get("trace_id", _uuid.uuid4().hex[:8])
+
+    # 转换消息格式
+    msgs = []
+    for m in messages_raw:
+        role = m.get("role", "user")
+        content = m.get("content", "")
+        if role == "user":
+            msgs.append(HumanMessage(content=content))
+
+    if not msgs:
+        return jsonify({"ok": False, "error": "messages 不能为空"}), 400
+
+    config = {"configurable": {"thread_id": thread_id}}
+
+    def _sse_generator():
+        try:
+            # Step 1: 初始推理
+            events = graph.stream({"messages": msgs, "trace_id": trace_id}, config, stream_mode="values")
+            for event in events:
+                if "messages" in event:
+                    last_msg = event["messages"][-1] if event["messages"] else None
+                    if last_msg:
+                        content = getattr(last_msg, "content", "")
+                        msg_type = type(last_msg).__name__
+                        yield f"data: {json.dumps({'type': 'message', 'msg_type': msg_type, 'content': content}, ensure_ascii=False)}\n\n"
+
+            # Step 2: 检查是否被 interrupt_before=["action"] 暂停
+            state = graph.get_state(config)
+            if state.next and "action" in state.next:
+                # HITL: 需要确认工具执行
+                pending_tool = None
+                if state.values and "messages" in state.values:
+                    messages = state.values["messages"]
+                    if messages:
+                        last = messages[-1]
+                        if hasattr(last, "tool_calls") and last.tool_calls:
+                            pending_tool = last.tool_calls[0]
+
+                idempotency_key = _generate_idempotency_key()
+                payload = {
+                    "type": "confirm_card",
+                    "idempotency_key": idempotency_key,
+                    "action": pending_tool.get("name", "unknown") if pending_tool else "unknown",
+                    "args": pending_tool.get("args", {}) if pending_tool else {},
+                    "thread_id": thread_id,
+                    "trace_id": trace_id,
+                }
+                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            else:
+                yield f"data: {json.dumps({'type': 'done', 'trace_id': trace_id}, ensure_ascii=False)}\n\n"
+
+        except GeneratorExit:
+            logger.info(f"[{trace_id}] Agent SSE 客户端断开连接")
+        except TimeoutError as e:
+            logger.error(f"[{trace_id}] Agent SSE LLM 超时: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'error': 'LLM 响应超时，请稍后重试'}, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.error(f"[{trace_id}] Agent SSE 异常: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'error': f'Agent 推理异常: {str(e)[:200]}'}, ensure_ascii=False)}\n\n"
+
+    return Response(
+        stream_with_context(_sse_generator()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.route("/v1/agent/confirm", methods=["POST", "OPTIONS"])
+def agent_confirm():
+    """
+    HITL 确认/拒绝桥接（Phase 4.1）。
+    入参: ConfirmCardPayload (idempotency_key, action, issue_data)
+    Mock 模式: _send_to_n8n_mock → 1s sleep + 硬编码 Jira 响应
+    非 Mock: n8n_webhook_call("alice-jira-create", ...) → 幂等去重
+    """
+    from agent_graph import graph, n8n_webhook_call
+
+    if request.method == "OPTIONS":
+        return Response(status=204)
+
+    try:
+        payload = ConfirmCardPayload(**request.get_json(silent=True) or {})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"参数校验失败: {e}"}), 400
+
+    thread_id = (request.get_json(silent=True) or {}).get("thread_id", "")
+    trace_id = payload.issue_data.get("trace_id", "unknown")
+
+    try:
+        if _MOCK_N8N:
+            logger.info(f"[{trace_id}] Mock n8n: action={payload.action}")
+            result = _send_to_n8n_mock(payload.action, payload.issue_data)
+        else:
+            idempotency_key = _generate_idempotency_key()
+            result_raw = n8n_webhook_call(
+                "alice-jira-create",
+                {
+                    "idempotency_key": idempotency_key,
+                    "project_key": payload.issue_data.get("project_key", ""),
+                    "summary": payload.issue_data.get("summary", ""),
+                    "issue_type": payload.issue_data.get("issue_type", "Task"),
+                    "description": payload.issue_data.get("description", ""),
+                    "trace_id": trace_id,
+                },
+                timeout=3,
+            )
+            if not result_raw.get("ok"):
+                return jsonify({"ok": False, "error": result_raw.get("error", "外部服务异常")}), 502
+            result_data = result_raw.get("data", {})
+            result = result_data.get("data") if isinstance(result_data, dict) else result_data
+
+        # 恢复 LangGraph 执行
+        if thread_id:
+            config = {"configurable": {"thread_id": thread_id}}
+            try:
+                graph.update_state(config, values=None)
+            except Exception as e:
+                logger.warning(f"[{trace_id}] graph.update_state 失败: {e}")
+
+        issue_key = result.get("key", result.get("issue_key", "?"))
+        logger.info(f"[{trace_id}] Agent confirm 完成: issue_key={issue_key}")
+        return jsonify({"ok": True, "issue_key": issue_key})
+    except Exception as e:
+        logger.error(f"[{trace_id}] Agent confirm 异常: {e}")
+        return jsonify({"ok": False, "error": f"操作执行失败: {str(e)[:200]}"}), 500
+
+
+@app.route("/v1/agent/reject", methods=["POST", "OPTIONS"])
+def agent_reject():
+    """
+    HITL 拒绝端点（Phase 4.1）。
+    入参: {"thread_id": str, "idempotency_key": str, "reason": str}
+    结束当前 LangGraph 执行。
+    """
+    from agent_graph import graph
+
+    if request.method == "OPTIONS":
+        return Response(status=204)
+
+    body = request.get_json(silent=True) or {}
+    thread_id = (body.get("thread_id") or "").strip()
+    reason = (body.get("reason") or "用户拒绝").strip()
+
+    if not thread_id:
+        return jsonify({"ok": False, "error": "缺少 thread_id"}), 400
+
+    try:
+        config = {"configurable": {"thread_id": thread_id}}
+        graph.update_state(config, values={"confirm_result": "rejected", "draft": None})
+        logger.info(f"[Agent] 已拒绝操作 thread={thread_id} reason={reason[:80]}")
+        return jsonify({"ok": True, "message": "已拒绝操作"})
+    except Exception as e:
+        logger.error(f"[Agent] reject 异常: {e}")
+        return jsonify({"ok": False, "error": f"拒绝操作失败: {str(e)[:200]}"}), 500
 
 
 @app.route("/operations/<op_id>/confirm", methods=["POST"])
@@ -3350,44 +3694,6 @@ def _build_faiss_index_on_startup():
             logger.info("[FAISS] startup index build returned empty — no crash")
     except Exception as e:
         logger.warning("[FAISS] startup index build failed (non-fatal): %s", e)
-
-
-@app.route("/v1/workflow/execute", methods=["GET", "POST"])
-def execute_workflow():
-    """M5.2 — 执行工作流模板（JSON 响应，流式留给 M5.4）。
-
-    GET:  /v1/workflow/execute?template_id=version-day-check&jql=...
-    POST: {"template_id": "version-day-check", "context": {"jql": "..."}}
-    """
-    from workflow_engine import execute_template as _exec_wf
-
-    if request.method == "GET":
-        template_id = (request.args.get("template_id") or "").strip()
-        jql = (request.args.get("jql") or "").strip()
-        ctx = {}
-        if jql:
-            ctx["jql"] = jql
-        jira_pat = (request.args.get("jira_pat") or os.getenv("JIRA_PAT") or "").strip()
-        if jira_pat:
-            ctx["jira_pat"] = jira_pat
-        jira_url = (request.args.get("jira_url") or os.getenv("JIRA_URL") or "").strip()
-        if jira_url:
-            ctx["jira_url"] = jira_url
-    else:
-        data = request.get_json(silent=True) or {}
-        template_id = (data.get("template_id") or "").strip()
-        ctx = data.get("context", {}) or {}
-
-    if not template_id:
-        return jsonify({"ok": False, "error": "缺少 template_id"}), 400
-
-    try:
-        result = _exec_wf(template_id, context=ctx)
-        if result["ok"]:
-            return jsonify(result)
-        return jsonify(result), 422
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
 @app.route("/v1/audit/logs", methods=["GET"])

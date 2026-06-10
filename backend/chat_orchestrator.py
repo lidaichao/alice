@@ -14,7 +14,13 @@ from typing import Any, Callable, Iterator, List, Optional, Set
 from intent_classifier import classify_intent, should_use_chat_only_lane
 from chat_pipeline.vip_fastpath import VipFastpathContext, iter_vip_fastpath
 from chat_pipeline.dsml_cleaner import sse_line_has_dsml_leak
-import plugin_gateway
+# v3.0 Phase 4.3: plugin_gateway 已删除，本地桩
+class _plugin_gateway_stub:
+    @staticmethod
+    def try_express_lanes(*a, **kw): return None
+    @staticmethod
+    def is_jira_write_request(*a, **kw): return False
+plugin_gateway = _plugin_gateway_stub()
 
 logger = logging.getLogger(__name__)
 
@@ -447,47 +453,14 @@ def iter_preflight_sse(ctx: OrchestratorContext) -> Iterator[bytes]:
         wf_match = re.match(r"^\s*\[WORKFLOW:([a-z0-9_-]+)\]\s*", user_text, re.I)
         if wf_match:
             template_id = wf_match.group(1).lower()
-            logger.info("[Workflow] trigger detected: %s", template_id)
-            try:
-                from workflow_engine import execute_template as _exec_wf, list_template_ids as _list_ids
-                available = _list_ids()
-                stashed = user_text[:120]
-                ctx.terminated = True
-
-                if template_id in available:
-                    result = _exec_wf(template_id, context={})
-                    if result.get("ok"):
-                        steps = result.get("execution_log") or []
-                        lines = [f"## ⚙️ 工作流执行完成：{result.get('template_name', template_id)}\n"]
-                        for s in steps:
-                            icon = "✅" if s.get("status") == "done" else "❌"
-                            sid = s.get("step_id", "?")
-                            tool = s.get("tool", "")
-                            lines.append(f"- {icon} **{sid}**（`{tool}`）")
-                            out = (s.get("output") or "")[:200]
-                            if out:
-                                lines.append(f"  {out}")
-                        lines.append(f"\n> 共 {len(steps)} 步执行完毕。")
-                        final_msg = "\n".join(lines)
-                    else:
-                        final_msg = f"**工作流 `{template_id}` 执行失败**\n\n步驟 `{result.get('failed_step', '?')}` 出错：{result.get('error', '?')[:300]}"
-                else:
-                    avail_list = ", ".join(available) if available else "（无可用模板）"
-                    final_msg = f"未找到工作流模板 `{template_id}`。\n\n可用模板：{avail_list}"
-
-                payload = json.dumps(
-                    {"choices": [{"delta": {"content": final_msg}}]}, ensure_ascii=False
-                )
-                yield f"data: {payload}\n\n".encode("utf-8")
-                yield SSE_DONE
-            except Exception as wf_err:
-                logger.warning("[Workflow] trigger failed: %s", wf_err)
-                ctx.terminated = True
-                err_payload = json.dumps(
-                    {"choices": [{"delta": {"content": f"工作流执行异常：{str(wf_err)[:200]}"}}]}, ensure_ascii=False
-                )
-                yield f"data: {err_payload}\n\n".encode("utf-8")
-                yield SSE_DONE
+            logger.info("[Workflow] trigger detected: %s — 已废弃 (v3.0)", template_id)
+            ctx.terminated = True
+            final_msg = f"## ⚙️ 工作流引擎已废弃\n\n`[WORKFLOW:{template_id}]` 在 v3.0 中已移除，请使用 Agent 模式 `/v1/agent/stream` 进行编排。\n\n> 工作流模板 JSON 迁移至 n8n 手动导入。"
+            payload = json.dumps(
+                {"choices": [{"delta": {"content": final_msg}}]}, ensure_ascii=False
+            )
+            yield f"data: {payload}\n\n".encode("utf-8")
+            yield SSE_DONE
             return
 
     # ═══════════════════════════════════════════════════════
