@@ -50,6 +50,11 @@ backend/data/mailbox.db
 backend/data/mailbox.db-shm
 backend/data/mailbox.db-wal
 
+# v3.0 LangGraph SqliteSaver 持久化（运行时数据，不纳入版本库）
+alice_agent.db
+alice_agent.db-shm
+alice_agent.db-wal
+
 # v3.0 本地克隆的开源参考仓库（体积大，不纳入版本库）
 specs/langgraph/
 specs/dify/

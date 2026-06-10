@@ -60,6 +60,86 @@ except ImportError:
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from jira_api import JiraClient
 
+# ═══════════════════════════════════════════════════════════════
+# v3.0 Phase 0-1 新增：loguru 日志基建（约束#16-17）
+# ═══════════════════════════════════════════════════════════════
+from loguru import logger as loguru_logger
+import uuid as _uuid_module
+
+loguru_logger.remove()  # 移除默认 handler
+loguru_logger.add(
+    "logs/alice_{time:YYYY-MM-DD}.log",
+    rotation="50 MB",
+    retention="5 days",
+    compression="zip",
+    level="INFO",
+    format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {extra[trace_id]: <8} | {message}",
+)
+loguru_logger.configure(extra={"trace_id": "--------"})
+
+# ═══════════════════════════════════════════════════════════════
+# v3.0 Phase 0.11：Pydantic API 契约校验（约束#20）
+# ═══════════════════════════════════════════════════════════════
+from pydantic import BaseModel, Field
+
+
+class ConfirmCardPayload(BaseModel):
+    """HITL ConfirmCard 确认载荷：幂等 Key + 操作类型 + 数据"""
+    idempotency_key: str = Field(..., pattern=r'^alice-tx-[a-f0-9\-]+$')
+    action: str = Field(..., pattern=r'^(create_issue|update_issue|add_comment)$')
+    issue_data: dict
+
+
+# ═══════════════════════════════════════════════════════════════
+# v3.0 Phase 1.3：Dify RAG 调用器（约束#2：仅 RAG API）
+# ═══════════════════════════════════════════════════════════════
+import httpx as _httpx_module
+
+# 直接从 JSON 文件读取 Dify 配置（避免循环依赖 load_global_config）
+_DIFY_CONFIG = {}
+_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "global_config.json")
+if os.path.exists(_config_path):
+    try:
+        with open(_config_path, "r", encoding="utf-8") as _f:
+            _DIFY_CONFIG = json.load(_f)
+    except Exception:
+        pass
+
+DIFY_BASE_URL = os.getenv("DIFY_BASE_URL", _DIFY_CONFIG.get("DIFY_BASE_URL", "http://localhost:5001"))
+DIFY_API_KEY = os.getenv("DIFY_API_KEY", _DIFY_CONFIG.get("DIFY_API_KEY", ""))
+DIFY_DATASET_ID = os.getenv("DIFY_DATASET_ID", _DIFY_CONFIG.get("DIFY_DATASET_ID", ""))
+
+
+def dify_retrieve(query: str, trace_id: str = "", top_k: int = 5) -> dict:
+    """Dify 知识库 RAG 检索（仅检索，不使用对话/工作流端点·约束#2）"""
+    if not DIFY_API_KEY or not DIFY_DATASET_ID:
+        loguru_logger.warning(f"[{trace_id}] Dify RAG 未配置，返回空结果")
+        return {"error": "知识库未配置，请联系管理员。"}
+
+    url = f"{DIFY_BASE_URL}/v1/datasets/{DIFY_DATASET_ID}/retrieve"
+    try:
+        resp = _httpx_module.post(
+            url,
+            headers={"Authorization": f"Bearer {DIFY_API_KEY}"},
+            json={
+                "query": query,
+                "retrieval_model": {
+                    "search_method": "hybrid_search",
+                    "reranking_enable": True,
+                    "top_k": top_k,
+                },
+            },
+            timeout=10.0,  # 约束#8c
+        )
+        if resp.status_code != 200:
+            loguru_logger.error(f"[{trace_id}] Dify RAG 检索失败: HTTP {resp.status_code}")
+            return {"error": "知识库服务暂时不可用，请稍后重试"}  # 约束#8c 中文翻译
+        loguru_logger.info(f"[{trace_id}] Dify RAG 检索耗时 {resp.elapsed.total_seconds():.1f}s")
+        return resp.json()
+    except Exception as e:
+        loguru_logger.error(f"[{trace_id}] Dify RAG 检索异常: {e}")
+        return {"error": "知识库服务暂时不可用，请稍后重试"}
+
 # ── 意图分类（移植自白泽 Baize）─────────────────────────────
 from intent_classifier import (
     classify_intent,
@@ -126,6 +206,12 @@ _sh = logging.StreamHandler(sys.stderr)
 _sh.setFormatter(logging.Formatter(_log_format))
 logging.basicConfig(level=logging.INFO, handlers=[_fh, _sh])
 logger = logging.getLogger("ai-bridge")
+
+# ═══════════════════════════════════════════════════════════════
+# v3.0 Phase 0.10：生产环境 Fail-fast Mock 检查（约束#18）
+# ═══════════════════════════════════════════════════════════════
+if os.getenv("FLASK_ENV") == "production" and os.getenv("ALICE_MOCK_N8N", "").lower() in ("true", "1", "yes"):
+    sys.exit("\u274c 致命错误：生产环境禁止启用 ALICE_MOCK_N8N。请检查环境变量配置。")
 
 app = Flask(__name__)
 CORS(app)  # 允许跨域请求（内网客户端从不同 IP 访问）

@@ -1,0 +1,120 @@
+# Alice v3.0 · Dify 知识库 RAG 服务
+# 用途：仅用于知识库 RAG（检索/上传/管理），不用于 AI 编排或对话工作流
+# 部署：docker compose -f docker-compose.dify.yml up -d
+# 约束：内存 ≤2GB，CPU ≤2 核（§八 约束#13 / Phase 0.8）
+
+version: '3.8'
+
+services:
+  # -- Dify API 服务（核心）--
+  api:
+    image: langgenius/dify-api:1.3.0
+    container_name: alice-dify-api
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    environment:
+      MODE: api
+      SECRET_KEY: dify-alice-v3-secret-key-change-in-production
+      CONSOLE_WEB_URL: ""
+      CONSOLE_API_URL: ""
+      SERVICE_API_URL: ""
+      APP_WEB_URL: ""
+      FILES_URL: ""
+      LOG_LEVEL: INFO
+      # 数据库（内嵌 PostgreSQL）
+      DB_USERNAME: postgres
+      DB_PASSWORD: dify-alice-pg-pass
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: dify
+      # Redis（缓存）
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      # 存储（本地文件系统）
+      STORAGE_TYPE: local
+      STORAGE_LOCAL_PATH: storage
+      # 向量数据库（内置 Weaviate 或 Qdrant）
+      VECTOR_STORE: weaviate
+      WEAVIATE_ENDPOINT: http://weaviate:8080
+      # 沙箱（代码执行，非必须但 Dify 启动需要）
+      CODE_MAX_NUMBER: 9223372036854775807
+      CODE_MIN_NUMBER: -9223372036854775808
+      CODE_MAX_DEPTH: 5
+      CODE_MAX_STRING_LENGTH: 80000
+      CODE_MAX_STRING_ARRAY_LENGTH: 30
+      CODE_MAX_OBJECT_ARRAY_LENGTH: 30
+      CODE_MAX_NUMBER_ARRAY_LENGTH: 1000
+      SANDBOX_ENDPOINT: http://sandbox:8194
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      weaviate:
+        condition: service_started
+    volumes:
+      - dify_storage:/app/api/storage
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: '2'
+
+  # -- PostgreSQL --
+  db:
+    image: postgres:15-alpine
+    container_name: alice-dify-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: dify-alice-pg-pass
+      POSTGRES_DB: dify
+    volumes:
+      - dify_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d dify"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # -- Redis --
+  redis:
+    image: redis:7-alpine
+    container_name: alice-dify-redis
+    restart: unless-stopped
+    volumes:
+      - dify_redis:/data
+
+  # -- Weaviate 向量数据库 --
+  weaviate:
+    image: semitechnologies/weaviate:1.29.0
+    container_name: alice-dify-weaviate
+    restart: unless-stopped
+    environment:
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      DEFAULT_VECTORIZER_MODULE: 'none'
+      CLUSTER_HOSTNAME: 'node1'
+    volumes:
+      - dify_weaviate:/var/lib/weaviate
+
+  # -- 沙箱（Dify 必需）--
+  sandbox:
+    image: langgenius/dify-sandbox:0.2.10
+    container_name: alice-dify-sandbox
+    restart: unless-stopped
+    environment:
+      API_KEY: dify-sandbox
+      GIN_MODE: release
+      WORKER_TIMEOUT: 15
+    volumes:
+      - dify_sandbox:/dependencies
+
+volumes:
+  dify_storage:
+  dify_pgdata:
+  dify_redis:
+  dify_weaviate:
+  dify_sandbox:
