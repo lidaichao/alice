@@ -2857,6 +2857,9 @@ def agent_stream():
     if request.method == "OPTIONS":
         return Response(status=204)
 
+    if not request.data or not request.data.strip():
+        return jsonify({"ok": False, "error": "请求体不能为空"}), 400
+
     body = request.get_json(silent=True) or {}
     messages_raw = body.get("messages", [])
     thread_id = (body.get("thread_id") or "").strip() or _uuid.uuid4().hex[:12]
@@ -3534,7 +3537,7 @@ def proxy_jira_test():
 from pydantic import BaseModel, Field as _PydanticField
 
 class DifyRagProxyRequest(BaseModel):
-    query: str
+    query: str = _PydanticField(..., min_length=1)
     top_k: int = 5
 
 class N8nJiraProxyRequest(BaseModel):
