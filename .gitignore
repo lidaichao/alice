@@ -66,10 +66,4 @@ global_config.json
 plugin/**/target/
 plugin/**/node_modules/
 
-# WorkBuddy / 本地对照（已迁至 归档/）
-归档/workspace/.workbuddy/memory/
-归档/research/LobeHub/
-归档/research/baize/
-归档/**/.env
-归档/**/__pycache__/
 backend/runtime/
