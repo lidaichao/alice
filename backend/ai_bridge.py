@@ -95,6 +95,18 @@ class ConfirmCardPayload(BaseModel):
 # ═══════════════════════════════════════════════════════════════
 import httpx as _httpx_module
 
+# ── Dify 配置（.env.dify，Phase 0.3 / Phase 5.1） — 必须在 DIFY_* 读取前加载 ──
+_DIFY_DOTENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env.dify")
+if os.path.exists(_DIFY_DOTENV_PATH):
+    with open(_DIFY_DOTENV_PATH, "r", encoding="utf-8") as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _key, _, _val = _line.partition("=")
+                _key, _val = _key.strip(), _val.strip()
+                if _key and (not os.environ.get(_key)):
+                    os.environ[_key] = _val
+
 # 直接从 JSON 文件读取 Dify 配置（避免循环依赖 load_global_config）
 _DIFY_CONFIG = {}
 _config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "global_config.json")
@@ -119,7 +131,7 @@ if os.path.exists(_N8N_DOTENV_PATH):
             if _line and not _line.startswith("#") and "=" in _line:
                 _key, _, _val = _line.partition("=")
                 _key, _val = _key.strip(), _val.strip()
-                if _key and _key not in os.environ:
+                if _key and (not os.environ.get(_key)):
                     os.environ[_key] = _val
 
 N8N_BASE_URL = os.getenv("N8N_BASE_URL", "http://localhost:5678")
@@ -3479,6 +3491,13 @@ class N8nJiraProxyRequest(BaseModel):
     max_results: int = 15
 
 
+class DifyUploadRequest(BaseModel):
+    """Phase 5.1: Dify 知识库文档上传请求"""
+    name: str
+    text: str
+    indexing_technique: str = "high_quality"
+
+
 @app.route("/v1/admin/proxy/dify/rag", methods=["POST", "OPTIONS"])
 def admin_proxy_dify_rag():
     """
@@ -3519,6 +3538,89 @@ def admin_proxy_dify_rag():
     except Exception as e:
         logger.error(f"[Admin] Dify RAG proxy exception: {e}")
         return jsonify({"ok": False, "error": "知识库服务异常，请联系管理员"}), 500
+
+
+@app.route("/v1/admin/proxy/dify/upload", methods=["POST", "OPTIONS"])
+def admin_proxy_dify_upload():
+    """
+    Phase 5.1: Admin → Hub → Dify 知识库文档上传。
+    入参: {"name": str, "text": str, "indexing_technique": "high_quality"}
+    出参: {"ok": true/false, "document_id": "xxx" / "error": "..."}
+    """
+    if request.method == "OPTIONS":
+        return Response(status=204)
+
+    if not DIFY_API_KEY or not DIFY_DATASET_ID:
+        return jsonify({"ok": False, "error": "Dify 知识库未配置，请联系管理员"}), 503
+
+    try:
+        req = DifyUploadRequest(**request.get_json(silent=True) or {})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"参数校验失败: {e}"}), 400
+
+    trace_id = str(uuid.uuid4())[:8]
+    upload_url = f"{DIFY_BASE_URL}/v1/datasets/{DIFY_DATASET_ID}/documents/create-by-text"
+
+    # Step 1: 上传文档
+    try:
+        resp = http.post(
+            upload_url,
+            headers={
+                "Authorization": f"Bearer {DIFY_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "name": req.name,
+                "text": req.text,
+                "indexing_technique": req.indexing_technique,
+                "process_rule": {"mode": "automatic"},
+            },
+            timeout=30.0,
+        )
+        if resp.status_code not in (200, 201):
+            logger.error(f"[{trace_id}] Dify upload HTTP {resp.status_code}: {resp.text[:200]}")
+            return jsonify({"ok": False, "error": f"文档上传失败（{resp.status_code}），请稍后重试"}), 502
+        upload_data = resp.json()
+    except http.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "文档上传超时，请稍后重试"}), 504
+    except http.exceptions.ConnectionError:
+        return jsonify({"ok": False, "error": "无法连接到知识库服务"}), 503
+    except Exception as e:
+        logger.error(f"[{trace_id}] Dify upload exception: {e}")
+        return jsonify({"ok": False, "error": "知识库服务异常，请联系管理员"}), 500
+
+    doc_id = (upload_data.get("document") or {}).get("id") or upload_data.get("id", "")
+    if not doc_id:
+        return jsonify({"ok": False, "error": "文档上传成功但未返回 document_id", "raw": upload_data}), 502
+
+    # Step 2: 轮询索引状态（每 2s，最多 30 次 = 60s）
+    status_url = f"{DIFY_BASE_URL}/v1/datasets/{DIFY_DATASET_ID}/documents/{doc_id}/indexing-status"
+    logger.info(f"[{trace_id}] Dify upload doc_id={doc_id}, polling indexing status...")
+
+    for attempt in range(30):
+        time.sleep(2)
+        try:
+            status_resp = http.get(
+                status_url,
+                headers={"Authorization": f"Bearer {DIFY_API_KEY}"},
+                timeout=10.0,
+            )
+            if status_resp.status_code == 200:
+                status_data = status_resp.json()
+                status_val = status_data.get("status") or status_data.get("indexing_status", "")
+                logger.info(f"[{trace_id}] Dify indexing attempt={attempt+1} status={status_val}")
+                if status_val in ("completed", "enabled"):
+                    return jsonify({"ok": True, "document_id": doc_id, "indexing_status": status_val})
+        except Exception as e:
+            logger.warning(f"[{trace_id}] Dify indexing poll attempt={attempt+1} error: {e}")
+
+    logger.warning(f"[{trace_id}] Dify indexing timeout for doc_id={doc_id}")
+    return jsonify({
+        "ok": True,
+        "document_id": doc_id,
+        "indexing_status": "pending",
+        "warning": "文档索引超时，请在 Dify 控制台手动检查",
+    })
 
 
 # ═══════════════════════════════════════════════════════════════

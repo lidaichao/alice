@@ -16,8 +16,8 @@ repos:
   - repo: local
     hooks:
       - id: no-dead-imports
-        name: "死代码 Import 扫描（Phase 0.9 · 约束#21）"
-        entry: bash -c '! rg -n "import faiss|from jira_api import|knowledge_retriever|rag_engine|react_runner|plugin_gateway|workflow_engine" backend/ || exit 0'
+        name: "死代码 Import 扫描（Phase 0.9 / Phase 5.5 加固 · 约束#21）"
+        entry: bash -c '! rg -n "import faiss|from jira_api import|from knowledge_retriever|from rag_engine|from react_runner|from plugin_gateway|from workflow_engine|import react_runner|import rag_engine|import plugin_gateway|import workflow_engine|import knowledge_retriever" backend/ || exit 0'
         language: system
         types: [python]
         pass_filenames: false
@@ -30,3 +30,11 @@ repos:
         types: [python]
         pass_filenames: false
         always_run: true
+
+      - id: docker-compose-config-valid
+        name: "docker-compose.prod.yml 语法校验（Phase 5.5）"
+        entry: bash -c 'docker compose -f docker-compose.prod.yml config > /dev/null 2>&1 && echo "docker-compose.prod.yml valid" || echo "docker-compose.prod.yml INVALID (or docker not available)"'
+        language: system
+        types: [yaml]
+        pass_filenames: false
+        always_run: false
