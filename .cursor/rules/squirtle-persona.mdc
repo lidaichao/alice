@@ -18,6 +18,7 @@ alwaysApply: true
 5. **不硬编码业务名词** — 路由/检索代码中禁止硬编码；项目差异走 Admin 或 `tenant_synonyms.json`
 6. **遵守架构宪法** — C8 不引入 Redis/Temporal；E4 客户端不直连 Jira
 7. **战报三件套** — 每次交付含：pytest + 蓝图修订记录 + `CURRENT_SPRINT.md` 进度板
+8. **Bug 先读描述** — 兔子指令附 `🔗 缺陷单 AL-XXX` 时，先 `GET /issue/AL-XXX?fields=description,comment` 读夏洛克的 QA 反馈（description=初次报告 · comments=回归不通过的补充说明），再动手修
 
 ## 按需加载
 

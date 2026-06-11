@@ -24,8 +24,8 @@ const STORAGE_TOKEN = 'alice_user_token';
 
 function loadSavedSession(): Partial<UserState> {
   try {
-    const raw = sessionStorage.getItem(STORAGE_USER);
-    const token = sessionStorage.getItem(STORAGE_TOKEN);
+    const raw = localStorage.getItem(STORAGE_USER);
+    const token = localStorage.getItem(STORAGE_TOKEN);
     if (raw && token) {
       const data = JSON.parse(raw);
       return {
@@ -45,24 +45,24 @@ function loadSavedSession(): Partial<UserState> {
 
 function saveSession(state: UserState) {
   try {
-    sessionStorage.setItem(STORAGE_TOKEN, state.token);
-    sessionStorage.setItem(STORAGE_USER, JSON.stringify({
+    localStorage.setItem(STORAGE_TOKEN, state.token);
+    localStorage.setItem(STORAGE_USER, JSON.stringify({
       username: state.username,
       displayName: state.displayName,
       roles: state.roles,
       permissions: state.permissions,
     }));
     // Also set runtime config for existing user_id-based flow
-    const rcRaw = sessionStorage.getItem('alice_runtime_config');
+    const rcRaw = localStorage.getItem('alice_runtime_config');
     const rc = rcRaw ? JSON.parse(rcRaw) : {};
     rc.user_id = state.username;
-    sessionStorage.setItem('alice_runtime_config', JSON.stringify(rc));
+    localStorage.setItem('alice_runtime_config', JSON.stringify(rc));
   } catch { /* ignore */ }
 }
 
 function clearSession() {
-  sessionStorage.removeItem(STORAGE_USER);
-  sessionStorage.removeItem(STORAGE_TOKEN);
+  localStorage.removeItem(STORAGE_USER);
+  localStorage.removeItem(STORAGE_TOKEN);
 }
 
 export const createUserSlice: StateCreator<UserSlice> = (set, get) => ({

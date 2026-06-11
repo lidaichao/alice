@@ -1,9 +1,9 @@
-/** sessionStorage 中的 Jira / 运行时配置（与 chatSlice 一致） */
+/** localStorage 中的 Jira / 运行时配置（跨标签页持久） */
 export const ALICE_USER_ID_HEADER = 'X-Alice-User-Id';
 
 export function loadRuntimeConfig(): Record<string, string> {
   try {
-    const raw = sessionStorage.getItem('alice_runtime_config');
+    const raw = localStorage.getItem('alice_runtime_config');
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
@@ -12,7 +12,7 @@ export function loadRuntimeConfig(): Record<string, string> {
 
 export function saveRuntimeConfig(patch: Record<string, string>): void {
   const rc = { ...loadRuntimeConfig(), ...patch };
-  sessionStorage.setItem('alice_runtime_config', JSON.stringify(rc));
+  localStorage.setItem('alice_runtime_config', JSON.stringify(rc));
 }
 
 export function getAliceUserId(): string {

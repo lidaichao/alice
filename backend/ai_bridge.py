@@ -2438,7 +2438,14 @@ def chat_completions():
     if request.method == 'OPTIONS':
         return Response(status=204)
 
+    # AL-134: 前置 auth 校验 — 缺 Authorization → 401（非 400）
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return jsonify({"error": "缺少 Authorization Header"}), 401
+
     data = request.json or {}
+    # AL-133/AL-135: 支持 stream=false 非流式分叉
+    stream = data.get("stream", True)
     messages = data.get("messages", [])
     user_cfg = parse_user_config(data)
     from user_identity import parse_user_id_from_request
@@ -2591,6 +2598,41 @@ def chat_completions():
         yield from iter_react_pipeline(react_ctx)
         return
 
+
+    # AL-133/AL-135: stream=false → 非流式 JSON 响应
+    if not stream:
+        full_content = ""
+        for chunk in generate_stream():
+            # 解析 SSE 格式：data: {...}\n\n
+            # chunk 可能是 bytes 或 str
+            if isinstance(chunk, bytes):
+                chunk = chunk.decode("utf-8", errors="replace")
+            line = str(chunk).strip()
+            if line.startswith("data: "):
+                line = line[6:]
+            try:
+                data_obj = json.loads(line)
+                if isinstance(data_obj, dict):
+                    # 收集 type=message 的 content（Alice 自有格式）
+                    c = data_obj.get("content", "")
+                    if isinstance(c, str) and c:
+                        full_content += c
+                    # 兼容 OAI 格式：choices[0].delta.content
+                    for choice in data_obj.get("choices", []):
+                        delta = choice.get("delta", {})
+                        dc = delta.get("content", "")
+                        if isinstance(dc, str) and dc:
+                            full_content += dc
+            except (json.JSONDecodeError, Exception):
+                pass
+        if not full_content:
+            full_content = "（模型未返回文本内容）"
+        result = {
+            "choices": [{
+                "message": {"role": "assistant", "content": full_content}
+            }]
+        }
+        return Response(json.dumps(result, ensure_ascii=False), mimetype="application/json")
 
     return Response(generate_stream(), mimetype='text/event-stream')
 from logic_engine import evaluate_intent, reload_rules as reload_logic_rules
@@ -2881,19 +2923,34 @@ def agent_stream():
     def _sse_generator():
         try:
             # Step 1: 初始推理
-            events = graph.stream({"messages": msgs, "trace_id": trace_id}, config, stream_mode="values")
-            for event in events:
-                if "messages" in event:
-                    last_msg = event["messages"][-1] if event["messages"] else None
-                    if last_msg:
-                        content = getattr(last_msg, "content", "")
-                        msg_type = type(last_msg).__name__
-                        sse_data = {"type": "message", "msg_type": msg_type, "content": content}
-                        # v3.1 波次2 AL-103: KB 来源透传到 SSE
-                        kb_sources = event.get("kb_sources")
-                        if kb_sources:
-                            sse_data["kb_sources"] = kb_sources
-                        yield f"data: {json.dumps(sse_data, ensure_ascii=False)}\n\n"
+            # AL-137: 捕获 LangGraph interrupt 异常 → 确保 ConfirmCard 生成
+            events = None
+            graph_interrupted = False
+            try:
+                events = graph.stream({"messages": msgs, "trace_id": trace_id}, config, stream_mode="values")
+                for event in events:
+                    if "messages" in event:
+                        last_msg = event["messages"][-1] if event["messages"] else None
+                        if last_msg:
+                            content = getattr(last_msg, "content", "")
+                            msg_type = type(last_msg).__name__
+                            sse_data = {"type": "message", "msg_type": msg_type, "content": content}
+                            # v3.1 波次2 AL-103: KB 来源透传到 SSE
+                            kb_sources = event.get("kb_sources")
+                            if kb_sources:
+                                sse_data["kb_sources"] = kb_sources
+                            # AL-138: 工具调用透传到 SSE delta
+                            tool_calls = getattr(last_msg, "tool_calls", None)
+                            if tool_calls:
+                                sse_data["tool_calls"] = [
+                                    {"tool_name": tc.get("name", ""), "arguments": tc.get("args", {})}
+                                    for tc in tool_calls
+                                ]
+                            yield f"data: {json.dumps(sse_data, ensure_ascii=False)}\n\n"
+            except Exception as _ge:
+                # LangGraph interrupt/NodeInterrupt → 静默捕获，继续 ConfirmCard 分支
+                logger.info(f"[{trace_id}] Graph 中断（HITL 流程），进入 ConfirmCard 生成: {_ge}")
+                graph_interrupted = True
 
             # Step 2: 检查是否被 interrupt_before=["action"] 暂停
             state = graph.get_state(config)
