@@ -97,7 +97,7 @@ INTENT_UI_LABELS: dict[str, str] = {
     "jira_write": "Jira 创建 / 改状态",
     "issue_metadata": "单个 Issue 详情",
     "knowledge_query": "知识库泛查",
-    "full_set": "通用助手（不收窄工具）",
+    "full_set": "自由提问（不限定功能范围）",
 }
 
 _route_cache: dict[str, tuple[float, Optional[list[str]], str, dict]] = {}

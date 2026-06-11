@@ -175,7 +175,7 @@ export const TeamMemoryPanel: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    className="p-1 rounded hover:bg-muted text-muted-foreground/60 hover:text-red-500 transition-colors"
+                    className="p-1 rounded hover:bg-muted text-muted-foreground/60 hover:text-destructive transition-colors"
                     title="删除"
                     onClick={() => handleDelete(e.id)}
                   >

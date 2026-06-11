@@ -564,7 +564,7 @@ export const App: React.FC = () => {
               <div className="flex items-center gap-1 shrink-0">
                 {isGenerating && (
                   <Button variant="ghost" size="sm" onClick={stopGenerating}
-                    className="h-10 w-10 p-0 text-red-500 hover:text-red-700 rounded-lg" title="停止生成">
+                    className="h-10 w-10 p-0 text-destructive hover:text-destructive/70 rounded-lg" title="停止生成">
                     <Square size={16} />
                   </Button>
                 )}

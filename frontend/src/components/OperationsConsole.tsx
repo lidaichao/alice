@@ -247,7 +247,7 @@ export const OperationsConsole: React.FC<{ onBack: () => void; embedded?: boolea
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {err && (
-          <div className="text-sm text-red-500 border border-red-200 rounded-lg p-3">{err}</div>
+          <div className="text-sm text-destructive border border-destructive/30 bg-destructive/10 rounded-lg p-3">{err}</div>
         )}
 
         <section className="rounded-lg border border-border p-3">
@@ -359,7 +359,7 @@ function AuditTrail({ row }: { row: OpRow }) {
       {row.rejected_by && (
         <div>
           审批拒绝{' '}
-          <span className="font-mono text-red-600">{row.rejected_by}</span>
+          <span className="font-mono text-destructive">{row.rejected_by}</span>
           {row.rejected_at ? ` · ${row.rejected_at}` : ''}
         </div>
       )}
@@ -448,7 +448,7 @@ function OpSection({
               {(o.warnings || []).map((w, i) => (
                 <div key={i} className="text-amber-600 truncate">{w}</div>
               ))}
-              {o.error && <div className="text-red-500 truncate">{o.error}</div>}
+              {o.error && <div className="text-destructive truncate">{o.error}</div>}
               {o.recovery?.summary && (
                 <div className="text-amber-700">{o.recovery.summary}</div>
               )}
@@ -507,7 +507,7 @@ function PendingActions({
         <div className="text-[11px] text-blue-600">{progress}</div>
       )}
       {error && (
-        <div className="text-[11px] text-red-500">{error}</div>
+        <div className="text-[11px] text-destructive">{error}</div>
       )}
       {hasFormAction && (
         <p className="text-[11px] text-muted-foreground">
@@ -540,7 +540,7 @@ function PendingActions({
         <Button
           variant="outline"
           size="sm"
-          className="h-7 text-[11px] gap-1 text-red-600 hover:text-red-700"
+          className="h-7 text-[11px] gap-1 text-destructive hover:text-destructive/70"
           disabled={busy}
           onClick={() => onReject(row.id)}
         >
