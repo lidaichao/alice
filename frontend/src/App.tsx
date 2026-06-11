@@ -19,7 +19,7 @@ import { CursorSettings } from '@/components/CursorSettings';
 import { syncHubConfigFromHealth } from '@/lib/hubConfig';
 import { ThemeProvider } from '@lobehub/ui';
 import { useToast } from '@/components/Toast';
-import { Square, Copy, Check, User, Bot, Settings, RefreshCcw, Pencil, X } from 'lucide-react';
+import { Square, Copy, Check, User, Bot, Settings, RefreshCcw, Pencil, X, Plus } from 'lucide-react';
 
 export const App: React.FC = () => {
   // ═══ 统一数据源：useChatStore（chatSlice + agentSlice + uiSlice + memorySlice）═══
@@ -62,6 +62,9 @@ export const App: React.FC = () => {
   const [userScrolledUp, setUserScrolledUp] = useState(false);
   const [showCursorSettings, setShowCursorSettings] = useState(false);
   const [copiedMessages, setCopiedMessages] = useState<Record<string, boolean>>({});
+  // ── 消息就地编辑状态 ──
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [editingContent, setEditingContent] = useState('');
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [onboardingDone, setOnboardingDone] = useState(() => {
     return localStorage.getItem('alice_onboarding_done') === '1';
@@ -132,6 +135,10 @@ export const App: React.FC = () => {
     if (!myInput.trim() || isGenerating || !activeSessionId) return;
     const text = myInput;
     setMyInput('');
+    // 重置 textarea 高度
+    if (inputRef.current) {
+      inputRef.current.style.height = '';
+    }
     sendMessage(text);
     // 发送后平滑滚到底部 + 保持输入框焦点
     scrollToBottom();
@@ -173,18 +180,26 @@ export const App: React.FC = () => {
       opId: string,
       opts?: { recoveryAction?: string; supplement?: Record<string, string> },
     ) => {
-      await handleConfirm(opId, opts);
-      onConfirmResolved(opId, 'confirmed');
-      toast('✅ 已放行操作', { type: 'success' });
+      try {
+        await handleConfirm(opId, opts);
+        onConfirmResolved(opId, 'confirmed');
+        toast('✅ 已放行操作', { type: 'success' });
+      } catch (e: any) {
+        toast(`放行失败：${e?.message || '请重试'}`, { type: 'error' });
+      }
     },
     [handleConfirm, onConfirmResolved, toast],
   );
 
   const wrappedHandleReject = useCallback(
     async (opId: string) => {
-      await handleReject(opId);
-      onConfirmResolved(opId, 'rejected');
-      toast('❌ 已拒绝', { type: 'error' });
+      try {
+        await handleReject(opId);
+        onConfirmResolved(opId, 'rejected');
+        toast('❌ 已拒绝', { type: 'error' });
+      } catch (e: any) {
+        toast(`拒绝失败：${e?.message || '请重试'}`, { type: 'error' });
+      }
     },
     [handleReject, onConfirmResolved, toast],
   );
@@ -334,8 +349,11 @@ export const App: React.FC = () => {
       <ThemeProvider themeMode="dark">
         <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
           <Sidebar />
-          <main className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
-            请创建或选择一个会话
+          <main className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-4">
+            <p>请创建或选择一个会话</p>
+            <Button onClick={() => useChatStore.getState().addSession()}>
+              <Plus size={14} className="mr-1.5" /> 新建会话
+            </Button>
           </main>
         </div>
       </ThemeProvider>
@@ -480,16 +498,64 @@ export const App: React.FC = () => {
                           </button>
                         )}
                         {isUser && (
-                          <button
-                            onClick={() => {
-                              const newText = window.prompt('编辑消息', m.content);
-                              if (newText && newText.trim()) sendMessage(newText.trim());
-                            }}
-                            className="p-1 rounded-md hover:bg-primary/20 text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-                            title="编辑"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
+                          editingMsgId === m.id ? (
+                            <div className="flex items-center gap-1">
+                              <textarea
+                                autoFocus
+                                value={editingContent}
+                                onChange={e => {
+                                  setEditingContent(e.target.value);
+                                  const el = e.target;
+                                  el.style.height = 'auto';
+                                  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+                                }}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    if (editingContent.trim()) {
+                                      sendMessage(editingContent.trim());
+                                      setEditingMsgId(null);
+                                      setEditingContent('');
+                                    }
+                                  }
+                                  if (e.key === 'Escape') {
+                                    setEditingMsgId(null);
+                                    setEditingContent('');
+                                  }
+                                }}
+                                className="w-full min-h-[36px] max-h-[120px] resize-none rounded-lg border border-primary/30 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                rows={1}
+                              />
+                              <button
+                                onClick={() => {
+                                  if (editingContent.trim()) {
+                                    sendMessage(editingContent.trim());
+                                    setEditingMsgId(null);
+                                    setEditingContent('');
+                                  }
+                                }}
+                                className="p-1 rounded hover:bg-primary/20 text-green-500"
+                                title="发送编辑"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => { setEditingMsgId(null); setEditingContent(''); }}
+                                className="p-1 rounded hover:bg-muted text-muted-foreground"
+                                title="取消"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => { setEditingMsgId(m.id); setEditingContent(m.content); }}
+                              className="p-1 rounded-md hover:bg-primary/20 text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+                              title="编辑"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          )
                         )}
                         <div className="flex-1" />
                         {isAssistant && m.source === 'cursor' && (
@@ -541,7 +607,7 @@ export const App: React.FC = () => {
           {/* ── 输入区 ── */}
           <div className="p-4 bg-background/60 backdrop-blur-sm border-t border-border flex-shrink-0 flex flex-col gap-1 max-w-4xl mx-auto w-full relative">
             {showCommands && <CommandPanel filterText={commandFilter} selectedIndex={selectedCmdIndex} onSelect={handleSelectCommand} />}
-            <div className="flex items-end gap-2 w-full relative">
+            <div className="flex items-center gap-2 w-full relative">
               {/* 输入框包裹层（内含浮动 Settings 图标） */}
               <div className="flex-1 relative">
                 <textarea

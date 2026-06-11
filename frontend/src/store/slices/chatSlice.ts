@@ -282,7 +282,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
       abortController.abort();
       set((s) => ({
         abortController: null,
-        generatingSessions: { ...s.generatingSessions, [activeSessionId!]: false },
+        generatingSessions: { ...s.generatingSessions, [activeSessionId!]: true },
       }));
     }
   },
@@ -651,6 +651,10 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
               ),
             };
           }),
+        }));
+        // 立即清 generatingSessions 让 UI 即时反映停止状态
+        set((s) => ({
+          generatingSessions: { ...s.generatingSessions, [activeSessionId]: false },
         }));
         const abortedSession = get().sessions.find(s => s.id === activeSessionId);
         if (abortedSession) await db.sessions.put(abortedSession);

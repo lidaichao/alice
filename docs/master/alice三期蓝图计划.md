@@ -883,6 +883,7 @@ flowchart LR
 ||| v3.1-rc9 | 2026-06-11 | **v3.1 Chat 工作流评估 + 快捷操作优化（兔子开发令 · Epic AL-16）**：<br>├ AL-48: 工作流融入 Slash 命令面板 + Sidebar 移除独立按钮  ·  AL-47: 快捷操作卡片中文化+desc+自动发送  ·  🔗 AL-46/47/48  ·  🔗 Epic AL-16 |
 ||| v3.1-rc10 | 2026-06-11 | **v3.1 Chat 文案与深色模式修复（兔子开发令 · Epic AL-16）**：<br>├ AL-50: intent_router full_set→自由提问  ·  AL-51: text-red-*→text-destructive（7 处）  ·  pytest 120/0/3  ·  🔗 AL-49/50/51  ·  🔗 Epic AL-16 |
 ||| v3.1-rc11 | 2026-06-11 | **v3.1 Admin Jira 问题类型配置保存修复（兔子开发令 · Epic AL-16）**：<br>├ AL-53: ai_bridge GET /admin/config 追加 JIRA_ISSUETYPE_MAP  ·  AL-54: 勾选列表替代表格编辑  ·  pytest 120/0/3  ·  🔗 AL-52/53/54  ·  🔗 Epic AL-16 |
+||| v3.1-rc12 | 2026-06-11 | **v3.1 Chat 前端交互 Bug 修复（兔子开发令 · Epic AL-16）**：<br>├ AL-18~23 停止即时反馈/原位编辑/空态/输入框对齐/Toast  ·  pytest 120/0/3  ·  🔗 AL-17~23  ·  🔗 Epic AL-16 |
 | v1.7-patch8 | 2026-06-09 | 修复 EngineSelector onMount 未同步 Zustand enginePreference 导致界面选 agent 但后端收不到 engine 参数 |
 | v1.7-patch7 | 2026-06-09 | 修复 Cursor SDK 未传 api_key 导致 Jira 任务创建失败——chatSlice.ts 从 localStorage 读取 cursor_api_key 注入 config |
 | v1.8-plan-note | 2026-06-09 | ⚠️ plan/agent/ask 模式同质化标记：P2-2 交付的三种模式当前在 SDK 层完全相同（cursor_agent_lane.py L474），仅启动消息文字不同（L541）。Phase B2 将实现差异化——plan（执行计划+执行按钮→管控台审批）、agent（直接执行+逐条确认卡）、ask（只读无写工具）。详见 RABBIT_ROADMAP.md §5.2。 |

@@ -69,7 +69,7 @@ export const Sidebar: React.FC = () => {
       type: 'info',
       action: {
         label: '撤销',
-        onClick: () => { /* restore: create a new session - simplified */ },
+        onClick: () => { createSession(); },
       },
       duration: 3000,
     });
