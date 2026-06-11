@@ -889,6 +889,7 @@ flowchart LR
 ||| v3.1-rc15 | 2026-06-11 | **v3.1 审批中心重构（卡罗尔 WBS 第8波·终 · 兔子开发令 · Epic AL-16）**：<br>├ AL-36~40 380px内联面板 + Tab切换+徽章 + 展开详情 + 移除侧边栏待处理卡片 + 键盘快捷键  ·  pytest 120/0/3  ·  🔗 AL-35~40  ·  🔗 Epic AL-16 ✅ 全部完成 → 交付夏洛克 QA |
 ||| v3.1-rc16 | 2026-06-11 | **v3.1 QA 缺陷修复（AL-55/56 · Epic AL-13）**：<br>├ AL-55 Blocker _uuid_module→uuid  ·  AL-56 text-red-*→text-destructive(2处)  ·  pytest 120/0/3  ·  🔗 AL-55/56  ·  🔗 Epic AL-13 |
 ||| v3.1-rc17 | 2026-06-11 | **v3.1 QA 缺陷修复第2波（AL-57/58/59 · Epic AL-13）**：<br>├ AL-57 快捷操作卡片去线框  ·  AL-58 Inter字体生效(rc8已修复)  ·  AL-59 设置中心关于页  ·  pytest 120/0/3  ·  🔗 AL-57/58/59  ·  🔗 Epic AL-13 |
+||| v3.1-rc18 | 2026-06-11 | **v3.1 AL-58 字体修复第二版（lobehub ConfigProvider token 覆盖 · Epic AL-13）**：<br>├ AL-58 App.tsx 5 处 ThemeProvider theme token fontFamily Inter 覆盖 lobehub antd token  ·  pytest 120/0/3  ·  🔗 AL-58  ·  🔗 Epic AL-13 |
 | v1.7-patch8 | 2026-06-09 | 修复 EngineSelector onMount 未同步 Zustand enginePreference 导致界面选 agent 但后端收不到 engine 参数 |
 | v1.7-patch7 | 2026-06-09 | 修复 Cursor SDK 未传 api_key 导致 Jira 任务创建失败——chatSlice.ts 从 localStorage 读取 cursor_api_key 注入 config |
 | v1.8-plan-note | 2026-06-09 | ⚠️ plan/agent/ask 模式同质化标记：P2-2 交付的三种模式当前在 SDK 层完全相同（cursor_agent_lane.py L474），仅启动消息文字不同（L541）。Phase B2 将实现差异化——plan（执行计划+执行按钮→管控台审批）、agent（直接执行+逐条确认卡）、ask（只读无写工具）。详见 RABBIT_ROADMAP.md §5.2。 |

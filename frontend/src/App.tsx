@@ -23,6 +23,10 @@ import { ThemeProvider } from '@lobehub/ui';
 import { useToast } from '@/components/Toast';
 import { Square, Copy, Check, User, Bot, Settings, RefreshCcw, Pencil, X, Plus, Activity } from 'lucide-react';
 
+const LOBE_THEME_TOKEN = {
+  fontFamily: "'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif",
+};
+
 export const App: React.FC = () => {
   // ═══ 统一数据源：useChatStore（chatSlice + agentSlice + uiSlice + memorySlice）═══
   const initDB = useChatStore((s) => s.initDB);
@@ -337,7 +341,7 @@ export const App: React.FC = () => {
 
   if (!isDbLoaded) {
     return (
-      <ThemeProvider themeMode="dark">
+      <ThemeProvider themeMode="dark" theme={{ token: LOBE_THEME_TOKEN }}>
         <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
           <Sidebar />
           <main className="flex-1 flex flex-col gap-4 p-6">
@@ -360,7 +364,7 @@ export const App: React.FC = () => {
   // ═══ 首次引导 ═══
   if (!onboardingDone) {
     return (
-      <ThemeProvider themeMode="dark">
+      <ThemeProvider themeMode="dark" theme={{ token: LOBE_THEME_TOKEN }}>
         <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
           <Sidebar />
           <main className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
@@ -401,7 +405,7 @@ export const App: React.FC = () => {
   // ═══ 无会话 ═══
   if (!activeSessionId || !currentSession) {
     return (
-      <ThemeProvider themeMode="dark">
+      <ThemeProvider themeMode="dark" theme={{ token: LOBE_THEME_TOKEN }}>
         <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
           <Sidebar />
           <main className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-4">
@@ -418,7 +422,7 @@ export const App: React.FC = () => {
 
   if (mainView === 'settings') {
     return (
-      <ThemeProvider themeMode="dark">
+      <ThemeProvider themeMode="dark" theme={{ token: LOBE_THEME_TOKEN }}>
         <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
           <Sidebar />
           <SettingsCenter onBack={() => setMainView('chat')} />
@@ -428,7 +432,7 @@ export const App: React.FC = () => {
   }
 
   return (
-    <ThemeProvider themeMode="dark">
+    <ThemeProvider themeMode="dark" theme={{ token: LOBE_THEME_TOKEN }}>
       <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
         <Sidebar />
         <>
