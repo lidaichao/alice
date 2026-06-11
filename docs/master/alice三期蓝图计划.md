@@ -1,7 +1,7 @@
 # Alice 三期蓝图计划
 
 > **文档性质**：产品开发白皮书 · 修订记录与里程碑日志（v3.0 架构方案以 `docs/v3.0/ALICE_V3_RESTRUCTURE_PLAN.md` 为准）  
-> **版本**：v2.0（v3.0-rules-align） | **日期**：2026-06-11 | **状态**：v3.1-RC19 磐石 Dify+n8n 部署验证  
+> **版本**：v2.0（v3.0-rules-align） | **日期**：2026-06-11 | **状态**：v3.1-RC20 磐石 Wave 2 n8n webhook 修复  
 > **部署形态**：私有化 Hub（单机）+ 各用户 Alice 客户端 + Admin 统一配链  
 > **成本约束**：基础设施仅开源可自托管；LLM 按量 API；不采购商业中间件/SaaS  
 
@@ -891,6 +891,7 @@ flowchart LR
 ||| v3.1-rc17 | 2026-06-11 | **v3.1 QA 缺陷修复第2波（AL-57/58/59 · Epic AL-13）**：<br>├ AL-57 快捷操作卡片去线框  ·  AL-58 Inter字体生效(rc8已修复)  ·  AL-59 设置中心关于页  ·  pytest 120/0/3  ·  🔗 AL-57/58/59  ·  🔗 Epic AL-13 |
 ||| v3.1-rc18 | 2026-06-11 | **v3.1 AL-58 字体修复第二版（lobehub ConfigProvider token 覆盖 · Epic AL-13）**：<br>├ AL-58 App.tsx 5 处 ThemeProvider theme token fontFamily Inter 覆盖 lobehub antd token  ·  pytest 120/0/3  ·  🔗 AL-58  ·  🔗 Epic AL-13 |
 ||| v3.1-rc19 | 2026-06-11 | **v3.1 磐石 Wave 1a+1b Dify+n8n 部署验证（Epic AL-60）**：<br>├ Dify Docker 运行中（6容器）· RAG 端点 200 · 知识库数据集已配置  ·  ├ n8n Docker 运行中 · 3 workflow active · webhook 404（AL-69 修复）  ·  pytest 120/0/3  ·  🔗 AL-61/65 · 🔗 Epic AL-60 |
+||| v3.1-rc20 | 2026-06-11 | **v3.1 磐石 Wave 2 n8n webhook 404 修复（Epic AL-60）**：<br>├ AL-70 诊断 · AL-71 scripts/n8n_webhook_restore.py  ·  AL-72 端到端验证 3/3 webhook 注册成功  ·  AL-73 闭环  ·  pytest 120/0/3  ·  🔗 AL-69/73 · 🔗 Epic AL-60 |
 | v1.7-patch8 | 2026-06-09 | 修复 EngineSelector onMount 未同步 Zustand enginePreference 导致界面选 agent 但后端收不到 engine 参数 |
 | v1.7-patch7 | 2026-06-09 | 修复 Cursor SDK 未传 api_key 导致 Jira 任务创建失败——chatSlice.ts 从 localStorage 读取 cursor_api_key 注入 config |
 | v1.8-plan-note | 2026-06-09 | ⚠️ plan/agent/ask 模式同质化标记：P2-2 交付的三种模式当前在 SDK 层完全相同（cursor_agent_lane.py L474），仅启动消息文字不同（L541）。Phase B2 将实现差异化——plan（执行计划+执行按钮→管控台审批）、agent（直接执行+逐条确认卡）、ask（只读无写工具）。详见 RABBIT_ROADMAP.md §5.2。 |
