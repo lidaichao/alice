@@ -1,7 +1,7 @@
 # Alice 三期蓝图计划
 
 > **文档性质**：产品开发白皮书 · 修订记录与里程碑日志（v3.0 架构方案以 `docs/v3.0/ALICE_V3_RESTRUCTURE_PLAN.md` 为准）  
-> **版本**：v2.0（v3.0-rules-align） | **日期**：2026-06-11 | **状态**：v3.1-RC23 AL-16 全量构建部署验证  
+> **版本**：v2.0（v3.0-rules-align） | **日期**：2026-06-11 | **状态**：v3.1-RC24 EnginePicker 胶囊按钮修复  
 > **部署形态**：私有化 Hub（单机）+ 各用户 Alice 客户端 + Admin 统一配链  
 > **成本约束**：基础设施仅开源可自托管；LLM 按量 API；不采购商业中间件/SaaS  
 
@@ -895,6 +895,7 @@ flowchart LR
 ||| v3.1-rc21 | 2026-06-11 | **v3.1 Admin Bug 修复合波（AL-81~85 · Epic AL-13）**：<br>├ AL-82 Hash 路由修复 · AL-84 布局居中 · AL-81/83/85 按钮禁用逻辑修复  ·  pytest 120/0/3  ·  🔗 AL-81~85 |
 ||| v3.1-rc22 | 2026-06-11 | **v3.1 Chat 白屏修复 AL-86**：<br>├ vite.config.ts `base: '/chat/'` · dist/index.html 资源路径修正 · /chat/ 页面 JS/CSS 全部 200  ·  pytest 120/0/3  ·  🔗 AL-86 |
 ||| v3.1-rc23 | 2026-06-11 | **v3.1 AL-16 全量构建部署验证**：<br>├ 安装 Node.js v22.22.3 + npm 10.9.8 · Chat 前端 build ✅ · Admin-UI build ✅ · SettingsCenter/引擎选择器/审批面板/快捷操作卡片/来源指示器 全部验收通过  ·  pytest 120/0/3  ·  🔗 Epic AL-16 |
+||| v3.1-rc24 | 2026-06-11 | **v3.1 EnginePicker 胶囊按钮修复（卡罗尔验收反馈）**：<br>├ compact 模式从 11px 灰色小字改为 visible 胶囊按钮（rounded-full bg-secondary） · pytest 120/0/3  ·  🔗 AL-24 |
 | v1.7-patch8 | 2026-06-09 | 修复 EngineSelector onMount 未同步 Zustand enginePreference 导致界面选 agent 但后端收不到 engine 参数 |
 | v1.7-patch7 | 2026-06-09 | 修复 Cursor SDK 未传 api_key 导致 Jira 任务创建失败——chatSlice.ts 从 localStorage 读取 cursor_api_key 注入 config |
 | v1.8-plan-note | 2026-06-09 | ⚠️ plan/agent/ask 模式同质化标记：P2-2 交付的三种模式当前在 SDK 层完全相同（cursor_agent_lane.py L474），仅启动消息文字不同（L541）。Phase B2 将实现差异化——plan（执行计划+执行按钮→管控台审批）、agent（直接执行+逐条确认卡）、ask（只读无写工具）。详见 RABBIT_ROADMAP.md §5.2。 |

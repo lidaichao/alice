@@ -102,11 +102,13 @@ export const EnginePicker: React.FC<EnginePickerProps> = ({ onOpenSettings, onEn
   else if (choice.engine === 'cursor') label = 'Cursor';
 
   const buttonEl = compact ? (
-    <span className="text-[11px] text-muted-foreground flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors">
+    <button
+      className="inline-flex items-center gap-1 h-7 px-2 rounded-full text-xs font-medium bg-secondary hover:bg-secondary/80 transition-colors border border-border/50 shadow-sm"
+    >
       <Settings size={12} />
-      {label}
-      <ChevronDown size={10} />
-    </span>
+      <span>{label}</span>
+      <ChevronDown size={11} />
+    </button>
   ) : (
     <button
       className="inline-flex items-center gap-1 h-7 px-2 rounded-full text-xs font-medium bg-secondary hover:bg-secondary/80 transition-colors"
