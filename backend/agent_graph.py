@@ -69,11 +69,12 @@ N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_BASE_URL", N8N_BASE_URL)
 # ═══════════════════════════════════════════════════════════════
 
 class AgentState(TypedDict):
-    """LangGraph Agent 状态：消息 + 草稿 + 确认 + 追踪 ID"""
+    """LangGraph Agent 状态：消息 + 草稿 + 确认 + 追踪 ID + KB 来源"""
     messages: Annotated[Sequence[BaseMessage], add_messages]
     draft: dict | None
     confirm_result: str | None
     trace_id: str
+    kb_sources: list[dict] | None
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -156,13 +157,22 @@ def dify_rag_retrieval(query: str, trace_id: str = "unknown") -> str:
         data = resp.json()
         records = data.get("records", [])
         if not records:
+            _last_kb_sources.clear()
             return "未找到相关知识库内容。"
         snippets = []
+        sources = []
         for i, rec in enumerate(records[:3]):
             seg = rec.get("segment", {})
             content = seg.get("content", "")
             score = rec.get("score", 0)
             snippets.append(f"[片段{i+1}·得分{score:.2f}] {content}")
+            doc = seg.get("document", {}) or {}
+            src_name = doc.get("name", "")
+            src_updated = doc.get("updated_at", "") or doc.get("updated", "")
+            if src_name:
+                sources.append({"source": src_name, "updated": src_updated, "chunk": f"L{i+1}"})
+        _last_kb_sources[:] = sources
+        logger.info(f"[{trace_id}] KB 来源 {len(sources)} 条已暂存: {[s['source'] for s in sources]}")
         return "\n\n".join(snippets)
     except Exception as e:
         logger.error(f"[{trace_id}] Dify RAG 检索异常: {e}")
@@ -205,6 +215,9 @@ def svn_query(path: str, trace_id: str = "unknown") -> str:
 # 工具列表
 tools = [dify_rag_retrieval, n8n_jira_query, svn_query]
 
+# v3.1 波次2: 模块级 KB 来源暂存（供 ai_bridge SSE 透传）
+_last_kb_sources: list[dict] = []
+
 
 # ═══════════════════════════════════════════════════════════════
 # 3. LLM 初始化（绑定工具）
@@ -243,7 +256,13 @@ def agent_node(state: AgentState) -> dict:
         future = executor.submit(llm.invoke, messages)
         response = future.result(timeout=60)
         logger.info(f"[{trace_id}] Agent 推理完成，输出 {len(str(response))} 字符")
-        return {"messages": [response]}
+
+        # v3.1 波次2: 透传 KB 来源到 State
+        result: dict = {"messages": [response]}
+        if _last_kb_sources:
+            result["kb_sources"] = list(_last_kb_sources)
+            _last_kb_sources.clear()
+        return result
     except concurrent.futures.TimeoutError:
         logger.error(f"[{trace_id}] LLM 响应超时 >60s")
         executor.shutdown(wait=False, cancel_futures=True)

@@ -897,6 +897,7 @@ flowchart LR
 ||| v3.1-rc23 | 2026-06-11 | **v3.1 AL-16 全量构建部署验证**：<br>├ 安装 Node.js v22.22.3 + npm 10.9.8 · Chat 前端 build ✅ · Admin-UI build ✅ · SettingsCenter/引擎选择器/审批面板/快捷操作卡片/来源指示器 全部验收通过  ·  pytest 120/0/3  ·  🔗 Epic AL-16 |
 ||| v3.1-rc24 | 2026-06-11 | **v3.1 EnginePicker 胶囊按钮修复（卡罗尔验收反馈）**：<br>├ compact 模式从 11px 灰色小字改为 visible 胶囊按钮（rounded-full bg-secondary） · pytest 120/0/3  ·  🔗 AL-24 |
 ||| v3.1-rc25 | 2026-06-11 | **淬火波次1「可上线闭环」交付**：<br>├ AL-91 后端模式路由分流 (ask/agent/plan) · AL-89 PlanCard · AL-90 前端气泡分支 · AL-94~97 引导体系 · AL-99~101 审批独立入口 · npm build 双前端 ✅ · pytest 120/0/3  ·  🔗 Epic AL-87 |
+|| v3.1-rc26 | 2026-06-11 | **淬火波次2「信任建立」交付**：<br>├ AL-103 Dify RAG source 透传SSE · AL-104 SourceBadge组件 · AL-105 KB检索步骤可见 · AL-106 Admin KB文档API · AL-125 KB文档浏览页 · AL-108~110 通知系统(Toast/徽章/标签页) · AL-112~114 审批气泡内嵌+跳转+轮询 · npm build 双前端 ✅ · pytest 120/0/3  ·  🔗 Epic AL-87 |
 | v1.7-patch8 | 2026-06-09 | 修复 EngineSelector onMount 未同步 Zustand enginePreference 导致界面选 agent 但后端收不到 engine 参数 |
 | v1.7-patch7 | 2026-06-09 | 修复 Cursor SDK 未传 api_key 导致 Jira 任务创建失败——chatSlice.ts 从 localStorage 读取 cursor_api_key 注入 config |
 | v1.8-plan-note | 2026-06-09 | ⚠️ plan/agent/ask 模式同质化标记：P2-2 交付的三种模式当前在 SDK 层完全相同（cursor_agent_lane.py L474），仅启动消息文字不同（L541）。Phase B2 将实现差异化——plan（执行计划+执行按钮→管控台审批）、agent（直接执行+逐条确认卡）、ask（只读无写工具）。详见 RABBIT_ROADMAP.md §5.2。 |

@@ -33,6 +33,7 @@ export function useAdminStore() {
     { id: 'settings', name: '系统集成配置', icon: 'Setting' },
     { id: 'jiraQuery', name: 'Alice-Jira查询配置', icon: 'Search' },
     { id: 'kb', name: '云端知识库源', icon: 'Collection' },
+    { id: 'kbDocs', name: '知识库', icon: 'Document' },
   ];
   const currentMenuName = computed(
     () => menus.find((m) => m.id === activeMenu.value)?.name || ''

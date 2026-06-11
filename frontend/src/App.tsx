@@ -17,6 +17,7 @@ import { OperationsConsole } from '@/components/OperationsConsole';
 import PlanCard from '@/components/PlanCard';
 import OnboardingCard from '@/components/OnboardingCard';
 import ApprovalBanner from '@/components/ApprovalBanner';
+import SourceBadge from '@/components/SourceBadge';
 import { EnginePicker } from '@/components/EnginePicker';
 import { ModelPicker } from '@/components/ModelPicker';
 import { CursorSettings } from '@/components/CursorSettings';
@@ -174,6 +175,41 @@ export const App: React.FC = () => {
     }
   }, [messages]);
 
+  // AL-110: 浏览器标签页标题通知
+  const wasGeneratingRef = useRef(false);
+  const titleIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const originalTitleRef = useRef(document.title);
+
+  useEffect(() => {
+    if (isGenerating) {
+      wasGeneratingRef.current = true;
+    } else if (wasGeneratingRef.current) {
+      wasGeneratingRef.current = false;
+      if (document.hidden) {
+        const blink = () => {
+          document.title = document.title.startsWith('● ') ? 'Alice — AI 工作台' : '● Alice — 任务已完成';
+        };
+        document.title = '● Alice — 任务已完成';
+        titleIntervalRef.current = setInterval(blink, 1000);
+      }
+    }
+  }, [isGenerating]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (titleIntervalRef.current) {
+        clearInterval(titleIntervalRef.current);
+        titleIntervalRef.current = null;
+        document.title = originalTitleRef.current;
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      if (titleIntervalRef.current) clearInterval(titleIntervalRef.current);
+    };
+  }, []);
+
   const handleChatScroll = () => {
     if (!chatContainerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
@@ -237,6 +273,7 @@ export const App: React.FC = () => {
   }, []);
 
   const { toast } = useToast();
+  const triggerBadgeRefresh = useChatStore((s) => s.triggerBadgeRefresh);
 
   const wrappedHandleConfirm = useCallback(
     async (
@@ -246,12 +283,13 @@ export const App: React.FC = () => {
       try {
         await handleConfirm(opId, opts);
         onConfirmResolved(opId, 'confirmed');
+        triggerBadgeRefresh();
         toast('✅ 已放行操作', { type: 'success' });
       } catch (e: any) {
         toast(`放行失败：${e?.message || '请重试'}`, { type: 'error' });
       }
     },
-    [handleConfirm, onConfirmResolved, toast],
+    [handleConfirm, onConfirmResolved, toast, triggerBadgeRefresh],
   );
 
   const wrappedHandleReject = useCallback(
@@ -259,12 +297,13 @@ export const App: React.FC = () => {
       try {
         await handleReject(opId);
         onConfirmResolved(opId, 'rejected');
+        triggerBadgeRefresh();
         toast('❌ 已拒绝', { type: 'error' });
       } catch (e: any) {
         toast(`拒绝失败：${e?.message || '请重试'}`, { type: 'error' });
       }
     },
-    [handleReject, onConfirmResolved, toast],
+    [handleReject, onConfirmResolved, toast, triggerBadgeRefresh],
   );
 
   // ── 命令面板 ──
@@ -584,10 +623,19 @@ export const App: React.FC = () => {
                           </div>
                         </div>
                       ) : hasContent ? (
-                        <MarkdownRenderer content={m.content} citations={m.citations} plugin={m.plugin} />
+                        <>
+                          <MarkdownRenderer content={m.content} citations={m.citations} plugin={m.plugin} />
+                          {/* AL-104: KB 引用来源标注 */}
+                          <SourceBadge sources={m.kb_sources || []} />
+                        </>
                       ) : hasPluginOnly && !isAskMode ? (
                         <div className="space-y-2">
-                          <PluginToolCard plugin={m.plugin} />
+                          {/* AL-105: KB 检索可见 */}
+                          {m.plugin?.name === 'dify_rag_retrieval' ? (
+                            <span className="text-sm text-muted-foreground">🔍 正在搜索知识库...</span>
+                          ) : (
+                            <PluginToolCard plugin={m.plugin} />
+                          )}
                           <span className="text-muted-foreground italic text-sm">正在思考...</span>
                         </div>
                       ) : m.content && !isAskMode ? (

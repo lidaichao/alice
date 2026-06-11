@@ -569,6 +569,20 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
                   continue;
                 }
 
+                // v3.1 AL-104: KB 来源透传
+                if (data.kb_sources && Array.isArray(data.kb_sources)) {
+                  set((state) => ({
+                    sessions: state.sessions.map(s => {
+                      if (s.id !== activeSessionId) return s;
+                      const lastMsg = s.messages[s.messages.length - 1];
+                      if (lastMsg.id === aiMsgId) {
+                        return { ...s, messages: [...s.messages.slice(0, -1), { ...lastMsg, kb_sources: data.kb_sources }] };
+                      }
+                      return s;
+                    })
+                  }));
+                }
+
                 if (data.custom_type === 'citations') {
                   set((state) => ({
                     sessions: state.sessions.map(s => {

@@ -119,6 +119,12 @@ export const OperationsConsole: React.FC<{ onBack: () => void; embedded?: boolea
     refresh();
   }, [refresh]);
 
+  // AL-114: 审批面板打开时每 30s 自动刷新
+  useEffect(() => {
+    const id = setInterval(refresh, 30_000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
   const pending = ops.filter((o) =>
     ['awaiting_confirmation', 'recovery_required'].includes(o.status),
   );

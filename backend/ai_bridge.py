@@ -2888,7 +2888,12 @@ def agent_stream():
                     if last_msg:
                         content = getattr(last_msg, "content", "")
                         msg_type = type(last_msg).__name__
-                        yield f"data: {json.dumps({'type': 'message', 'msg_type': msg_type, 'content': content}, ensure_ascii=False)}\n\n"
+                        sse_data = {"type": "message", "msg_type": msg_type, "content": content}
+                        # v3.1 波次2 AL-103: KB 来源透传到 SSE
+                        kb_sources = event.get("kb_sources")
+                        if kb_sources:
+                            sse_data["kb_sources"] = kb_sources
+                        yield f"data: {json.dumps(sse_data, ensure_ascii=False)}\n\n"
 
             # Step 2: 检查是否被 interrupt_before=["action"] 暂停
             state = graph.get_state(config)
@@ -3659,6 +3664,87 @@ def admin_proxy_dify_upload():
     trace_id = str(uuid.uuid4())[:8]
     api_key = _dify_dataset_api_key()
     upload_url = f"{DIFY_BASE_URL}/v1/datasets/{DIFY_DATASET_ID}/documents/create-by-text"
+
+
+# ═══════════════════════════════════════════════════════════════
+# v3.1 AL-106: Admin KB 文档浏览端点
+# ═══════════════════════════════════════════════════════════════
+
+@app.route("/v1/admin/kb/documents", methods=["GET", "OPTIONS"])
+def admin_kb_documents():
+    """
+    Admin KB 文档列表。调 Dify 数据集 API：GET /v1/datasets/{id}/documents?limit=50
+    """
+    if request.method == "OPTIONS":
+        return Response(status=204)
+
+    if not _dify_check_configured():
+        return jsonify({"ok": False, "error": "知识库未配置"}), 503
+
+    api_key = _dify_dataset_api_key()
+    url = f"{DIFY_BASE_URL}/v1/datasets/{DIFY_DATASET_ID}/documents"
+    try:
+        resp = http.get(
+            url,
+            headers={"Authorization": f"Bearer {api_key}"},
+            params={"limit": request.args.get("limit", "50")},
+            timeout=10.0,
+        )
+        if resp.status_code == 401:
+            return jsonify({"ok": False, "error": "Dify Key 权限不足"}), 502
+        if resp.status_code != 200:
+            return jsonify({"ok": False, "error": f"知识库服务异常 HTTP {resp.status_code}"}), 502
+        data = resp.json()
+        docs = []
+        for doc in data.get("data", []):
+            docs.append({
+                "document_id": doc.get("id", ""),
+                "name": doc.get("name", ""),
+                "indexing_status": doc.get("indexing_status", "unknown"),
+                "updated_at": doc.get("updated_at", ""),
+                "file_size": doc.get("file_size", 0),
+            })
+        return jsonify({"ok": True, "documents": docs, "total": len(docs)})
+    except http.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "知识库列表查询超时"}), 504
+    except http.exceptions.ConnectionError:
+        return jsonify({"ok": False, "error": "无法连接到知识库服务"}), 503
+    except Exception as e:
+        logger.error(f"[Admin KB] 文档列表异常: {e}")
+        return jsonify({"ok": False, "error": "查询失败"}), 500
+
+
+@app.route("/v1/admin/kb/documents/<doc_id>/reindex", methods=["POST", "OPTIONS"])
+def admin_kb_document_reindex(doc_id: str):
+    """
+    Admin KB 文档重新索引。调 Dify API：POST /v1/datasets/{id}/documents/{doc_id}/update
+    """
+    if request.method == "OPTIONS":
+        return Response(status=204)
+
+    if not _dify_check_configured():
+        return jsonify({"ok": False, "error": "知识库未配置"}), 503
+
+    api_key = _dify_dataset_api_key()
+    # Dify 重新索引通过 PATCH 更新文档触发
+    url = f"{DIFY_BASE_URL}/v1/datasets/{DIFY_DATASET_ID}/documents/{doc_id}/update"
+    try:
+        resp = http.patch(
+            url,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"process_rule": {"mode": "automatic"}},
+            timeout=60.0,
+        )
+        if resp.status_code in (200, 201):
+            return jsonify({"ok": True, "message": "文档已提交重新索引"})
+        if resp.status_code == 401:
+            return jsonify({"ok": False, "error": "Dify Key 权限不足"}), 502
+        return jsonify({"ok": False, "error": f"重新索引失败 HTTP {resp.status_code}"}), 502
+    except http.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "重新索引超时"}), 504
+    except Exception as e:
+        logger.error(f"[Admin KB] 重新索引异常: {e}")
+        return jsonify({"ok": False, "error": "操作失败"}), 500
 
     # Step 1: 上传文档
     try:

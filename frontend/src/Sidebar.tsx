@@ -56,6 +56,7 @@ export const Sidebar: React.FC = () => {
   const [editTitle, setEditTitle] = useState('');
   const [configStatus, setConfigStatus] = useState<ConfigStatus>('ok');
   const [polledPendingCount, setPolledPendingCount] = useState<number>(0);
+  const badgeRefreshTick = useChatStore((s) => s.badgeRefreshTick);
 
   // ── AL-95: 挂载时检查配置状态 ──
   useEffect(() => {
@@ -79,6 +80,16 @@ export const Sidebar: React.FC = () => {
     const id = setInterval(fetchPending, 10_000);
     return () => clearInterval(id);
   }, []);
+
+  // AL-109: 确认/拒绝后立即刷新徽章
+  useEffect(() => {
+    if (badgeRefreshTick > 0) {
+      fetch('/operations?status=pending', { signal: AbortSignal.timeout(5000) })
+        .then(r => r.json())
+        .then(d => { if (d.ok) setPolledPendingCount((d.operations || []).length); })
+        .catch(() => {});
+    }
+  }, [badgeRefreshTick]);
 
   const displayPendingCount = polledPendingCount || pendingCount;
   const [pinnedIds, setPinnedIds] = useState<string[]>(() => {

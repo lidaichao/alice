@@ -54,6 +54,9 @@ export interface Message {
   citations?: Citation[];
   source?: 'deepseek' | 'cursor';
   error?: boolean;
+  kb_sources?: Array<{ source: string; updated?: string }>;
+  pendingCard?: any;
+  draftCard?: any;
 }
 
 export interface Session {

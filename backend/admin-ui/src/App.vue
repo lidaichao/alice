@@ -38,6 +38,7 @@
           <SettingsView v-if="menuActive === 'settings'" />
           <JiraQueryView v-if="menuActive === 'jiraQuery'" />
           <KnowledgeView v-if="menuActive === 'kb'" />
+          <KbDocView v-if="menuActive === 'kbDocs'" />
           <div v-if="menuActive === 'roles'" class="roles-tabs">
               <el-tabs v-model="rbacTab" class="rbac-tabs">
                 <el-tab-pane label="账号管理" name="accounts"><AccountsView /></el-tab-pane>
@@ -58,6 +59,7 @@ import LoginView from './views/LoginView.vue';
 import SettingsView from './views/SettingsView.vue';
 import JiraQueryView from './views/JiraQueryView.vue';
 import KnowledgeView from './views/KnowledgeView.vue';
+import KbDocView from './views/KbDocView.vue';
 import AccountsView from './views/AccountsView.vue';
 import RolesView from './views/RolesView.vue';
 import PermissionsView from './views/PermissionsView.vue';
@@ -92,6 +94,7 @@ const pageDescMap = {
   settings: '管理 AI 接入、Jira 连接与 SVN',
   jiraQuery: '配置 Alice 协调员 Jira 查询与字段词典',
   kb: '配置 Notion 与 Google 云盘知识库源',
+  kbDocs: '管理 Dify 知识库文档，查看索引状态并重建索引',
   roles: '管理账号、角色与权限配置矩阵',
 };
 const pageDesc = computed(() => pageDescMap[menuActive.value] || '');
