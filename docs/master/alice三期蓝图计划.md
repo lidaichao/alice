@@ -899,6 +899,7 @@ flowchart LR
 ||| v3.1-rc25 | 2026-06-11 | **淬火波次1「可上线闭环」交付**：<br>├ AL-91 后端模式路由分流 (ask/agent/plan) · AL-89 PlanCard · AL-90 前端气泡分支 · AL-94~97 引导体系 · AL-99~101 审批独立入口 · npm build 双前端 ✅ · pytest 120/0/3  ·  🔗 Epic AL-87 |
 || v3.1-rc26 | 2026-06-11 | **淬火波次2「信任建立」交付**：<br>├ AL-103 Dify RAG source 透传SSE · AL-104 SourceBadge组件 · AL-105 KB检索步骤可见 · AL-106 Admin KB文档API · AL-125 KB文档浏览页 · AL-108~110 通知系统(Toast/徽章/标签页) · AL-112~114 审批气泡内嵌+跳转+轮询 · npm build 双前端 ✅ · pytest 120/0/3  ·  🔗 Epic AL-87 |
 || v3.1-rc27 | 2026-06-11 | **淬火波次3「长期留存根基」交付（淬火收官）**：<br>├ AL-116 会话重命名 · AL-117 置顶 · AL-118 批量删除 · AL-119/120 后端会话API · AL-122 docker-compose验证 · AL-123 Dify Web控制台 · AL-124 E2E冒烟 · npm build 双前端 ✅ · pytest 120/0/3  ·  🔗 Epic AL-87 闭环 |
+|| v3.1-rc28 | 2026-06-12 | **QA 缺陷修复 (AL-133~139 + Epic AL-13 闭环)**：<br>├ AL-139+136 sessionStorage→localStorage · AL-133+135 stream=false 非流式JSON分叉 · AL-134 前置auth 401 · AL-137 ConfirmCard 中断捕获 · AL-138 tool_calls 透传 · 规则: +第④检 缺陷单description+评论 · +铁律#8 Bug先读描述 · npm build 双前端 ✅ · pytest 120/0/3 ✅ · 全部流转→已解决 |
 | v1.7-patch8 | 2026-06-09 | 修复 EngineSelector onMount 未同步 Zustand enginePreference 导致界面选 agent 但后端收不到 engine 参数 |
 | v1.7-patch7 | 2026-06-09 | 修复 Cursor SDK 未传 api_key 导致 Jira 任务创建失败——chatSlice.ts 从 localStorage 读取 cursor_api_key 注入 config |
 | v1.8-plan-note | 2026-06-09 | ⚠️ plan/agent/ask 模式同质化标记：P2-2 交付的三种模式当前在 SDK 层完全相同（cursor_agent_lane.py L474），仅启动消息文字不同（L541）。Phase B2 将实现差异化——plan（执行计划+执行按钮→管控台审批）、agent（直接执行+逐条确认卡）、ask（只读无写工具）。详见 RABBIT_ROADMAP.md §5.2。 |
