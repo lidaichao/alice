@@ -53,6 +53,8 @@ export const OperationsConsole: React.FC<{ onBack: () => void; embedded?: boolea
   const [batchSummary, setBatchSummary] = useState('');
   const [userId, setUserId] = useState(() => getAliceUserId());
   const [filterMode, setFilterMode] = useState<'mine' | 'all'>('mine');
+  const [activeTab, setActiveTab] = useState<string>('pending');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const setActiveSession = useChatStore((s) => s.setActiveSession);
   const setMainView = useChatStore((s) => s.setMainView);
@@ -245,6 +247,35 @@ export const OperationsConsole: React.FC<{ onBack: () => void; embedded?: boolea
         </Button>
       </header>
 
+      {/* Tab 栏 */}
+      <div className="flex border-b border-border px-4 pt-3">
+        {[
+          { id: 'pending', label: '待审批', count: pending.length },
+          { id: 'active',  label: '进行中', count: active.length },
+          { id: 'failed',  label: '失败',   count: failed.length },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors -mb-[1px] ${
+              activeTab === tab.id
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {tab.label}
+            {tab.count > 0 && (
+              <span className={`rounded-full min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold px-1 ${
+                tab.id === 'pending' ? 'bg-red-500 text-white' :
+                tab.id === 'failed' ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground'
+              }`}>
+                {tab.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {err && (
           <div className="text-sm text-destructive border border-destructive/30 bg-destructive/10 rounded-lg p-3">{err}</div>
@@ -315,6 +346,7 @@ export const OperationsConsole: React.FC<{ onBack: () => void; embedded?: boolea
           </section>
         )}
 
+        {activeTab === 'pending' && (
         <OpSection
           title={`待审批 (${pending.length})`}
           rows={pending}
@@ -330,9 +362,25 @@ export const OperationsConsole: React.FC<{ onBack: () => void; embedded?: boolea
           onConfirm={handleConfirm}
           onReject={handleReject}
           onJumpToSession={jumpToConversation}
+          activeTab={activeTab}
+          expandedId={expandedId}
+          onToggleExpand={(id: string) => setExpandedId(expandedId === id ? null : id)}
         />
-        <OpSection title={`进行中 (${active.length})`} rows={active} empty="暂无进行中操作" onJumpToSession={jumpToConversation} />
-        <OpSection title={`失败 (${failed.length})`} rows={failed} empty="暂无失败记录" onJumpToSession={jumpToConversation} />
+        )}
+        {activeTab === 'active' && (
+        <OpSection title={`进行中 (${active.length})`} rows={active} empty="暂无进行中操作" onJumpToSession={jumpToConversation}
+          activeTab={activeTab}
+          expandedId={expandedId}
+          onToggleExpand={(id: string) => setExpandedId(expandedId === id ? null : id)}
+        />
+        )}
+        {activeTab === 'failed' && (
+        <OpSection title={`失败 (${failed.length})`} rows={failed} empty="暂无失败记录" onJumpToSession={jumpToConversation}
+          activeTab={activeTab}
+          expandedId={expandedId}
+          onToggleExpand={(id: string) => setExpandedId(expandedId === id ? null : id)}
+        />
+        )}
       </div>
     </div>
   );
@@ -382,6 +430,9 @@ function OpSection({
   onConfirm,
   onReject,
   onJumpToSession,
+  activeTab,
+  expandedId,
+  onToggleExpand,
 }: {
   title: string;
   rows: OpRow[];
@@ -397,6 +448,9 @@ function OpSection({
   onConfirm?: (opId: string, recoveryAction?: string) => void;
   onReject?: (opId: string) => void;
   onJumpToSession?: (conversationId?: string) => void;
+  activeTab?: string;
+  expandedId?: string | null;
+  onToggleExpand?: (id: string) => void;
 }) {
   return (
     <section className="rounded-lg border border-border">
@@ -472,6 +526,38 @@ function OpSection({
                   onConfirm={onConfirm}
                   onReject={onReject}
                 />
+              )}
+              {/* 展开详情 */}
+              {activeTab && ['pending', 'failed'].includes(activeTab) && onToggleExpand && (
+                <button
+                  onClick={() => onToggleExpand(o.id)}
+                  className="text-[11px] text-primary hover:underline mt-1"
+                >
+                  {expandedId === o.id ? '收起详情' : '展开详情'}
+                </button>
+              )}
+              {activeTab && expandedId === o.id && (
+                <div className="mt-2 p-2 rounded bg-muted/30 text-[11px] space-y-1 border border-border/50">
+                  {o.operation?.summary && (
+                    <div className="text-muted-foreground">操作: {o.operation.summary}</div>
+                  )}
+                  {o.operation?.issue_key && (
+                    <div className="font-mono text-muted-foreground">
+                      Issue: <a href={`http://ctjira1.lmdgame.com:8080/browse/${o.operation.issue_key}`} target="_blank" rel="noreferrer" className="text-primary hover:underline flex items-center gap-1 inline-flex">
+                        {o.operation.issue_key} <Link2 size={10} />
+                      </a>
+                    </div>
+                  )}
+                  {o.drafts_count != null && o.drafts_count > 0 && (
+                    <div className="text-muted-foreground">子任务: {o.drafts_count} 条</div>
+                  )}
+                  {o.error && (
+                    <div className="text-destructive">错误: {o.error}</div>
+                  )}
+                  <div className="text-muted-foreground">
+                    创建: {o.created_at || '—'} · 更新: {o.updated_at || '—'}
+                  </div>
+                </div>
               )}
             </li>
           ))}

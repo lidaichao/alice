@@ -21,7 +21,7 @@ import { SettingsCenter } from '@/components/SettingsCenter';
 import { syncHubConfigFromHealth } from '@/lib/hubConfig';
 import { ThemeProvider } from '@lobehub/ui';
 import { useToast } from '@/components/Toast';
-import { Square, Copy, Check, User, Bot, Settings, RefreshCcw, Pencil, X, Plus } from 'lucide-react';
+import { Square, Copy, Check, User, Bot, Settings, RefreshCcw, Pencil, X, Plus, Activity } from 'lucide-react';
 
 export const App: React.FC = () => {
   // ═══ 统一数据源：useChatStore（chatSlice + agentSlice + uiSlice + memorySlice）═══
@@ -313,6 +313,22 @@ export const App: React.FC = () => {
 
   const approvalPanelOpen = useChatStore((s) => s.approvalPanelOpen);
   const setApprovalPanelOpen = useChatStore((s) => s.setApprovalPanelOpen);
+
+  // ── 审批面板快捷键 ──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && approvalPanelOpen) {
+        e.preventDefault();
+        setApprovalPanelOpen(false);
+      }
+      if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+        e.preventDefault();
+        setApprovalPanelOpen(p => !p);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [approvalPanelOpen, setApprovalPanelOpen]);
 
   // ═══ 加载中 ═══
   if (!isLoggedIn) {
@@ -728,33 +744,25 @@ export const App: React.FC = () => {
         </main>
         <RightPanel />
 
-        {/* 审批中心侧拉面板 */}
+        {/* 审批中心 — 右侧固定面板 */}
         {approvalPanelOpen && (
-          <div className="relative z-40">
-            <div className="fixed inset-0 bg-black/20 transition-opacity duration-300"
-              onClick={() => setApprovalPanelOpen(false)} />
-            <aside className={`
-              fixed top-0 right-0 h-full w-[min(640px,90vw)]
-              bg-background border-l border-border
-              shadow-2xl
-              transform transition-transform duration-300 ease-out
-              ${approvalPanelOpen ? 'translate-x-0' : 'translate-x-full'}
-              flex flex-col
-            `}>
-              <div className="flex items-center justify-between p-4 border-b border-border">
-                <h2 className="text-lg font-semibold">审批中心</h2>
-                <Button variant="ghost" size="icon" onClick={() => setApprovalPanelOpen(false)}>
-                  <X size={18} />
-                </Button>
+          <aside className="w-[380px] border-l border-border bg-background flex flex-col transition-all duration-200 overflow-hidden shrink-0">
+            <div className="h-16 border-b border-border flex items-center justify-between px-4 shrink-0 bg-muted/10">
+              <div className="flex items-center gap-2">
+                <Activity size={16} className="text-primary" />
+                <h2 className="text-sm font-semibold">审批中心</h2>
               </div>
-              <div className="flex-1 overflow-y-auto">
-                <OperationsConsole
-                  embedded
-                  onBack={() => setApprovalPanelOpen(false)}
-                />
-              </div>
-            </aside>
-          </div>
+              <Button variant="ghost" size="icon" onClick={() => setApprovalPanelOpen(false)} className="h-8 w-8">
+                <X size={16} />
+              </Button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <OperationsConsole
+                embedded
+                onBack={() => setApprovalPanelOpen(false)}
+              />
+            </div>
+          </aside>
         )}
         </>
       </div>

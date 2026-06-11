@@ -1,7 +1,7 @@
 # Alice 三期蓝图计划
 
 > **文档性质**：产品开发白皮书 · 修订记录与里程碑日志（v3.0 架构方案以 `docs/v3.0/ALICE_V3_RESTRUCTURE_PLAN.md` 为准）  
-> **版本**：v2.0（v3.0-rules-align） | **日期**：2026-06-11 | **状态**：v3.1-RC14 设置中心迁移交付  
+> **版本**：v2.0（v3.0-rules-align） | **日期**：2026-06-11 | **状态**：v3.1-RC15 审批中心重构 · Epic AL-16 交付 QA  
 > **部署形态**：私有化 Hub（单机）+ 各用户 Alice 客户端 + Admin 统一配链  
 > **成本约束**：基础设施仅开源可自托管；LLM 按量 API；不采购商业中间件/SaaS  
 
@@ -886,6 +886,7 @@ flowchart LR
 ||| v3.1-rc12 | 2026-06-11 | **v3.1 Chat 前端交互 Bug 修复（兔子开发令 · Epic AL-16）**：<br>├ AL-18~23 停止即时反馈/原位编辑/空态/输入框对齐/Toast  ·  pytest 120/0/3  ·  🔗 AL-17~23  ·  🔗 Epic AL-16 |
 ||| v3.1-rc13 | 2026-06-11 | **v3.1 引擎与模型选择器 UX 重构（兔子开发令 · Epic AL-16）**：<br>├ AL-25~28 EnginePicker齿轮+ModelPicker胶囊  ·  删除EngineSelector  ·  pytest 120/0/3  ·  🔗 AL-24~28  ·  🔗 Epic AL-16 |
 ||| v3.1-rc14 | 2026-06-11 | **v3.1 设置中心迁移（卡罗尔 WBS 第7波 · 兔子开发令 · Epic AL-16）**：<br>├ AL-30~34 设置中心骨架 + 行为指令/反馈/诊断迁移 + 侧边栏清理  ·  pytest 120/0/3  ·  🔗 AL-29~34  ·  🔗 Epic AL-16 |
+||| v3.1-rc15 | 2026-06-11 | **v3.1 审批中心重构（卡罗尔 WBS 第8波·终 · 兔子开发令 · Epic AL-16）**：<br>├ AL-36~40 380px内联面板 + Tab切换+徽章 + 展开详情 + 移除侧边栏待处理卡片 + 键盘快捷键  ·  pytest 120/0/3  ·  🔗 AL-35~40  ·  🔗 Epic AL-16 ✅ 全部完成 → 交付夏洛克 QA |
 | v1.7-patch8 | 2026-06-09 | 修复 EngineSelector onMount 未同步 Zustand enginePreference 导致界面选 agent 但后端收不到 engine 参数 |
 | v1.7-patch7 | 2026-06-09 | 修复 Cursor SDK 未传 api_key 导致 Jira 任务创建失败——chatSlice.ts 从 localStorage 读取 cursor_api_key 注入 config |
 | v1.8-plan-note | 2026-06-09 | ⚠️ plan/agent/ask 模式同质化标记：P2-2 交付的三种模式当前在 SDK 层完全相同（cursor_agent_lane.py L474），仅启动消息文字不同（L541）。Phase B2 将实现差异化——plan（执行计划+执行按钮→管控台审批）、agent（直接执行+逐条确认卡）、ask（只读无写工具）。详见 RABBIT_ROADMAP.md §5.2。 |
