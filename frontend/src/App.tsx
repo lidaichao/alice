@@ -439,8 +439,26 @@ export const App: React.FC = () => {
               <div className="text-center space-y-4 max-w-md animate-in fade-in slide-in-from-bottom-4 duration-300">
                 <h2 className="text-2xl font-bold">试试这些</h2>
                 <div className="grid grid-cols-2 gap-3">
-                  {['查 Jira 任务', '分析 Bug', '生成周报', 'Code Review'].map(label => (
-                    <div key={label} className="p-3 rounded-xl border border-border/50 bg-card text-sm">{label}</div>
+                  {[
+                    { label: '查 Jira 任务', msg: '/jira 查我的任务' },
+                    { label: '分析 Bug', msg: '/analyze ' },
+                    { label: '生成周报', msg: '/weekly ' },
+                    { label: 'Code Review', msg: '/review ' },
+                  ].map(card => (
+                    <button
+                      key={card.label}
+                      onClick={() => {
+                        localStorage.setItem('alice_onboarding_done', '1');
+                        setOnboardingDone(true);
+                        const sid = useChatStore.getState().addSession();
+                        setTimeout(() => {
+                          useChatStore.getState().setActiveSession(sid);
+                        }, 50);
+                      }}
+                      className="p-3 rounded-xl border border-border/50 bg-card text-sm hover:bg-accent hover:shadow-md hover:-translate-y-px transition-all cursor-pointer"
+                    >
+                      {card.label}
+                    </button>
                   ))}
                 </div>
                 <Button onClick={() => setOnboardingStep(2)}>下一步 →</Button>
@@ -526,7 +544,10 @@ export const App: React.FC = () => {
                     { icon: '🔍', label: 'Code Review', desc: '深度审查代码质量与隐患', msg: '/review ' },
                   ].map((item) => (
                     <button key={item.label}
-                      onClick={() => sendMessage(item.msg)}
+                      onClick={() => {
+                        setMyInput(item.msg);
+                        sendMessage(item.msg);
+                      }}
                       disabled={isGenerating}
                       className="flex flex-col items-start gap-1 p-3 rounded-xl shadow-sm bg-card hover:bg-accent hover:shadow-md hover:-translate-y-px transition-all text-sm text-left disabled:opacity-50 disabled:pointer-events-none"
                     >
