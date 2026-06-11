@@ -17,7 +17,7 @@ export const CommandPanel: React.FC<CommandPanelProps> = ({ filterText, selected
   if (filtered.length === 0) return null;
 
   return (
-    <div className="absolute bottom-full left-0 mb-2 w-full max-w-md bg-popover text-popover-foreground border border-border rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-150">
+    <div className="absolute bottom-full left-0 mb-2 w-full max-w-md bg-popover text-popover-foreground rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-150">
       <div className="px-3 py-2 bg-muted/50 border-b border-border flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium">
         <Terminal size={12} />
         <span>快捷指令面板 (使用键盘 ↑ ↓ 切换，Enter 确认)</span>

@@ -103,7 +103,7 @@ export const Sidebar: React.FC = () => {
   };
 
   return (
-    <aside className="w-64 h-full border-r border-border/40 bg-background/85 backdrop-blur-md flex flex-col overflow-hidden">
+    <aside className="w-64 h-full shadow-sm bg-background/85 backdrop-blur-md flex flex-col overflow-hidden">
       {/* Header + New Session */}
       <div className="p-3 border-b border-border flex items-center justify-between shrink-0">
         <span className="text-sm font-semibold text-foreground">会话列表</span>
@@ -256,29 +256,30 @@ export const Sidebar: React.FC = () => {
                       <PopoverTrigger asChild>
                         <button
                           onClick={(e) => e.stopPropagation()}
-                          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted transition-opacity shrink-0"
+                          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted transition-opacity shrink-0 text-muted-foreground/60 hover:text-muted-foreground"
+                          title="会话操作"
                         >
-                          <Edit2 size={12} className="text-muted-foreground" />
+                          <Edit2 className="w-3.5 h-3.5" />
                         </button>
                       </PopoverTrigger>
                       <PopoverContent className="w-32 p-1" align="start" side="right">
                         <button
-                          className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-2"
+                          className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-2 text-muted-foreground/60 hover:text-muted-foreground"
                           onClick={(e) => { e.stopPropagation(); pinSession(session.id); }}
                         >
-                          <Edit2 size={12} /> {pinnedIds.includes(session.id) ? '取消置顶' : '📌 置顶'}
+                          <Edit2 className="w-3.5 h-3.5" /> {pinnedIds.includes(session.id) ? '取消置顶' : '📌 置顶'}
                         </button>
                         <button
-                          className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-2"
+                          className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-2 text-muted-foreground/60 hover:text-muted-foreground"
                           onClick={(e) => { e.stopPropagation(); handleRename(session.id, session.title); }}
                         >
-                          <Edit2 size={12} /> 重命名
+                          <Edit2 className="w-3.5 h-3.5" /> 重命名
                         </button>
                         <button
-                          className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-red-50 text-red-600 flex items-center gap-2"
+                          className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-red-50 text-muted-foreground/60 hover:text-red-500 flex items-center gap-2"
                           onClick={(e) => { e.stopPropagation(); void handleDelete(session.id); }}
                         >
-                          <Trash2 size={12} /> 删除
+                          <Trash2 className="w-3.5 h-3.5" /> 删除
                         </button>
                       </PopoverContent>
                     </Popover>

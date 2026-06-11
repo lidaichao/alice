@@ -418,10 +418,10 @@ export const App: React.FC = () => {
                       <div className="flex items-center gap-3 mt-1.5 px-1">
                         <button
                           onClick={handleCopy}
-                          className="text-muted-foreground/40 hover:text-muted-foreground transition-colors p-0.5 rounded"
+                          className="text-muted-foreground/60 hover:text-muted-foreground transition-colors p-0.5 rounded"
                           title="复制"
                         >
-                          {isCopied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+                          {isCopied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
                         {hasContent && (
                           <button
@@ -430,10 +430,10 @@ export const App: React.FC = () => {
                               const lastUserMsg = messages.slice(0, msgIdx).reverse().find(x => x.role === 'user');
                               if (lastUserMsg) sendMessage(lastUserMsg.content);
                             }}
-                            className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                            className="p-1 rounded-md hover:bg-muted text-muted-foreground/60 hover:text-muted-foreground transition-colors"
                             title="重新生成"
                           >
-                            <RefreshCcw size={14} />
+                            <RefreshCcw className="w-3.5 h-3.5" />
                           </button>
                         )}
                         {isUser && (
@@ -442,10 +442,10 @@ export const App: React.FC = () => {
                               const newText = window.prompt('编辑消息', m.content);
                               if (newText && newText.trim()) sendMessage(newText.trim());
                             }}
-                            className="p-1 rounded-md hover:bg-primary/20 text-muted-foreground hover:text-foreground transition-colors"
+                            className="p-1 rounded-md hover:bg-primary/20 text-muted-foreground/60 hover:text-muted-foreground transition-colors"
                             title="编辑"
                           >
-                            <Pencil size={14} />
+                            <Pencil className="w-3.5 h-3.5" />
                           </button>
                         )}
                         <div className="flex-1" />

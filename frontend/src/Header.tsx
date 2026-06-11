@@ -7,7 +7,7 @@ export const Header: React.FC = () => {
   const activeSession = sessions.find((s) => s.id === activeSessionId);
 
   return (
-    <header className="h-16 bg-background flex items-center justify-between px-4 border-b border-border shrink-0">
+    <header className="h-16 bg-background flex items-center justify-between px-4 shadow-sm shrink-0">
       <div className="flex items-center gap-2">
         {activeSession ? (
           <div className="flex items-center gap-2">

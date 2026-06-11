@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+body {
+  font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -75,4 +81,13 @@
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
+}
+
+/* ── 输入框 focus 环（去线框化）── */
+@layer base {
+  input:focus,
+  textarea:focus {
+    @apply ring-2 ring-primary/30 border-transparent outline-none;
+    transition: ring 200ms;
+  }
 }

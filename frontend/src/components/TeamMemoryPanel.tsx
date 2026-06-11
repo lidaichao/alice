@@ -164,20 +164,22 @@ export const TeamMemoryPanel: React.FC = () => {
                   <p className="flex-1 text-[11px] leading-snug text-foreground/90">{e.text}</p>
                   <button
                     type="button"
-                    className="opacity-60 hover:opacity-100 p-0.5"
+                    className="p-1 rounded hover:bg-muted text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+                    title="编辑"
                     onClick={() => {
                       setEditingId(e.id);
                       setEditText(e.text);
                     }}
                   >
-                    <Pencil size={10} />
+                    <Pencil className="w-3.5 h-3.5" />
                   </button>
                   <button
                     type="button"
-                    className="opacity-60 hover:opacity-100 text-destructive p-0.5"
+                    className="p-1 rounded hover:bg-muted text-muted-foreground/60 hover:text-red-500 transition-colors"
+                    title="删除"
                     onClick={() => handleDelete(e.id)}
                   >
-                    <Trash2 size={10} />
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               )}

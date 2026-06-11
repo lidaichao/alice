@@ -91,10 +91,10 @@ export default function ConfirmCard({ card, progressMessage, permissionMode = 'a
   );
 
   return (
-    <div className={`mt-3 border rounded-lg p-4 animate-in fade-in ${
+    <div className={`mt-3 rounded-lg p-4 animate-in fade-in ${
       permissionMode === 'direct'
-        ? 'border-green-400/50 bg-green-50/30 dark:bg-emerald-950/30'
-        : 'border-orange-400/50 bg-orange-50/30 dark:bg-orange-900/40'
+        ? 'ring-1 ring-green-400/30 shadow-md bg-green-50/30 dark:bg-emerald-950/30'
+        : 'ring-1 ring-orange-400/30 shadow-md bg-orange-50/30 dark:bg-orange-900/40'
     }`}>
       <div className="flex items-start gap-3 mb-3">
         {permissionMode === 'direct' ? (
