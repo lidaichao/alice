@@ -14,7 +14,8 @@ import { useOperationActions } from '@/hooks/useOperationActions';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { PluginToolCard } from '@/components/MarkdownRenderer';
 import { OperationsConsole } from '@/components/OperationsConsole';
-import { EngineSelector } from '@/components/EngineSelector';
+import { EnginePicker } from '@/components/EnginePicker';
+import { ModelPicker } from '@/components/ModelPicker';
 import { CursorSettings } from '@/components/CursorSettings';
 import { syncHubConfigFromHealth } from '@/lib/hubConfig';
 import { ThemeProvider } from '@lobehub/ui';
@@ -39,6 +40,22 @@ export const App: React.FC = () => {
   const messages = currentSession?.messages || [];
   const isLoggedIn = useChatStore((s) => s.user.isLoggedIn);
 
+  // ── 引擎与模型选择状态 ──
+  const [currentEngine, setCurrentEngine] = useState<string>(() => {
+    const pref = JSON.parse(localStorage.getItem('alice_engine_pref') || '{}');
+    return pref.engine || 'auto';
+  });
+  const [currentCursorMode, setCurrentCursorMode] = useState<string>(() => {
+    const pref = JSON.parse(localStorage.getItem('alice_engine_pref') || '{}');
+    return pref.mode || '';
+  });
+  const [deepseekModelName, setDeepseekModelName] = useState('');
+  const [cursorModelName, setCursorModelName] = useState<string>(() => {
+    const cfg = JSON.parse(localStorage.getItem('alice_cursor_config') || '{}');
+    return cfg.model || 'composer-2.5';
+  });
+  const [cursorAvailableModels, setCursorAvailableModels] = useState<string[]>(['composer-2.5', 'auto']);
+
   // ── 工作流模板（从 Sidebar 搬入，融入 Slash 命令面板）──
   const [wfTemplates, setWfTemplates] = useState<Array<{id:string;name:string;description:string}>>([]);
 
@@ -53,6 +70,27 @@ export const App: React.FC = () => {
       useChatStore.getState().addSession();
     }
   }, [isDbLoaded, sessions.length, activeSessionId]);
+
+  // ── 加载引擎配置（供 ModelPicker 使用）──
+  useEffect(() => {
+    fetch('/v1/config/engines')
+      .then((res) => res.json())
+      .then((data: { deepseek?: { model?: string } }) => {
+        if (data?.deepseek?.model) setDeepseekModelName(data.deepseek.model);
+      })
+      .catch(() => {});
+    // 加载当前 cursor 配置中的 model
+    try {
+      const cfg = JSON.parse(localStorage.getItem('alice_cursor_config') || '{}');
+      if (cfg.model) setCursorModelName(cfg.model);
+      if (cfg.key) {
+        fetch(`/v1/admin/cursor-sdk/models?api_key=${encodeURIComponent(cfg.key)}`)
+          .then((r) => r.json())
+          .then((d) => { if (d.ok && d.models?.length) setCursorAvailableModels(d.models.map((m: any) => m.id)); })
+          .catch(() => {});
+      }
+    } catch {}
+  }, []);
 
   // ── UI-only 本地状态（输入框、命令面板、滚动感知）──
   const [myInput, setMyInput] = useState('');
@@ -644,8 +682,35 @@ export const App: React.FC = () => {
               </div>
             </div>
             {/* 引擎标签在输入框下方 */}
-            <div className="flex items-center gap-2">
-              <EngineSelector compact onOpenSettings={() => setShowCursorSettings(true)} />
+            <div className="flex items-center gap-1">
+              <EnginePicker
+                compact
+                onOpenSettings={() => setShowCursorSettings(true)}
+                onEngineChange={(engine, mode) => {
+                  setCurrentEngine(engine);
+                  setCurrentCursorMode(mode || '');
+                  if (engine === 'cursor') {
+                    const cfg = JSON.parse(localStorage.getItem('alice_cursor_config') || '{}');
+                    if (cfg.model) setCursorModelName(cfg.model);
+                    if (cfg.key) {
+                      fetch(`/v1/admin/cursor-sdk/models?api_key=${encodeURIComponent(cfg.key)}`)
+                        .then((r) => r.json())
+                        .then((d) => { if (d.ok && d.models?.length) setCursorAvailableModels(d.models.map((m: any) => m.id)); })
+                        .catch(() => {});
+                    }
+                  }
+                }}
+              />
+              {currentEngine !== 'auto' && (
+                <ModelPicker
+                  engine={currentEngine}
+                  cursorMode={currentCursorMode}
+                  deepseekModel={deepseekModelName}
+                  cursorModel={cursorModelName}
+                  cursorAvailableModels={cursorAvailableModels}
+                  onModelChange={(model) => setCursorModelName(model)}
+                />
+              )}
             </div>
           </div>
         </main>
