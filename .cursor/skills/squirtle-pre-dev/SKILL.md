@@ -25,15 +25,24 @@ for issue in r.json()["issues"]:
         print(f"❌ {k} 经办人={a} —— 阻断，通知协调者等待兔子指派")
 ```
 
-## 第②检：父任务 description
+## 第②检：读需求描述
 
-子任务只写一行简述，父任务含完整上下文（📄需求/📌功能/🎯用户故事/🎨设计）。
+卡罗尔在任务中写入完整上下文（📄需求/📌功能/🎯用户故事/🎨设计），子任务只写一行简述。
+
+**情况 A — 分配的是子任务(10702)**：读父任务 description
 
 ```python
-sub = requests.get(f"{BASE}/rest/api/2/issue/AL-xx?fields=parent", headers=HEADERS).json()
+sub = requests.get(f"{BASE}/rest/api/2/issue/AL-xx?fields=parent,issuetype", headers=HEADERS).json()
 parent_key = sub["fields"]["parent"]["key"]
 parent = requests.get(f"{BASE}/rest/api/2/issue/{parent_key}?fields=description", headers=HEADERS).json()
 print(parent["fields"]["description"])
+```
+
+**情况 B — 分配的是任务(10701)**：读自身 description（卡罗尔直接写在任务里）
+
+```python
+task = requests.get(f"{BASE}/rest/api/2/issue/AL-xx?fields=description,issuetype", headers=HEADERS).json()
+print(task["fields"]["description"])
 ```
 
 ## 第③检：目标文件 Read
