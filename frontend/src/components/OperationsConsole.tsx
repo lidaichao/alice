@@ -209,9 +209,9 @@ export const OperationsConsole: React.FC<{ onBack: () => void; embedded?: boolea
             <ArrowLeft size={18} />
           </Button>
         )}
-        <div className="flex-1">
-          <h1 className="text-sm font-semibold">审批管控台</h1>
-          <p className="text-[11px] text-muted-foreground">待确认 · 进行中 · 失败 · 链路健康</p>
+        <div className="flex-1 flex items-center gap-3 min-w-0">
+          <h1 className="text-sm font-semibold whitespace-nowrap">审批管控台</h1>
+          <p className="text-[11px] text-muted-foreground whitespace-nowrap">待确认 · 进行中 · 失败 · 链路健康</p>
         </div>
         <div className="flex items-center gap-1 ml-3">
           <Button variant={filterMode === 'mine' ? 'secondary' : 'ghost'} size="sm" className="h-7 text-[11px]"
