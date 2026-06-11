@@ -1,57 +1,29 @@
 ---
-description: 杰尼龟标准工作流 SOP（测试、Git、记忆归档、跨仓库同步协议 R11）
+description: 杰尼龟标准操作索引——测试矩阵 + 技能导航（≤20行）
 alwaysApply: true
 ---
 
-# 杰尼龟标准工作流 (SOP)
+# 杰尼龟操作索引
 
-## 动刀前：关联测试
+## 关联测试
 
-| 改动范围 | 建议运行 |
-|----------|----------|
-| `frontend/src/` | `npm run dev` 编译通过 |
-| `backend/ai_bridge.py` / `intent_router.py` | `py test/e2e_v2.py` |
-| `jira_mcp_server.py` / `jira_api.py` | 运行对应模块 pytest（测试脚本随归档已清理） |
+| 改动范围 | 运行 |
+|----------|------|
+| `backend/ai_bridge.py` / `cursor_agent_lane.py` | `pytest backend/tests/ -v` |
 | `agent_graph.py` / v3.0 新增 | `pytest backend/tests/test_agent_graph.py` |
-| `jira_bridge.py` / v3.0 新增 | `pytest backend/tests/test_jira_bridge.py` |
-| SVN diff 相关 | 运行对应模块 pytest（测试脚本随归档已清理） |
+| `frontend/src/` | `npm run build` |
+| `admin-ui/src/` | `npm run build` |
 
-Windows 终端：`$env:PYTHONIOENCODING='utf-8'` 后再跑 Python 脚本。
+Windows：`$env:PYTHONIOENCODING='utf-8'` 后再跑 pytest。
 
-## 信息同步协议（跨仓库协作规则 · 兔子 R11）
+## 自动加载的 Skills
 
-### 单一真源原则
-
-所有方案文档以兔子（`H:\workbuddy\coordinator-rabbit`）的版本为唯一权威。**禁止自行复制方案文档到 alice 仓库。** 完整注册表见 `coordinator-rabbit/SOURCE_OF_TRUTH.md`。
-
-### 你的权限范围
-
-| 你可以改 | 你只能读 |
-|---------|---------|
-| `alice/backend/` 所有 `.py` | `coordinator-rabbit/docs/ALICE_V3_RESTRUCTURE_PLAN.md` |
-| `alice/admin-ui/` 所有 `.vue/.ts` | `alice/specs/*.md`（兔子写，你对照） |
-| `alice/.cursor/rules/` 你的规则文件 | `coordinator-rabbit/.cursor/rules/rabbit-*.mdc` |
-| `alice/docs/v3.0/INDEX.md`（可建议，最终由兔子改） | `coordinator-rabbit/SOURCE_OF_TRUTH.md` |
-
-### 会话开工三检（每次新对话必须执行，优先级最高）
-
-1. 读 `alice/docs/v3.0/INDEX.md` → 确认方案文档权威位置
-2. 读 `coordinator-rabbit/docs/ALICE_V3_RESTRUCTURE_PLAN.md` → 确认当前版本号、WBS 阶段、自洽性清单
-3. 读 `coordinator-rabbit/SOURCE_OF_TRUTH.md` → 对照注册表检查自己仓库的文件：缺了去问、多了过期就去删
-
-### 收到兔子变更通知后的动作
-
-收到协调者转发的「🔔 兔子变更通知」后，立刻读取变更涉及的文档，确认自己的开发方向和约束是否仍然对齐。
-
-## 完成后：Git（自动，无需用户再指示）
-
-任务完成且有应提交改动时，**自行 commit + push**（见 `.cursor/rules/auto-github-commit.mdc` 与 `.cursor/skills/auto-commit-github/SKILL.md`）。
-
-- type：`feat` / `fix` / `refactor` / `docs` / `style`
-- Windows 推荐：`git commit -F` 写入临时消息文件
-- 禁止 `--force`（除非用户明确要求）
-- 禁止提交：`global_config.json`、`.env`、`backend/runtime/`
-
-## 重大修改后：记忆归档
-
-在会话中记录：日期、改动模块、文件路径、一句话说明、已知技术债。（`归档/` 已清理，MEMORY.md 路径随历史归档删除。）
+| 场景 | Skill |
+|------|-------|
+| 新会话 / 兔子变更通知 | `.cursor/skills/squirtle-startup-check/SKILL.md` |
+| 开发令（含子任务） | `.cursor/skills/squirtle-pre-dev/SKILL.md` |
+| Jira 操作 | `.cursor/skills/squirtle-jira-ops/SKILL.md` |
+| 战报输出 | `.cursor/skills/squirtle-battle-report/SKILL.md` |
+| TEAM_CHANNEL 留言 | `.cursor/skills/squirtle-team-channel/SKILL.md` |
+| 提交前 v3.0 守卫 | `.cursor/skills/squirtle-v3-guard/SKILL.md` |
+| 蓝图/架构规划 | `.cursor/skills/squirtle-roadmap/SKILL.md` |
