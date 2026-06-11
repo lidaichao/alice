@@ -212,70 +212,35 @@
       <div v-if="s.issuetypeActiveProject" class="issuetype-editor mt-3">
         <div class="issuetype-project-name">
           <span class="issuetype-project-label">{{ s.issuetypeActiveProject }}</span>
+          <span class="text-muted ml-2" style="font-size: 12px;">
+            已选 {{ (s.issuetypeChecked[s.issuetypeActiveProject] || []).filter(Boolean).length }} 项
+          </span>
         </div>
 
-        <el-table
-          :data="s.issuetypeItems[s.issuetypeActiveProject] || []"
-          size="small"
-          class="issuetype-table"
-          row-class-name="issuetype-table-row"
+        <!-- 从 Jira 加载后可勾选的列表 -->
+        <el-checkbox-group
+          v-model="s.issuetypeChecked[s.issuetypeActiveProject]"
+          class="issuetype-checkbox-group mt-2"
         >
-          <el-table-column label="图标" width="56" align="center">
-            <template #default="{ row }">
-              <el-avatar v-if="row.iconUrl" :src="row.iconUrl" :size="24" shape="square" />
-              <span v-else class="issuetype-icon-plain">—</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="名称" min-width="140">
-            <template #default="{ row, $index }">
-              <template v-if="!row.editing">
-                <span class="issuetype-cell-name">{{ row.name }}</span>
-              </template>
-              <el-input
-                v-else
-                v-model="row.draftName"
-                size="small"
-                placeholder="输入名称"
-                @keyup.enter="s.saveIssuetypeItem(s.issuetypeActiveProject, $index)"
-              />
-            </template>
-          </el-table-column>
-
-          <el-table-column label="类型" width="80" align="center">
-            <template #default="{ row }">
-              <el-tag size="small" :type="row.type === '子任务' ? 'warning' : ''" effect="plain">
-                {{ row.type || '标准' }}
+          <div
+            v-for="(item, idx) in (s.issuetypeItems[s.issuetypeActiveProject] || [])"
+            :key="idx"
+            class="issuetype-checkbox-row"
+          >
+            <el-checkbox :label="item.name" :value="item.name">
+              <span class="issuetype-check-label">{{ item.name }}</span>
+              <el-tag v-if="item.type === '子任务'" size="small" type="warning" effect="plain" class="ml-2" style="vertical-align: middle;">
+                子任务
               </el-tag>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="描述" min-width="180">
-            <template #default="{ row }">
-              <span class="issuetype-cell-desc">{{ row.description || '—' }}</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="操作" width="150" align="center" fixed="right">
-            <template #default="{ row, $index }">
-              <template v-if="!row.editing">
-                <el-button link type="primary" size="small" @click="s.startEditIssuetypeItem(s.issuetypeActiveProject, $index)">编辑</el-button>
-                <el-button link type="danger" size="small" @click="s.removeIssuetypeItem(s.issuetypeActiveProject, $index)">删除</el-button>
-              </template>
-              <template v-else>
-                <el-button link type="success" size="small" @click="s.saveIssuetypeItem(s.issuetypeActiveProject, $index)">保存</el-button>
-                <el-button link type="info" size="small" @click="s.cancelEditIssuetypeItem(s.issuetypeActiveProject, $index)">取消</el-button>
-              </template>
-            </template>
-          </el-table-column>
-        </el-table>
-
-        <div class="issuetype-add-row mt-2">
-          <el-button size="small" @click="s.addIssuetypeItem(s.issuetypeActiveProject)">+ 添加</el-button>
-        </div>
+            </el-checkbox>
+            <span v-if="item.description" class="text-muted" style="font-size: 11px; margin-left: 22px; display: block;">
+              {{ item.description }}
+            </span>
+          </div>
+        </el-checkbox-group>
 
         <p v-if="!(s.issuetypeItems[s.issuetypeActiveProject] || []).length" class="text-muted mt-3">
-          暂无条目，点击「从 Jira 加载」或下方「+ 添加」开始配置
+          暂无可选条目，请先点击「从 Jira 加载」
         </p>
       </div>
     </ConfigCard>
@@ -460,5 +425,20 @@ const advancedOpen = ref([]);
 }
 .issuetype-save-msg--ok {
   color: var(--el-color-success, #67c23a);
+}
+.issuetype-checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.issuetype-checkbox-row {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--admin-bg-card);
+  border: 1px solid var(--admin-border);
+}
+.issuetype-check-label {
+  font-size: 13px;
+  font-weight: 500;
 }
 </style>

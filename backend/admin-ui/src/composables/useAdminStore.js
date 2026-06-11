@@ -186,6 +186,7 @@ export function useAdminStore() {
   const issuetypeSaveMessage = ref('');
   const issuetypeDraftText = reactive({});
   const issuetypeItems = reactive({});  // { [projectKey]: [{name, editing, draftName}] }
+  const issuetypeChecked = reactive({}); // { [projectKey]: [name, name...] } 勾选状态
   const jiraFieldFilter = ref('');
   const jiraProjectOptions = ref([]);
   const jiraProjectsLoading = ref(false);
@@ -818,9 +819,8 @@ export function useAdminStore() {
   const _doSaveIssuetypes = async () => {
     const map = {};
     for (const pk of jiraPmForm.selectedProjectKeys) {
-      const items = issuetypeItems[pk] || [];
-      const names = items.filter((r) => r.name).map((r) => r.name);
-      if (names.length) map[pk] = names;
+      const names = issuetypeChecked[pk] || [];
+      if (names.length) map[pk] = names.filter(Boolean);
     }
     jiraPmForm.issuetypeRowsByProject = map;
     try {
@@ -1158,6 +1158,7 @@ export function useAdminStore() {
                 iconUrl: '', name: typeof n === 'string' ? n : n.name || '', type: '标准',
                 description: '', editing: false, draftName: '',
               }));
+              issuetypeChecked[pk] = (names || []).map((n) => typeof n === 'string' ? n : n.name || '');
             }
             // 自动选中第一个项目
             const firstKey = jiraPmForm.selectedProjectKeys[0];
@@ -1592,6 +1593,7 @@ export function useAdminStore() {
     issuetypeSaveMessage,
     saveIssuetypes,
     issuetypeItems,
+    issuetypeChecked,
     fetchIssuetypes,
     addIssuetypeItem,
     startEditIssuetypeItem,

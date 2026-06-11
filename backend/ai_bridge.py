@@ -4085,6 +4085,7 @@ def get_admin_config():
         "JIRA_PROJECT_CONFIG": config.get("JIRA_PROJECT_CONFIG", {}),
         "JIRA_FIELD_GLOSSARY": config.get("JIRA_FIELD_GLOSSARY", []),
         "JIRA_PROJECTS": config.get("JIRA_PROJECTS", os.getenv("JIRA_PROJECTS", "")),
+        "JIRA_ISSUETYPE_MAP": config.get("JIRA_ISSUETYPE_MAP", {}),
     })
 
 @app.route("/v1/config/engines", methods=["GET"])
