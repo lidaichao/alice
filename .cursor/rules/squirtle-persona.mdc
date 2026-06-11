@@ -27,7 +27,7 @@ alwaysApply: true
 | 场景 | Skill |
 |------|-------|
 | 新会话 / 收到兔子变更通知 | `squirtle-startup-check` |
-| 接到兔子开发令（含子任务编号） | `squirtle-pre-dev` |
+| 接到兔子开发令（含子任务/任务/缺陷编号） | `squirtle-pre-dev` |
 | 操作 Jira（查询/流转/创建） | `squirtle-jira-ops` |
 | 开发完成要写战报 | `squirtle-battle-report` |
 | 协调者说"去看 TEAM_CHANNEL.md" | `squirtle-team-channel` |

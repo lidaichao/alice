@@ -2,10 +2,10 @@
 name: squirtle-pre-dev
 description: >-
   When Squirtle receives a development order from Rabbit that includes Jira
-  subtask IDs (10702) or bug IDs (10011), run mandatory checks before writing
-  any code: verify subtask assignees are Squirtle, read parent task
-  descriptions or bug QA feedback, and confirm target files exist. Use before
-  any code change when subtasks or bugs are mentioned.
+  subtask IDs (10702), task IDs (10701), or bug IDs (10011), run mandatory
+  checks before coding: verify assignees, walk the three-layer (Epic→Task→Subtask)
+  hierarchy to read descriptions, and confirm target files. Use before any code
+  change.
 ---
 
 # 开发前检查
@@ -27,22 +27,42 @@ for issue in r.json()["issues"]:
 
 ## 第②检：读需求描述
 
-卡罗尔在任务中写入完整上下文（📄需求/📌功能/🎯用户故事/🎨设计），子任务只写一行简述。
+Jira 任务三层结构：
 
-**情况 A — 分配的是子任务(10702)**：读父任务 description
-
-```python
-sub = requests.get(f"{BASE}/rest/api/2/issue/AL-xx?fields=parent,issuetype", headers=HEADERS).json()
-parent_key = sub["fields"]["parent"]["key"]
-parent = requests.get(f"{BASE}/rest/api/2/issue/{parent_key}?fields=description", headers=HEADERS).json()
-print(parent["fields"]["description"])
+```
+Epic (10000)          ← 标注开发范围（卡罗尔设 Epic Link）
+  └── 任务 (10701)    ← 卡罗尔写入完整设计：📄需求/📌功能/🎯用户故事/🎨设计
+        └── 子任务 (10702)  ← 一行简述，上下文靠父任务补充
 ```
 
-**情况 B — 分配的是任务(10701)**：读自身 description（卡罗尔直接写在任务里）
+**情况 A — 分配的是子任务(10702)**：先读父任务(10701) description，再读祖父 Epic(10000) scope
 
 ```python
-task = requests.get(f"{BASE}/rest/api/2/issue/AL-xx?fields=description,issuetype", headers=HEADERS).json()
+# Step 1: 读父任务 description（卡罗尔设计全写在父任务里）
+sub = requests.get(f"{BASE}/rest/api/2/issue/AL-xx?fields=parent,issuetype", headers=HEADERS).json()
+parent_key = sub["fields"]["parent"]["key"]
+parent = requests.get(f"{BASE}/rest/api/2/issue/{parent_key}?fields=description,parent", headers=HEADERS).json()
+print("--- 父任务 description ---")
+print(parent["fields"]["description"])
+
+# Step 2: 读祖父 Epic summary（标注开发范围，不写具体设计）
+epic_ref = (parent["fields"].get("parent") or {})
+if epic_ref:
+    epic = requests.get(f"{BASE}/rest/api/2/issue/{epic_ref['key']}?fields=summary,description", headers=HEADERS).json()
+    print(f"\n--- Epic {epic_ref['key']}: {epic['fields']['summary']} ---")
+```
+
+**情况 B — 分配的是任务(10701)**：读自身 description，再读父 Epic scope
+
+```python
+task = requests.get(f"{BASE}/rest/api/2/issue/AL-xx?fields=description,issuetype,parent", headers=HEADERS).json()
+print("--- 任务 description ---")
 print(task["fields"]["description"])
+
+epic_ref = (task["fields"].get("parent") or {})
+if epic_ref:
+    epic = requests.get(f"{BASE}/rest/api/2/issue/{epic_ref['key']}?fields=summary,description", headers=HEADERS).json()
+    print(f"\n--- Epic {epic_ref['key']}: {epic['fields']['summary']} ---")
 ```
 
 ## 第③检：目标文件 Read
