@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { useChatStore } from '@/store/useChatStore';
 import { Button } from '@/components/ui/button';
 import { useTheme } from 'next-themes';
-import { Sun, Moon, Monitor, Plus, Trash2, Edit2, Wifi, Bug, ClipboardList, Bell, Settings, Search, X, MessageSquare, Activity } from 'lucide-react';
+import { Sun, Moon, Monitor, Plus, Trash2, Edit2, ClipboardList, Bell, Settings, Search, X } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { TeamMemoryPanel } from '@/components/TeamMemoryPanel';
 import { useToast } from '@/components/Toast';
 
 export const Sidebar: React.FC = () => {
@@ -231,14 +230,16 @@ export const Sidebar: React.FC = () => {
         </Button>
       </div>
 
-      <TeamMemoryPanel />
-
       {/* Footer */}
       <div className="p-3 border-t border-border shrink-0 flex flex-col gap-2 bg-background/50">
-        <div className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5 px-1">
+        <button
+          onClick={() => useChatStore.getState().setMainView('settings')}
+          className="flex items-center gap-1.5 px-1 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground rounded hover:bg-muted transition-colors"
+          title="设置中心"
+        >
           <Settings size={12} />
           <span>设置</span>
-        </div>
+        </button>
         <div className="flex items-center justify-center">
           <div className="flex items-center gap-1 bg-muted rounded-full p-1 border border-border/50 shadow-inner">
             <button onClick={() => setTheme('light')} className={`p-1.5 rounded-full transition-all ${theme === 'light' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground'}`} title="浅色"><Sun size={14} /></button>
@@ -246,159 +247,7 @@ export const Sidebar: React.FC = () => {
             <button onClick={() => setTheme('dark')} className={`p-1.5 rounded-full transition-all ${theme === 'dark' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground'}`} title="深色"><Moon size={14} /></button>
           </div>
         </div>
-        <TestConnectionWidget />
-        <FeedbackButton />
-        <DiagnosticsButton />
       </div>
     </aside>
   );
 };
-
-// ── 自助排障探测器 ─────────────────────────────
-function TestConnectionWidget() {
-  const [status, setStatus] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
-  const [msg, setMsg] = useState('');
-
-  const test = async () => {
-    setStatus('testing');
-    setMsg('');
-    try {
-      const res = await fetch('/api/system/status');
-      if (!res.ok) throw new Error('down');
-      const data = await res.json();
-      setStatus('ok');
-      setMsg(data.service || data.status || '在线');
-    } catch {
-      setStatus('fail');
-      setMsg('后端不可达');
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-1.5">
-      <button onClick={test} disabled={status === 'testing'}
-        className="flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-border/50 bg-muted/50 hover:bg-muted transition-colors disabled:opacity-50">
-        <Wifi size={12} className={status === 'ok' ? 'text-green-500' : status === 'fail' ? 'text-red-500' : 'text-muted-foreground'} />
-        {status === 'testing' ? '检测中...' : 'Test Connection'}
-      </button>
-      {status !== 'idle' && (
-        <span className={`text-[11px] font-semibold truncate max-w-[140px] ${status === 'ok' ? 'text-green-600' : 'text-red-500'}`}>
-          {status === 'ok' ? '✅ 在线' : '❌ 不可达'}
-        </span>
-      )}
-    </div>
-  );
-}
-
-// ── 灰度测试反馈黑匣子 ───────────────────────────
-// ── 轻量反馈 ────────────────────────────
-function FeedbackButton() {
-  const [open, setOpen] = useState(false);
-  const [text, setText] = useState('');
-  const [sent, setSent] = useState(false);
-  const submit = () => {
-    const reports = JSON.parse(localStorage.getItem('alice_feedback') || '[]');
-    reports.push({ text, time: Date.now() });
-    localStorage.setItem('alice_feedback', JSON.stringify(reports));
-    setSent(true);
-    setTimeout(() => { setOpen(false); setSent(false); setText(''); }, 1500);
-  };
-  return (
-    <>
-      <button onClick={() => setOpen(true)}
-        className="flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-border/50 bg-muted/50 hover:bg-muted transition-colors">
-        <MessageSquare size={12} className="text-muted-foreground" /> 反馈
-      </button>
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setOpen(false)}>
-          <div className="bg-background border border-border rounded-xl shadow-2xl p-5 w-[400px] max-w-[92vw]" onClick={e => e.stopPropagation()}>
-            <div className="font-semibold mb-3">告诉我们你的想法</div>
-            <textarea className="w-full h-20 text-sm border border-border rounded-lg p-3 resize-none bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 mb-3"
-              placeholder="哪里让你觉得好用或不好用..." value={text} onChange={e => setText(e.target.value)} />
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <input type="checkbox" className="rounded" /> 附带诊断信息
-              </label>
-              <div className="flex gap-2">
-                <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>取消</Button>
-                <Button size="sm" onClick={submit} disabled={!text.trim()}>
-                  {sent ? '已发送' : '发送'}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-// ── 诊断工具 ───────────────────────────
-function DiagnosticsButton() {
-  const [open, setOpen] = useState(false);
-  const [desc, setDesc] = useState('');
-  const [sent, setSent] = useState(false);
-  const [logsLoading, setLogsLoading] = useState(false);
-  const [fullReport, setFullReport] = useState('');
-
-  const clientInfo = [
-    `OS: ${navigator.platform || 'unknown'}`,
-    `UA: ${navigator.userAgent.substring(0, 80)}`,
-    `Screen: ${window.screen.width}x${window.screen.height}`,
-    `Lang: ${navigator.language}`,
-    `Time: ${new Date().toISOString()}`,
-  ].join('\n');
-
-  const handleGenerate = async () => {
-    setLogsLoading(true);
-    let backendLogs = '';
-    try {
-      const res = await fetch('/api/diagnostics/logs');
-      const data = await res.json();
-      backendLogs = data.ok && data.lines?.length ? data.lines.join('\n') : (data.error || '(日志接口不可达)');
-    } catch { backendLogs = '(后端不可达)'; }
-    const report = [
-      `=== Alice 灰度测试反馈报告 ===`,
-      `时间: ${new Date().toISOString()}`,
-      '', `## 用户描述`, desc || '(未填写)', '',
-      `## 客户端环境`, clientInfo, '',
-      `## 后端日志 (最近200行)`, backendLogs,
-    ].join('\n');
-    setFullReport(report);
-    setLogsLoading(false);
-    localStorage.setItem('alice_bug_reports', JSON.stringify(
-      [...(JSON.parse(localStorage.getItem('alice_bug_reports') || '[]')), { desc, clientInfo, backendLogs, time: Date.now() }]
-    ));
-    setSent(true);
-  };
-
-  return (
-    <>
-      <button onClick={() => { setOpen(true); setSent(false); setFullReport(''); }}
-        className="flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-border/50 bg-muted/50 hover:bg-muted transition-colors" title="诊断工具">
-        <Activity size={12} className="text-blue-500" /> 🔧 诊断工具
-      </button>
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setOpen(false)}>
-          <div className="bg-background border border-border rounded-xl shadow-2xl p-5 w-[460px] max-w-[92vw] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-2 mb-4"><Bug className="w-5 h-5 text-amber-500" /><span className="font-semibold text-lg">🐞 灰度测试反馈</span></div>
-            <div className="text-xs text-muted-foreground mb-3 p-2 bg-muted/30 rounded-md font-mono whitespace-pre-wrap">{clientInfo}</div>
-            <textarea className="w-full h-20 text-sm border border-border rounded-lg p-3 resize-none bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 mb-3" placeholder="描述你遇到的问题..." value={desc} onChange={e => setDesc(e.target.value)} />
-            {!sent && <Button size="sm" onClick={handleGenerate} disabled={logsLoading || !desc.trim()} className="w-full mb-2">{logsLoading ? '⏳ 抓取后端日志中...' : '生成诊断报告'}</Button>}
-            {sent && fullReport && (
-              <>
-                <div className="text-xs text-muted-foreground mb-1">诊断报告已生成 ({fullReport.length} 字符)</div>
-                <pre className="text-[11px] bg-muted/50 rounded-lg p-3 max-h-48 overflow-y-auto mb-3 whitespace-pre-wrap font-mono border border-border/30">{fullReport.substring(0, 800)}...</pre>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => navigator.clipboard.writeText(fullReport)} className="flex-1">📋 复制到剪贴板</Button>
-                  <Button variant="outline" size="sm" onClick={() => { const b = new Blob([fullReport], { type: 'text/plain;charset=utf-8' }); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = `alice_bug_report_${Date.now()}.txt`; a.click(); URL.revokeObjectURL(u); }} className="flex-1">💾 下载 .txt</Button>
-                </div>
-              </>
-            )}
-            <div className="flex justify-end mt-3"><Button variant="ghost" size="sm" onClick={() => setOpen(false)}>关闭</Button></div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}

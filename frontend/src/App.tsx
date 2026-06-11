@@ -17,6 +17,7 @@ import { OperationsConsole } from '@/components/OperationsConsole';
 import { EnginePicker } from '@/components/EnginePicker';
 import { ModelPicker } from '@/components/ModelPicker';
 import { CursorSettings } from '@/components/CursorSettings';
+import { SettingsCenter } from '@/components/SettingsCenter';
 import { syncHubConfigFromHealth } from '@/lib/hubConfig';
 import { ThemeProvider } from '@lobehub/ui';
 import { useToast } from '@/components/Toast';
@@ -398,6 +399,17 @@ export const App: React.FC = () => {
     );
   }
 
+
+  if (mainView === 'settings') {
+    return (
+      <ThemeProvider themeMode="dark">
+        <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
+          <Sidebar />
+          <SettingsCenter onBack={() => setMainView('chat')} />
+        </div>
+      </ThemeProvider>
+    );
+  }
 
   return (
     <ThemeProvider themeMode="dark">

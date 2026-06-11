@@ -1,7 +1,7 @@
 import { StateCreator } from 'zustand';
 import { Citation } from '../useChatStore';
 
-export type MainView = 'chat' | 'operations';
+export type MainView = 'chat' | 'operations' | 'settings';
 
 export interface UISlice {
   isSidebarOpen: boolean;
