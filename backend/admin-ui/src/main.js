@@ -8,6 +8,7 @@ document.documentElement.style.setProperty('--el-color-primary', '#0c66e4');
 import * as ElementPlusIconsVue from '@element-plus/icons-vue';
 import './styles/design-tokens.css';
 import './styles/admin-motion.css';
+import './styles/admin-theme.css';
 import App from './App.vue';
 
 const app = createApp(App);

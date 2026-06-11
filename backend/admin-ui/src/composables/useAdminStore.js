@@ -14,10 +14,12 @@ const MENU_IDS = ['settings', 'jiraQuery', 'kb', 'roles'];
 
 function readStoredMenu() {
   try {
-    const id = sessionStorage.getItem(STORAGE_MENU);
-    if (MENU_IDS.includes(id)) return id;
+    // 优先：URL hash 是用户显式意图
     const hash = (window.location.hash || '').replace(/^#\/?/, '');
     if (MENU_IDS.includes(hash)) return hash;
+    // 兜底：sessionStorage
+    const id = sessionStorage.getItem(STORAGE_MENU);
+    if (MENU_IDS.includes(id)) return id;
   } catch {
     /* ignore */
   }
@@ -286,7 +288,7 @@ export function useAdminStore() {
   };
   const jiraCanUseFields = computed(() => {
     const url = (state.jira.JIRA_BASE_URL || '').trim();
-    return !!url && (jiraConnectionOk.value || jiraPatOnServer.value);
+    return !!url && jiraConnectionOk.value;
   });
 
   const isMaskedPat = (v) => {
@@ -1149,6 +1151,9 @@ export function useAdminStore() {
             ...data,
             JIRA_PROJECTS: data.JIRA_PROJECTS || '',
           });
+          if (jiraPmForm.selectedProjectKeys.length === 0) {
+            jiraPmForm.selectedProjectKeys = ['CT'];
+          }
           // P1: 加载 issuetype 配置
           if (data.JIRA_ISSUETYPE_MAP && typeof data.JIRA_ISSUETYPE_MAP === 'object') {
             jiraPmForm.issuetypeRowsByProject = { ...data.JIRA_ISSUETYPE_MAP };
