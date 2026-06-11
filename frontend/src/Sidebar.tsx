@@ -58,6 +58,44 @@ export const Sidebar: React.FC = () => {
   const [polledPendingCount, setPolledPendingCount] = useState<number>(0);
   const badgeRefreshTick = useChatStore((s) => s.badgeRefreshTick);
 
+  // AL-118: 批量删除多选模式
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const toggleBatchMode = () => {
+    setBatchMode(prev => {
+      if (prev) setSelectedIds(new Set());
+      return !prev;
+    });
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllSessions = () => setSelectedIds(new Set(sorted.map(s => s.id)));
+  const deselectAll = () => setSelectedIds(new Set());
+
+  const batchDelete = async () => {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    try {
+      await fetch('/v1/sessions/batch-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_ids: ids }),
+      });
+    } catch {}
+    ids.forEach(id => deleteSession(id));
+    setBatchMode(false);
+    setSelectedIds(new Set());
+    toast(`已删除 ${ids.length} 个会话`, { type: 'info', duration: 3000 });
+  };
+
   // ── AL-95: 挂载时检查配置状态 ──
   useEffect(() => {
     checkConfigStatus().then(setConfigStatus);
@@ -146,9 +184,16 @@ export const Sidebar: React.FC = () => {
       {/* Header + New Session */}
       <div className="p-3 border-b border-border flex items-center justify-between shrink-0">
         <span className="text-sm font-semibold text-foreground">会话列表</span>
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => createSession()} title="新建会话">
-          <Plus size={16} />
-        </Button>
+        <div className="flex items-center gap-0.5">
+          {sorted.length > 0 && (
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-[11px]" onClick={toggleBatchMode} title={batchMode ? '取消' : '管理'}>
+              {batchMode ? <X size={16} /> : <Settings size={16} />}
+            </Button>
+          )}
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => createSession()} title="新建会话">
+            <Plus size={16} />
+          </Button>
+        </div>
       </div>
 
       {/* Session list */}
@@ -181,14 +226,36 @@ export const Sidebar: React.FC = () => {
             return (
               <div
                 key={session.id}
-                onClick={() => { console.log('[Sidebar] Switching to:', session.id); switchSession(session.id); }}
+                onClick={() => { 
+                  if (batchMode) { toggleSelect(session.id); return; }
+                  switchSession(session.id); 
+                }}
                 className={`group mx-2 my-0.5 px-3 py-2 rounded-lg cursor-pointer transition-colors text-sm z-0 ${
                   isActive
                     ? 'bg-primary/10 text-primary font-medium border border-primary/20'
                     : 'hover:bg-muted/60 text-foreground/80'
                 }`}
               >
-                {isEditing ? (
+                {batchMode ? (
+                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(session.id)}
+                      onChange={() => toggleSelect(session.id)}
+                      className="w-4 h-4 rounded border-border accent-primary shrink-0"
+                    />
+                    <div className="truncate flex-1 min-w-0">
+                      <div className="truncate text-[13px]">
+                        {pinnedIds.includes(session.id) && <span className="mr-1">📌</span>}
+                        {session.title || '新会话'}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        {new Date(session.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        {session.messages.length > 0 && ` · ${session.messages.length}条`}
+                      </div>
+                    </div>
+                  </div>
+                ) : isEditing ? (
                   <input
                     autoFocus
                     value={editTitle}
@@ -257,6 +324,20 @@ export const Sidebar: React.FC = () => {
           })
         )}
       </div>
+
+      {/* AL-118: 批量删除操作栏 */}
+      {batchMode && selectedIds.size > 0 && (
+        <div className="mx-2 mb-2 p-2 rounded-lg border border-red-300 bg-red-50/60 flex items-center justify-between gap-2 shrink-0">
+          <span className="text-[11px] font-medium text-red-800">已选 {selectedIds.size} 个</span>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" className="h-7 text-[11px]" onClick={selectAllSessions}>全选</Button>
+            <Button variant="ghost" size="sm" className="h-7 text-[11px]" onClick={deselectAll}>取消</Button>
+            <Button variant="destructive" size="sm" className="h-7 text-[11px]" onClick={batchDelete}>
+              删除选中（{selectedIds.size}）
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* AL-95: 配置状态警告条 */}
       {configStatus !== 'ok' && configStatus !== 'checking' && (

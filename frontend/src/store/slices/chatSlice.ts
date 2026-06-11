@@ -228,6 +228,14 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
   },
 
   renameSession: async (id, newTitle) => {
+    // AL-119: 调用后端 API
+    try {
+      await fetch(`/v1/sessions/${id}`, {
+        method: 'PUT',
+        headers: buildAliceUserHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ title: newTitle }),
+      });
+    } catch {}
     set((state) => ({
       sessions: state.sessions.map(s => s.id === id ? { ...s, title: newTitle, updatedAt: Date.now() } : s)
     }));

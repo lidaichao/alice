@@ -3746,6 +3746,53 @@ def admin_kb_document_reindex(doc_id: str):
         logger.error(f"[Admin KB] 重新索引异常: {e}")
         return jsonify({"ok": False, "error": "操作失败"}), 500
 
+
+# ═══════════════════════════════════════════════════════════════
+# v3.1 AL-119/120: 会话管理 API
+# ═══════════════════════════════════════════════════════════════
+
+@app.route("/v1/sessions/<session_id>", methods=["PUT", "OPTIONS"])
+def session_rename(session_id: str):
+    """AL-119: 会话重命名。前端 IndexedDB 主存储，此端点做校验 + 审计记录"""
+    if request.method == "OPTIONS":
+        return Response(status=204)
+
+    try:
+        body = request.get_json(silent=True) or {}
+    except Exception:
+        return jsonify({"ok": False, "error": "无效的 JSON 请求体"}), 400
+
+    title = (body.get("title") or "").strip()
+    if not title:
+        return jsonify({"ok": False, "error": "title 不能为空"}), 400
+    if len(title) > 100:
+        return jsonify({"ok": False, "error": "title 长度不能超过 100 字符"}), 400
+
+    loguru_logger.bind(trace_id=session_id[:8]).info(f"[Session] 重命名: id={session_id} title={title[:40]}")
+    return jsonify({"ok": True, "session": {"id": session_id, "title": title}})
+
+
+@app.route("/v1/sessions/batch-delete", methods=["POST", "OPTIONS"])
+def session_batch_delete():
+    """AL-120: 批量删除会话。校验 + 记录（实际删除由前端 IndexedDB 执行）"""
+    if request.method == "OPTIONS":
+        return Response(status=204)
+
+    try:
+        body = request.get_json(silent=True) or {}
+    except Exception:
+        return jsonify({"ok": False, "error": "无效的 JSON 请求体"}), 400
+
+    session_ids = body.get("session_ids") or []
+    if not isinstance(session_ids, list) or len(session_ids) == 0:
+        return jsonify({"ok": False, "error": "session_ids 必须为非空数组"}), 400
+    if len(session_ids) > 50:
+        return jsonify({"ok": False, "error": "单次最多删除 50 个会话"}), 400
+
+    loguru_logger.info(f"[Session] 批量删除: count={len(session_ids)} ids={session_ids[:3]}...")
+    return jsonify({"ok": True, "deleted_count": len(session_ids)})
+
+
     # Step 1: 上传文档
     try:
         resp = http.post(
