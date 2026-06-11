@@ -174,7 +174,7 @@ export const Sidebar: React.FC = () => {
                           <Edit2 className="w-3.5 h-3.5" /> 重命名
                         </button>
                         <button
-                          className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-red-50 text-muted-foreground/60 hover:text-red-500 flex items-center gap-2"
+                          className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-red-50 text-muted-foreground/60 hover:text-destructive flex items-center gap-2"
                           onClick={(e) => { e.stopPropagation(); void handleDelete(session.id); }}
                         >
                           <Trash2 className="w-3.5 h-3.5" /> 删除

@@ -336,7 +336,7 @@ export const OperationsConsole: React.FC<{ onBack: () => void; embedded?: boolea
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-[11px] text-red-600"
+              className="h-7 text-[11px] text-destructive"
               disabled={selectedList.length === 0 || anyBusy}
               onClick={handleBatchReject}
             >

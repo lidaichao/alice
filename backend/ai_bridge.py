@@ -2836,7 +2836,7 @@ def _send_to_n8n_mock(action: str, issue_data: dict) -> dict:
 
 def _generate_idempotency_key() -> str:
     """生成幂等 Key：alice-tx-{UUID}，正则清洗（约束#10）"""
-    raw = str(_uuid_module.uuid4())
+    raw = str(uuid.uuid4())
     cleaned = _re_module.sub(r"[^a-zA-Z0-9\-]", "", raw)
     return f"alice-tx-{cleaned}"
 
