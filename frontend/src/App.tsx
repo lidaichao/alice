@@ -453,7 +453,7 @@ export const App: React.FC = () => {
                     <button key={item.label}
                       onClick={() => sendMessage(item.msg)}
                       disabled={isGenerating}
-                      className="flex flex-col items-start gap-1 p-3 rounded-xl border border-border/50 bg-card hover:bg-accent hover:shadow-sm hover:-translate-y-px transition-all text-sm text-left disabled:opacity-50 disabled:pointer-events-none"
+                      className="flex flex-col items-start gap-1 p-3 rounded-xl shadow-sm bg-card hover:bg-accent hover:shadow-md hover:-translate-y-px transition-all text-sm text-left disabled:opacity-50 disabled:pointer-events-none"
                     >
                       <div className="flex items-center gap-2">
                         <span className="text-lg">{item.icon}</span>

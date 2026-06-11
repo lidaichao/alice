@@ -60,6 +60,39 @@ export const SettingsCenter: React.FC<SettingsCenterProps> = ({ onBack }) => {
         {activeTab === 'behaviors' && <TeamMemoryPanel />}
         {activeTab === 'feedback' && <FeedbackPanel />}
         {activeTab === 'diagnostics' && <DiagnosticsPanel />}
+        {activeTab === 'about' && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary text-xl font-bold">A</div>
+              <div>
+                <h2 className="text-lg font-semibold">Alice</h2>
+                <p className="text-sm text-muted-foreground">AI 驱动的研发助手中枢</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between py-2 border-b border-border/50">
+                <span className="text-sm text-muted-foreground">版本</span>
+                <span className="text-sm font-mono">v3.1-rc17</span>
+              </div>
+              <div className="flex justify-between py-2 border-b border-border/50">
+                <span className="text-sm text-muted-foreground">构建</span>
+                <span className="text-sm font-mono">alice@749474f</span>
+              </div>
+              <div className="flex justify-between py-2 border-b border-border/50">
+                <span className="text-sm text-muted-foreground">技术栈</span>
+                <span className="text-sm">LangGraph · Dify · n8n · Flask</span>
+              </div>
+            </div>
+
+            <div className="pt-4">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Alice 是一个面向游戏研发团队的 AI 辅助平台，提供 Jira 自动化管理、知识库 RAG 检索、
+                代码审查和团队协作工作流。由兔子（CTO）架构设计，杰尼龟开发实现，卡罗尔产品设计，夏洛克质量守护。
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );
