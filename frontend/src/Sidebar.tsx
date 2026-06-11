@@ -1,10 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useChatStore } from '@/store/useChatStore';
 import { Button } from '@/components/ui/button';
 import { useTheme } from 'next-themes';
-import { Sun, Moon, Monitor, Plus, Trash2, Edit2, Bell, Settings, Search, X } from 'lucide-react';
+import { Sun, Moon, Monitor, Plus, Trash2, Edit2, Bell, Settings, Search, X, AlertTriangle } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from '@/components/Toast';
+
+// ── 配置状态检查 ──
+type ConfigStatus = 'checking' | 'ok' | 'jira_missing' | 'kb_missing' | 'both_missing';
+
+async function checkConfigStatus(): Promise<ConfigStatus> {
+  let jiraOk = false;
+  let kbOk = false;
+  try {
+    const r = await fetch('/v1/admin/config', { signal: AbortSignal.timeout(5000) });
+    if (r.ok) {
+      const d = await r.json();
+      jiraOk = !!(d.JIRA_URL || d.jira_url);
+    }
+  } catch {} // network error → treat as not ok
+
+  try {
+    const r = await fetch('/v1/admin/proxy/dify/rag', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: '__ping__', kb_name: 'Alice-KB' }),
+      signal: AbortSignal.timeout(5000),
+    });
+    kbOk = r.ok;
+  } catch {}
+
+  if (jiraOk && kbOk) return 'ok';
+  if (!jiraOk && !kbOk) return 'both_missing';
+  if (!jiraOk) return 'jira_missing';
+  return 'kb_missing';
+}
 
 export const Sidebar: React.FC = () => {
   const sessions = useChatStore((s) => s.sessions);
@@ -24,6 +54,33 @@ export const Sidebar: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [configStatus, setConfigStatus] = useState<ConfigStatus>('ok');
+  const [polledPendingCount, setPolledPendingCount] = useState<number>(0);
+
+  // ── AL-95: 挂载时检查配置状态 ──
+  useEffect(() => {
+    checkConfigStatus().then(setConfigStatus);
+  }, []);
+
+  // ── AL-100: 轮询待审批数量 ──
+  useEffect(() => {
+    const fetchPending = async () => {
+      try {
+        const r = await fetch('/operations?status=pending', {
+          signal: AbortSignal.timeout(5000),
+        });
+        if (r.ok) {
+          const d = await r.json();
+          if (d.ok) setPolledPendingCount((d.operations || []).length);
+        }
+      } catch {}
+    };
+    fetchPending();
+    const id = setInterval(fetchPending, 10_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const displayPendingCount = polledPendingCount || pendingCount;
   const [pinnedIds, setPinnedIds] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('alice_pinned_sessions') || '[]'); }
     catch { return []; }
@@ -102,8 +159,9 @@ export const Sidebar: React.FC = () => {
       </div>
       <div className="flex-1 overflow-y-auto py-1">
         {sorted.length === 0 ? (
-          <div className="px-3 py-8 text-center text-xs text-muted-foreground">
-            点击 <Plus size={10} className="inline" /> 新建会话
+          <div className="px-4 py-8 text-center text-xs text-muted-foreground leading-relaxed">
+            <p className="mb-1">还没有对话</p>
+            <p>点击 <Plus size={10} className="inline" /> 新建会话开始</p>
           </div>
         ) : (
           sorted.map((session) => {
@@ -189,6 +247,26 @@ export const Sidebar: React.FC = () => {
         )}
       </div>
 
+      {/* AL-95: 配置状态警告条 */}
+      {configStatus !== 'ok' && configStatus !== 'checking' && (
+        <div className="mx-2 mb-1 p-2 rounded-lg border border-amber-300 bg-amber-50/60 text-[11px] text-amber-800">
+          <div className="flex items-center gap-1.5">
+            <AlertTriangle size={13} className="shrink-0" />
+            <span className="font-medium">
+              {configStatus === 'jira_missing' && 'Jira 未连接'}
+              {configStatus === 'kb_missing' && '知识库未就绪'}
+              {configStatus === 'both_missing' && 'Jira 和知识库未配置'}
+            </span>
+          </div>
+          <button
+            onClick={() => window.open('/admin-static/', '_blank')}
+            className="mt-1 text-[11px] text-primary hover:underline"
+          >
+            去配置 →
+          </button>
+        </div>
+      )}
+
       {/* 审批中心入口 */}
       <div className="px-3 py-1">
         <Button
@@ -198,9 +276,9 @@ export const Sidebar: React.FC = () => {
         >
           <Bell size={16} />
           <span className="flex-1 text-left">审批中心</span>
-          {pendingCount > 0 && (
-            <span className="bg-red-500 text-white text-[11px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-              {pendingCount}
+          {displayPendingCount > 0 && (
+            <span className={`bg-red-500 text-white text-[11px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 ${polledPendingCount > 0 ? 'animate-pulse' : ''}`}>
+              {displayPendingCount}
             </span>
           )}
         </Button>

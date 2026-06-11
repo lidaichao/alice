@@ -3291,6 +3291,43 @@ def list_pending_ops():
     } for o in ops]})
 
 
+# ── AL-101: 审批项查询 API ────────────────────────────────
+@app.route("/v1/operations/approvals", methods=["GET"])
+def list_approvals():
+    """波次1 审批体验：按状态+用户过滤待审批项。"""
+    from jira_operation_manager import (
+        list_operations,
+        operation_audit_fields,
+        operation_to_confirm_ui,
+    )
+
+    conv_id = request.args.get("conversation_id", "")
+    user_id = request.args.get("user_id", "")
+    raw_status = request.args.get("status", "pending,awaiting_confirmation")
+    limit = int(request.args.get("limit", "50") or 50)
+
+    statuses = [s.strip() for s in raw_status.split(",") if s.strip()]
+    ops = list_operations(statuses=statuses, conversation_id=conv_id, user_id=user_id, limit=limit)
+    logger.info("[API] /v1/operations/approvals statuses=%s returned %d ops", statuses, len(ops))
+    return jsonify({
+        "ok": True,
+        "operations": [{
+            "id": o["id"],
+            "status": o["status"],
+            "kind": o.get("kind"),
+            "conversation_id": o.get("conversation_id"),
+            "drafts_count": len(o.get("drafts", [])),
+            "warnings": o.get("warnings", []),
+            "error": o.get("error"),
+            "failure": o.get("failure"),
+            "recovery": o.get("recovery"),
+            "created_at": o.get("created_at"),
+            "updated_at": o.get("updated_at"),
+            "operation": operation_to_confirm_ui(o),
+        } for o in ops]
+    })
+
+
 @app.route("/operations", methods=["GET"])
 def list_ops_console():
     """M3 管控台：按状态列出操作（默认待确认+恢复+进行中+失败）。"""

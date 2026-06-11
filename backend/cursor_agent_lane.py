@@ -368,8 +368,10 @@ def _make_write_handler(
 def _build_custom_tools(
     conversation_id: str = "",
     user_id: str = "",
+    *,
+    mode: str = "agent",
 ) -> Dict[str, CustomTool]:
-    """构建所有 Cursor SDK 自定义工具（13 个）。"""
+    """构建 Cursor SDK 自定义工具。mode=ask 时仅注入只读工具（10 个），agent/plan 全量（13 个）。"""
 
     tools: Dict[str, CustomTool] = {}
 
@@ -457,43 +459,45 @@ def _build_custom_tools(
     )
 
     # ── 写操作工具（经审计闸门）─────────────────────────
+    # ask 模式不注入写工具
 
-    tools["jira_create_subtasks"] = CustomTool(
-        execute=_make_write_handler("jira_bulk_create", conversation_id=conversation_id, user_id=user_id),
-        description=(
-            "在 Jira 中批量创建子任务。所有写操作需经审计闸门审批，"
-            "不会直接调用 Jira API。参数 summaries 为子任务标题数组，"
-            "可提供 project_key 和 issue_type。"
-        ),
-        input_schema=_obj({
-            "summaries": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "子任务标题数组",
-            },
-            "project_key": _str_param("Jira 项目 Key（如 CT、GM）"),
-            "issue_type": _str_param("Issue 类型，默认 Task"),
-            "parent_key": _str_param("父 Issue Key（子任务必填，如 CT-11152）"),
-        }, required=["summaries"]),
-    )
+    if mode != "ask":
+        tools["jira_create_subtasks"] = CustomTool(
+            execute=_make_write_handler("jira_bulk_create", conversation_id=conversation_id, user_id=user_id),
+            description=(
+                "在 Jira 中批量创建子任务。所有写操作需经审计闸门审批，"
+                "不会直接调用 Jira API。参数 summaries 为子任务标题数组，"
+                "可提供 project_key 和 issue_type。"
+            ),
+            input_schema=_obj({
+                "summaries": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "子任务标题数组",
+                },
+                "project_key": _str_param("Jira 项目 Key（如 CT、GM）"),
+                "issue_type": _str_param("Issue 类型，默认 Task"),
+                "parent_key": _str_param("父 Issue Key（子任务必填，如 CT-11152）"),
+            }, required=["summaries"]),
+        )
 
-    tools["jira_update_status"] = CustomTool(
-        execute=_make_write_handler("jira_transition", conversation_id=conversation_id, user_id=user_id),
-        description="更新指定 Jira Issue 的状态。需经审计闸门审批。",
-        input_schema=_obj({
-            "issue_key": _str_param("Jira Issue Key，如 CT-11112"),
-            "target_status": _str_param("目标状态名称"),
-        }),
-    )
+        tools["jira_update_status"] = CustomTool(
+            execute=_make_write_handler("jira_transition", conversation_id=conversation_id, user_id=user_id),
+            description="更新指定 Jira Issue 的状态。需经审计闸门审批。",
+            input_schema=_obj({
+                "issue_key": _str_param("Jira Issue Key，如 CT-11112"),
+                "target_status": _str_param("目标状态名称"),
+            }),
+        )
 
-    tools["jira_add_comment"] = CustomTool(
-        execute=_make_write_handler("jira_add_comment", conversation_id=conversation_id, user_id=user_id),
-        description="在指定 Jira Issue 中添加评论。需经审计闸门审批。",
-        input_schema=_obj({
-            "issue_key": _str_param("Jira Issue Key，如 CT-11112"),
-            "body": _str_param("评论内容"),
-        }),
-    )
+        tools["jira_add_comment"] = CustomTool(
+            execute=_make_write_handler("jira_add_comment", conversation_id=conversation_id, user_id=user_id),
+            description="在指定 Jira Issue 中添加评论。需经审计闸门审批。",
+            input_schema=_obj({
+                "issue_key": _str_param("Jira Issue Key，如 CT-11112"),
+                "body": _str_param("评论内容"),
+            }),
+        )
 
     return tools
 
@@ -575,8 +579,25 @@ def iter_cursor_sdk_lane(
     custom_tools = _build_custom_tools(
         conversation_id=conversation_id,
         user_id=user_id,
+        mode=cursor_mode,
     )
     logger.info("[CursorLane] registered %d custom tools: %s", len(custom_tools), list(custom_tools.keys()))
+
+    # ── 模式专用 system prompt ─────────────────────────────
+    MODE_PROMPTS: dict[str, str] = {
+        "ask": (
+            "你是只读问答模式，仅能使用只读工具查询信息。"
+            "不得调用任何写操作工具（jira_create_subtasks / jira_update_status / jira_add_comment）。"
+            "直接回答用户问题，不生成计划、不创建 Issue、不修改状态。"
+        ),
+        "plan": (
+            "你先分析用户意图，生成一个执行计划（步骤清单），不要直接执行写操作。"
+            "在回复中输出「📋 执行计划」标题 + 编号步骤列表（每条一行，格式：1. 步骤描述）。"
+            "在用户回复'开始执行'或'执行计划'或'确认执行'之前，不得调用 jira_create_subtasks / jira_update_status / jira_add_comment。"
+            "用户确认后，逐步骤调用对应工具完成执行。"
+        ),
+    }
+    mode_sys = MODE_PROMPTS.get(cursor_mode, "")
 
     # ── Agent.create + send ────────────────────────────────
     mode_label = {"plan": "📋 规划模式", "agent": "🔬 分析模式", "ask": "💬 问答模式"}.get(cursor_mode, f"cursor-{cursor_mode}")
@@ -589,8 +610,9 @@ def iter_cursor_sdk_lane(
             local=LocalAgentOptions(cwd=workspace_cwd, custom_tools=custom_tools),
         ) as agent:
             prefixed = (
-                "[系统指令] 你是 Alice 研发助手，必须使用提供的工具完成用户请求。"
-                "当用户要求创建/修改 Jira Issue 时，必须调用 jira_create_subtasks 等工具。"
+                "[系统指令] 你是 Alice 研发助手。"
+                + (f"\n{mode_sys}\n" if mode_sys else "")
+                + "\n当用户要求创建/修改 Jira Issue 时，必须调用 jira_create_subtasks 等工具。"
                 "禁止说「我无法操作 Jira」——工具已提供给你。"
                 "禁止编造操作 ID 或虚构执行结果。"
                 "创建 Jira Issue 前，若不确定 issuetype 名称是否合法，先调用 list_jira_issuetypes 查询。\n---\n"

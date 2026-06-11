@@ -14,6 +14,9 @@ import { useOperationActions } from '@/hooks/useOperationActions';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { PluginToolCard } from '@/components/MarkdownRenderer';
 import { OperationsConsole } from '@/components/OperationsConsole';
+import PlanCard from '@/components/PlanCard';
+import OnboardingCard from '@/components/OnboardingCard';
+import ApprovalBanner from '@/components/ApprovalBanner';
 import { EnginePicker } from '@/components/EnginePicker';
 import { ModelPicker } from '@/components/ModelPicker';
 import { CursorSettings } from '@/components/CursorSettings';
@@ -60,6 +63,23 @@ export const App: React.FC = () => {
     return cfg.model || 'composer-2.5';
   });
   const [cursorAvailableModels, setCursorAvailableModels] = useState<string[]>(['composer-2.5', 'auto']);
+
+  // ── PlanCard 状态（哪些消息的 PlanCard 已被消除/执行） ──
+  const [planCardDismissed, setPlanCardDismissed] = useState<Set<string>>(new Set());
+
+  // ── Plan 模式：从 AI 回复解析执行步骤 ──
+  const parsePlanSteps = (content: string): string[] | null => {
+    const idx = content.indexOf('📋 执行计划');
+    if (idx === -1) return null;
+    const after = content.slice(idx);
+    const lines = after.split('\n');
+    const steps: string[] = [];
+    for (const line of lines) {
+      const m = line.match(/^\d+[\.\)、]\s*(.+)/);
+      if (m) steps.push(m[1].trim());
+    }
+    return steps.length > 0 ? steps : null;
+  };
 
   // ── 工作流模板（从 Sidebar 搬入，融入 Slash 命令面板）──
   const [wfTemplates, setWfTemplates] = useState<Array<{id:string;name:string;description:string}>>([]);
@@ -439,9 +459,21 @@ export const App: React.FC = () => {
         <main className="flex-1 flex flex-col min-w-0 bg-muted/10 relative border-r border-border">
           <Header />
 
+          {/* AL-99: 审批横幅提醒 */}
+          {currentSession && (
+            <ApprovalBanner
+              userId={(() => {
+                try { const rc = JSON.parse(localStorage.getItem('alice_runtime_config') || '{}'); return rc.user_id || ''; } catch { return ''; }
+              })()}
+              onOpenApproval={() => setApprovalPanelOpen(true)}
+            />
+          )}
+
           {/* ── 消息列表 ── */}
           <div ref={chatContainerRef} onScroll={handleChatScroll} className="flex-1 overflow-y-auto p-4 space-y-6">
-            {messages.length === 0 ? (
+            {sessions.length === 0 ? (
+              <OnboardingCard onStartChat={() => {}} />
+            ) : messages.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-6 h-full min-h-[400px]">
                 <div className="text-center">
                   <p className="text-lg font-medium text-foreground mb-2">👋 今天想做什么？</p>
@@ -487,6 +519,16 @@ export const App: React.FC = () => {
                 } catch {}
               };
 
+              // ── 模式感知变量 ──
+              const isPlanMode = currentEngine === 'cursor' && currentCursorMode === 'plan';
+              const isAskMode = currentEngine === 'cursor' && currentCursorMode === 'ask';
+              const planSteps = isPlanMode && isAssistant && m.content ? parsePlanSteps(m.content) : null;
+              const showPlanCard = isPlanMode && !!planSteps && !planCardDismissed.has(m.id);
+
+              // ── KB 空结果降级 ──
+              const KB_EMPTY_PATTERNS = /(未找到(相关|任何)?(文档|结果)|no (results|documents found)|knowledge base returned|知识库(未找到|返回空|暂无))/i;
+              const isKbEmptyResponse = isAssistant && m.content && KB_EMPTY_PATTERNS.test(m.content) && !m.citations?.length;
+
               if (isSystem) {
                 return (
                   <div key={m.id} className="flex justify-center w-full">
@@ -513,21 +555,49 @@ export const App: React.FC = () => {
                           ? 'bg-card/60 text-muted-foreground/60 rounded-tl-none border border-border/30'
                           : 'bg-card text-foreground rounded-tl-none border border-border/30'
                     }`}>
-                      {hasContent ? (
+                      {showPlanCard ? (
+                        <PlanCard
+                          steps={planSteps!}
+                          onExecute={(selected) => {
+                            setPlanCardDismissed((prev) => new Set(prev).add(m.id));
+                            const planCmd = '执行计划：\n' + selected.map((s, i) => `${i + 1}. ${s}`).join('\n');
+                            sendMessage(planCmd);
+                          }}
+                          onCancel={() => {
+                            setPlanCardDismissed((prev) => new Set(prev).add(m.id));
+                          }}
+                        />
+                      ) : isKbEmptyResponse ? (
+                        <div className="space-y-2 text-sm">
+                          <p className="text-muted-foreground">未找到相关文档</p>
+                          <div className="text-[11px] text-muted-foreground/70 space-y-0.5">
+                            <p>建议：</p>
+                            <ul className="list-disc list-inside space-y-0.5">
+                              <li>换一个关键词重试</li>
+                              <li>
+                                <a href="/admin-static/" target="_blank" className="text-primary hover:underline">
+                                  在 Admin 后台
+                                </a>{' '}
+                                上传相关文档到知识库
+                              </li>
+                            </ul>
+                          </div>
+                        </div>
+                      ) : hasContent ? (
                         <MarkdownRenderer content={m.content} citations={m.citations} plugin={m.plugin} />
-                      ) : hasPluginOnly ? (
+                      ) : hasPluginOnly && !isAskMode ? (
                         <div className="space-y-2">
                           <PluginToolCard plugin={m.plugin} />
                           <span className="text-muted-foreground italic text-sm">正在思考...</span>
                         </div>
-                      ) : m.content ? (
+                      ) : m.content && !isAskMode ? (
                         <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">{m.content}</div>
-                      ) : isEmptyAssistant ? (
+                      ) : isEmptyAssistant && !isAskMode ? (
                         <span className="text-muted-foreground italic text-sm">正在思考...</span>
                     ) : null}
 
-                    {/* 内联确认卡 */}
-                    {isAssistant && m.pendingCard && (
+                    {/* 内联确认卡 — ask 模式不显示 */}
+                    {isAssistant && m.pendingCard && !isAskMode && (
                       <div className="mt-3 pt-3 border-t border-border/50">
                         <ConfirmCard
                           card={m.pendingCard}
