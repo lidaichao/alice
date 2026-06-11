@@ -39,6 +39,9 @@ export const App: React.FC = () => {
   const messages = currentSession?.messages || [];
   const isLoggedIn = useChatStore((s) => s.user.isLoggedIn);
 
+  // ── 工作流模板（从 Sidebar 搬入，融入 Slash 命令面板）──
+  const [wfTemplates, setWfTemplates] = useState<Array<{id:string;name:string;description:string}>>([]);
+
   // ── 初始化：加载 DB + 首次启动自动建会话 ──
   useEffect(() => {
     initDB();
@@ -111,6 +114,19 @@ export const App: React.FC = () => {
     setUserScrolledUp((scrollHeight - scrollTop - clientHeight > 80) && isGenerating);
   };
 
+  // ── 工作流模板加载（融入 Slash 命令面板）──
+  const loadWorkflowTemplates = async () => {
+    try {
+      const res = await fetch('/v1/workflow/templates');
+      if (res.ok) {
+        const data = await res.json();
+        setWfTemplates(data?.templates || []);
+      }
+    } catch {
+      // 端点可能未就绪，静默降级
+    }
+  };
+
   // ── 发送：委托给 chatSlice.sendMessage（含 agent/systemPrompt/citations 全链路）──
   const handleSend = useCallback(() => {
     if (!myInput.trim() || isGenerating || !activeSessionId) return;
@@ -174,15 +190,37 @@ export const App: React.FC = () => {
   );
 
   // ── 命令面板 ──
-  const filteredCmds = COMMANDS.filter(c =>
-    c.key.toLowerCase().includes(commandFilter.toLowerCase()) ||
-    c.label.toLowerCase().includes(commandFilter.toLowerCase())
-  );
+  const filteredCmds = [
+    ...COMMANDS.filter(c =>
+      c.key.toLowerCase().includes(commandFilter.toLowerCase()) ||
+      c.label.toLowerCase().includes(commandFilter.toLowerCase())
+    ),
+    ...wfTemplates
+      .filter(tpl =>
+        tpl.name.toLowerCase().includes(commandFilter.toLowerCase()) ||
+        (tpl.description || '').toLowerCase().includes(commandFilter.toLowerCase())
+      )
+      .map(tpl => ({
+        key: `wf:${tpl.id}`,
+        label: tpl.name,
+        icon: '⚡',
+        description: tpl.description || '工作流模板',
+        template: `[WORKFLOW:${tpl.id}]`,
+        type: 'workflow' as const,
+      }))
+  ];
 
   const handleSelectCommand = (cmd: Command) => {
-    setMyInput(cmd.template);
-    setShowCommands(false);
-    setSelectedCmdIndex(0);
+    if ((cmd as any).type === 'workflow') {
+      sendMessage(cmd.template);
+      setShowCommands(false);
+      setSelectedCmdIndex(0);
+      scrollToBottom();
+    } else {
+      setMyInput(cmd.template);
+      setShowCommands(false);
+      setSelectedCmdIndex(0);
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -191,7 +229,7 @@ export const App: React.FC = () => {
     const el = e.target as HTMLTextAreaElement;
     if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 200) + 'px'; }
     const v = typeof val === 'string' ? val : '';
-    if (v.endsWith('/')) { setShowCommands(true); setCommandFilter(''); setSelectedCmdIndex(0); }
+    if (v.endsWith('/')) { setShowCommands(true); setCommandFilter(''); setSelectedCmdIndex(0); loadWorkflowTemplates(); }
     else if (showCommands) {
       const idx = v.lastIndexOf('/');
       if (idx !== -1) {
@@ -323,16 +361,21 @@ export const App: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-2 gap-3 max-w-md">
                   {[
-                    { icon: '📋', label: '查 Jira 任务', msg: '/jira 查我的任务' },
-                    { icon: '🐛', label: '分析 Bug', msg: '/analyze ' },
-                    { icon: '📝', label: '生成周报', msg: '/weekly ' },
-                    { icon: '🔍', label: 'Code Review', msg: '/review ' },
+                    { icon: '📋', label: '查 Jira 任务', desc: '快速检索我的待办与进度', msg: '/jira 查我的任务' },
+                    { icon: '🐛', label: '分析 Bug', desc: '输入报错日志自动定位原因', msg: '/analyze ' },
+                    { icon: '📝', label: '生成周报', desc: '基于本周会话自动汇总', msg: '/weekly ' },
+                    { icon: '🔍', label: 'Code Review', desc: '深度审查代码质量与隐患', msg: '/review ' },
                   ].map((item) => (
                     <button key={item.label}
-                      onClick={() => { setMyInput(item.msg); inputRef.current?.focus(); }}
-                      className="flex items-center gap-2 p-3 rounded-xl border border-border/50 bg-card hover:bg-accent hover:border-accent transition-all text-sm text-left">
-                      <span className="text-lg">{item.icon}</span>
-                      <span>{item.label}</span>
+                      onClick={() => sendMessage(item.msg)}
+                      disabled={isGenerating}
+                      className="flex flex-col items-start gap-1 p-3 rounded-xl border border-border/50 bg-card hover:bg-accent hover:shadow-sm hover:-translate-y-px transition-all text-sm text-left disabled:opacity-50 disabled:pointer-events-none"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{item.icon}</span>
+                        <span className="font-medium">{item.label}</span>
+                      </div>
+                      <span className="text-[11px] text-muted-foreground leading-tight">{item.desc}</span>
                     </button>
                   ))}
                 </div>
