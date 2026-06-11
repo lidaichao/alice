@@ -49,7 +49,7 @@ INTENT_REGISTRY: dict[str, tuple[Optional[list[str]], str]] = {
     ),
     "jira_search": (["search_jira_issues", "query_jira_metadata"], "JIRA_STRUCTURED_SEARCH"),
     "jira_keyword_search": (["search_jira_issues"], "JIRA_KEYWORD_SEARCH"),
-    "jira_write": (["search_jira_issues"], "JIRA_WRITE"),
+    "jira_write": (["jira_create_issue"], "JIRA_WRITE"),
     "issue_metadata": (["query_jira_metadata"], "ISSUE_METADATA"),
     "knowledge_query": (["search_docs_catalog", "read_specific_doc", "search_doc_chunks"], "KNOWLEDGE_QUERY"),
     "full_set": (None, "FULL_SET"),

@@ -398,41 +398,58 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
     try {
       // P0 RBAC: fetch user permissions before sending
       get().fetchUserPermissions().catch(() => {});
-      const res = await fetch('/v1/chat/completions', {
+      // AL-146: Auto/Agent 模式 → Agent 管道 /v1/agent/stream
+      const engine = get().enginePreference.engine || 'auto';
+      const mode = get().enginePreference.mode || '';
+      const useAgentStream = (engine === 'auto' || mode === 'agent') && mode !== 'ask' && mode !== 'plan';
+      const url = useAgentStream ? '/v1/agent/stream' : '/v1/chat/completions';
+      const res = await fetch(url, {
         method: 'POST',
         headers: buildAliceUserHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-          messages: messagesPayload,
-          conversation_id: activeSessionId,
-          engine: (() => {
-            const eng = get().enginePreference.engine;
-            const mod = get().enginePreference.mode;
-            if (eng === 'cursor' && mod) return `cursor-${mod}`;
-            return eng || undefined;
-          })(),
-          mode: get().enginePreference.mode || undefined,
-          config: (() => {
-            const rc = loadRuntimeConfig();
-            const cfg: Record<string, string> = {
-              jira_pat: rc.jira_pat || '',
-              jira_projects: rc.jira_projects || rc.JIRA_PROJECTS || 'CT',
-              jira_url: rc.jira_url || '',
-            };
-            if (rc.user_id) cfg.user_id = rc.user_id;
-            // Cursor SDK Key（从客户端配置注入，供 cursor_agent_lane 消费）
-            try {
-              const cursorCfg = JSON.parse(localStorage.getItem('alice_cursor_config') || '{}');
-              if (cursorCfg.key) { cfg.cursor_api_key = cursorCfg.key; cfg.cursor_sdk_model = cursorCfg.model || 'composer-2.5'; }
-            } catch {}
-            return cfg;
-          })(),
-          user_config: (() => {
-            const rc = loadRuntimeConfig();
-            const uc: Record<string, string> = { jira_pat: rc.jira_pat || '' };
-            if (rc.user_id) uc.user_id = rc.user_id;
-            return uc;
-          })(),
-        }),
+        body: useAgentStream
+          ? JSON.stringify({
+              messages: messagesPayload,
+              thread_id: activeSessionId,
+              trace_id: `trace-${Date.now()}`,
+              engine: engine,
+              mode: mode,
+              config: (() => {
+                const rc = loadRuntimeConfig();
+                const cfg: Record<string, string> = { user_id: rc.user_id || '' };
+                return cfg;
+              })(),
+            })
+          : JSON.stringify({
+              messages: messagesPayload,
+              conversation_id: activeSessionId,
+              engine: (() => {
+                const eng2 = get().enginePreference.engine;
+                const mod2 = get().enginePreference.mode;
+                if (eng2 === 'cursor' && mod2) return `cursor-${mod2}`;
+                return eng2 || undefined;
+              })(),
+              mode: get().enginePreference.mode || undefined,
+              config: (() => {
+                const rc2 = loadRuntimeConfig();
+                const cfg2: Record<string, string> = {
+                  jira_pat: rc2.jira_pat || '',
+                  jira_projects: rc2.jira_projects || rc2.JIRA_PROJECTS || 'CT',
+                  jira_url: rc2.jira_url || '',
+                };
+                if (rc2.user_id) cfg2.user_id = rc2.user_id;
+                try {
+                  const cursorCfg = JSON.parse(localStorage.getItem('alice_cursor_config') || '{}');
+                  if (cursorCfg.key) { cfg2.cursor_api_key = cursorCfg.key; cfg2.cursor_sdk_model = cursorCfg.model || 'composer-2.5'; }
+                } catch {}
+                return cfg2;
+              })(),
+              user_config: (() => {
+                const rc3 = loadRuntimeConfig();
+                const uc2: Record<string, string> = { jira_pat: rc3.jira_pat || '' };
+                if (rc3.user_id) uc2.user_id = rc3.user_id;
+                return uc2;
+              })(),
+            }),
         signal: ctrl.signal
       });
       const reader = res.body?.getReader();
@@ -450,6 +467,61 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
               try {
                 const data = JSON.parse(line.slice(6));
                 
+                // ── AL-148: Agent 流式事件 (type: message/confirm_card/done/error) ──
+                if (data.type === 'message') {
+                  const isThinking = data.msg_type === 'AIMessage' && !data.content;
+                  const model = (get().enginePreference.engine === 'cursor' || get().enginePreference.engine?.startsWith?.('cursor-'))
+                    ? 'cursor' : 'deepseek';
+                  const thinkText = model === 'cursor' || get().enginePreference.engine === 'auto'
+                    ? '🧠 正在深度分析...' : '正在思考...';
+                  set((state) => ({
+                    sessions: state.sessions.map(s => {
+                      if (s.id !== activeSessionId) return s;
+                      const lastMsg = s.messages[s.messages.length - 1];
+                      if (lastMsg.id === aiMsgId) {
+                        const plugin = isThinking && !lastMsg.plugin
+                          ? { name: 'agent_thinking', status: 'running', display: thinkText }
+                          : lastMsg.plugin;
+                        return {
+                          ...s,
+                          messages: [
+                            ...s.messages.slice(0, -1),
+                            { ...lastMsg, content: (lastMsg.content || '') + (data.content || ''), plugin, kb_sources: data.kb_sources || lastMsg.kb_sources, tool_calls: data.tool_calls || lastMsg.tool_calls },
+                          ],
+                        };
+                      }
+                      return s;
+                    })
+                  }));
+                  continue;
+                }
+                if (data.type === 'confirm_card') {
+                  set((state) => ({
+                    pendingConfirmations: [
+                      ...state.pendingConfirmations,
+                      { op_id: data.idempotency_key, action: data.action, args: data.args, thread_id: data.thread_id, status: 'pending', timestamp: Date.now() },
+                    ],
+                  }));
+                  continue;
+                }
+                if (data.type === 'done') {
+                  // Agent 流结束，标记消息完成
+                  continue;
+                }
+                if (data.type === 'error') {
+                  set((state) => ({
+                    sessions: state.sessions.map(s => {
+                      if (s.id !== activeSessionId) return s;
+                      const lastMsg = s.messages[s.messages.length - 1];
+                      if (lastMsg.id === aiMsgId) {
+                        return { ...s, messages: [...s.messages.slice(0, -1), { ...lastMsg, content: `❌ ${data.error || 'Agent 推理异常'}` }] };
+                      }
+                      return s;
+                    })
+                  }));
+                  continue;
+                }
+
                 if (data.custom_type === 'plugin_state') {
                   set((state) => ({
                     sessions: state.sessions.map(s => {

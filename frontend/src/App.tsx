@@ -516,6 +516,20 @@ export const App: React.FC = () => {
         <main className="flex-1 flex flex-col min-w-0 bg-muted/10 relative border-r border-border">
           <Header />
 
+          {/* AL-159: 首次深度模型轻提示 */}
+          {(() => {
+            const tipKey = 'alice_deep_model_tip_dismissed';
+            if (localStorage.getItem(tipKey) === '1') return null;
+            return (
+              <div className="mx-4 mt-2 mb-0 px-3 py-2 rounded-lg border border-blue-200 bg-blue-50/70 text-[12px] text-blue-800 flex items-center justify-between gap-2" id="alice-deep-tip">
+                <span>✨ 深度推理模式已开启 · 回答更准确，思考时间稍长</span>
+                <button onClick={() => { localStorage.setItem(tipKey, '1'); const el = document.getElementById('alice-deep-tip'); if (el) el.remove(); }} className="text-blue-400 hover:text-blue-600 shrink-0">
+                  ✕
+                </button>
+              </div>
+            );
+          })()}
+
           {/* AL-99: 审批横幅提醒 */}
           {currentSession && (
             <ApprovalBanner

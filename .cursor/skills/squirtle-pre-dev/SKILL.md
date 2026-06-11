@@ -35,14 +35,19 @@ Epic (10000)          ← 标注开发范围（卡罗尔设 Epic Link）
         └── 子任务 (10702)  ← 一行简述，上下文靠父任务补充
 ```
 
-**情况 A — 分配的是子任务(10702)**：先读父任务(10701) description，再读祖父 Epic(10000) scope
+**情况 A — 分配的是子任务(10702)**：子任务自身 description → 父任务(10701) description → 祖父 Epic(10000) scope
 
 ```python
+# Step 0: 读子任务自身 description（卡罗尔也会在子任务中写技术约束/备注）
+sub = requests.get(f"{BASE}/rest/api/2/issue/AL-xx?fields=description,summary,parent,issuetype", headers=HEADERS).json()
+print("--- 子任务自身 ---")
+print(sub["fields"]["summary"])
+print(sub["fields"].get("description") or "(无描述)")
+
 # Step 1: 读父任务 description（卡罗尔设计全写在父任务里）
-sub = requests.get(f"{BASE}/rest/api/2/issue/AL-xx?fields=parent,issuetype", headers=HEADERS).json()
 parent_key = sub["fields"]["parent"]["key"]
 parent = requests.get(f"{BASE}/rest/api/2/issue/{parent_key}?fields=description,parent", headers=HEADERS).json()
-print("--- 父任务 description ---")
+print("\n--- 父任务 description ---")
 print(parent["fields"]["description"])
 
 # Step 2: 读祖父 Epic summary（标注开发范围，不写具体设计）

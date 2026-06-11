@@ -97,8 +97,8 @@ export const EnginePicker: React.FC<EnginePickerProps> = ({ onOpenSettings, onEn
     return !mode;
   };
 
-  let label = 'Auto';
-  if (choice.engine === 'deepseek') label = 'DeepSeek';
+  let label = 'Auto · composer-2.5';
+  if (choice.engine === 'deepseek') label = 'DeepSeek · deepseek-chat';
   else if (choice.engine === 'cursor') label = 'Cursor';
 
   const buttonEl = compact ? (

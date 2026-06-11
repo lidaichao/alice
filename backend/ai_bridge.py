@@ -441,7 +441,7 @@ def _resolved_deepseek_model(config: dict) -> str:
     raw = config.get("DEEPSEEK_MODEL")
     if isinstance(raw, str) and raw.strip():
         return raw.strip()
-    return (os.getenv("DEEPSEEK_MODEL") or "deepseek-chat").strip()
+    return (os.getenv("DEEPSEEK_MODEL") or "composer-2.5").strip()
 
 
 def load_config():
@@ -507,7 +507,7 @@ def parse_user_config(data: dict) -> dict:
             uc.get("ai_model")
             or frontend_cfg.get("deepseek_model")
             or global_cfg.get("DEEPSEEK_MODEL")
-            or os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+            or os.getenv("DEEPSEEK_MODEL", "composer-2.5")
         ),
         "jira_pat": jira_pat,
         "jira_email": uc.get("user_email") or os.getenv("JIRA_EMAIL", ""),
