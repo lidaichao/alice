@@ -3036,7 +3036,17 @@ def agent_confirm():
                 timeout=3,
             )
             if not result_raw.get("ok"):
-                return jsonify({"ok": False, "error": result_raw.get("error", "外部服务异常")}), 502
+                err = result_raw.get("error", "外部服务异常")
+                err_code = result_raw.get("error_code", "")
+                if not err_code:
+                    sc = result_raw.get("status_code", 0)
+                    if sc == 403:
+                        err_code = "JIRA_FORBIDDEN"
+                    elif sc == 404:
+                        err_code = "JIRA_NOT_FOUND"
+                    else:
+                        err_code = "N8N_INVALID_RESPONSE"
+                return jsonify({"ok": False, "error_code": err_code, "error": err}), 502
             result_data = result_raw.get("data", {})
             result = result_data.get("data") if isinstance(result_data, dict) else result_data
 
@@ -3053,7 +3063,7 @@ def agent_confirm():
         return jsonify({"ok": True, "issue_key": issue_key})
     except Exception as e:
         logger.error(f"[{trace_id}] Agent confirm 异常: {e}")
-        return jsonify({"ok": False, "error": f"操作执行失败: {str(e)[:200]}"}), 500
+        return jsonify({"ok": False, "error_code": "N8N_INVALID_RESPONSE", "error": f"创建遇到问题: {str(e)[:200]}"}), 500
 
 
 @app.route("/v1/agent/reject", methods=["POST", "OPTIONS"])

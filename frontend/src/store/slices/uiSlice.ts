@@ -10,12 +10,14 @@ export interface UISlice {
   activeCitation: Citation | null;
   approvalPanelOpen: boolean;
   badgeRefreshTick: number;
+  approvalDataVersion: number;
   toggleSidebar: () => void;
   toggleRightPanel: () => void;
   setMainView: (view: MainView) => void;
   setActiveCitation: (citation: Citation | null) => void;
   setApprovalPanelOpen: (open: boolean) => void;
   triggerBadgeRefresh: () => void;
+  incrApprovalDataVersion: () => void;
 }
 
 export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
@@ -25,6 +27,7 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
   activeCitation: null,
   approvalPanelOpen: false,
   badgeRefreshTick: 0,
+  approvalDataVersion: 0,
 
   toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
   toggleRightPanel: () => set((state) => ({ isRightPanelOpen: !state.isRightPanelOpen })),
@@ -32,4 +35,5 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
   setActiveCitation: (citation) => set({ activeCitation: citation, isRightPanelOpen: !!citation }),
   setApprovalPanelOpen: (open) => set({ approvalPanelOpen: open }),
   triggerBadgeRefresh: () => set((state) => ({ badgeRefreshTick: state.badgeRefreshTick + 1 })),
+  incrApprovalDataVersion: () => set((state) => ({ approvalDataVersion: state.approvalDataVersion + 1 })),
 });

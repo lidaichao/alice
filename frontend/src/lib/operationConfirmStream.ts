@@ -13,6 +13,7 @@ export type ConfirmStreamResult = {
   ok: boolean;
   message?: string;
   error?: string;
+  error_code?: string;
   operation?: { created_issues?: { key?: string }[]; recovery?: unknown };
 };
 
@@ -32,7 +33,7 @@ export async function confirmOperationWithProgress(
 
   if (!res.ok && !(res.headers.get('content-type') || '').includes('text/event-stream')) {
     const data = await res.json().catch(() => ({}));
-    return { ok: false, error: (data as { error?: string }).error || res.statusText };
+    return { ok: false, error: (data as { error?: string }).error || res.statusText, error_code: (data as { error_code?: string }).error_code };
   }
 
   const reader = res.body?.getReader();

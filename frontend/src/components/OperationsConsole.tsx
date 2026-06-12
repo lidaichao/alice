@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, ArrowLeft, Activity, CheckCircle, XCircle, Link2 } from 'lucide-react';
 import { useOperationActions } from '@/hooks/useOperationActions';
@@ -58,6 +58,7 @@ export const OperationsConsole: React.FC<{ onBack: () => void; embedded?: boolea
 
   const setActiveSession = useChatStore((s) => s.setActiveSession);
   const setMainView = useChatStore((s) => s.setMainView);
+  const approvalDataVersion = useChatStore((s) => s.approvalDataVersion);
   const { toast } = useToast();
 
   const refresh = useCallback(async () => {
@@ -124,6 +125,15 @@ export const OperationsConsole: React.FC<{ onBack: () => void; embedded?: boolea
     const id = setInterval(refresh, 30_000);
     return () => clearInterval(id);
   }, [refresh]);
+
+  // AL-154: 写入操作完成后触发审批数据重新拉取
+  const approvalVersionRef = useRef(approvalDataVersion);
+  useEffect(() => {
+    if (approvalVersionRef.current !== approvalDataVersion) {
+      approvalVersionRef.current = approvalDataVersion;
+      refresh();
+    }
+  }, [approvalDataVersion, refresh]);
 
   const pending = ops.filter((o) =>
     ['awaiting_confirmation', 'recovery_required'].includes(o.status),

@@ -59,7 +59,7 @@ class TestN8nWebhookCall:
         with patch("agent_graph.requests.post", side_effect=req_module.exceptions.ConnectionError()):
             result = n8n_webhook_call("alice-jira-search", {"trace_id": "t4"})
             assert result["ok"] is False
-            assert "无法连接" in result["error"]
+            assert "暂不可用" in result["error"]
 
 
 class TestN8nJiraQueryTool:

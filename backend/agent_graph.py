@@ -103,10 +103,18 @@ def n8n_webhook_call(workflow_path: str, payload: dict, timeout: int = 3) -> dic
             return {"ok": True, "data": data}
         else:
             logger.error(f"[{trace_id}] n8n Webhook 失败: HTTP {resp.status_code} {resp.text[:200]}")
-            return {"ok": False, "error": "外部服务异常，请联系管理员"}
+            error_msg = "外部服务异常，请联系管理员"
+            if resp.status_code == 403:
+                error_msg = "您没有该项目的创建权限"
+            elif resp.status_code == 404:
+                error_msg = "项目不存在，请检查项目 Key"
+            return {"ok": False, "error": error_msg, "status_code": resp.status_code}
     except requests.exceptions.Timeout:
         logger.error(f"[{trace_id}] n8n Webhook 超时 >{timeout}s: {workflow_path}")
-        return {"ok": False, "error": "n8n 服务响应超时，请稍后重试"}
+        return {"ok": False, "error": "创建超时 n8n 暂不可用 请稍后重试", "error_code": "N8N_TIMEOUT"}
+    except requests.exceptions.ConnectionError:
+        logger.error(f"[{trace_id}] n8n Webhook 连接失败: {workflow_path}")
+        return {"ok": False, "error": "创建超时 n8n 暂不可用 请稍后重试", "error_code": "N8N_TIMEOUT"}
     except requests.exceptions.ConnectionError:
         logger.error(f"[{trace_id}] n8n Webhook 连接失败: {workflow_path}")
         return {"ok": False, "error": "无法连接到 n8n 服务，请确认 n8n 已启动"}
@@ -212,8 +220,31 @@ def svn_query(path: str, trace_id: str = "unknown") -> str:
     return "\n".join(lines)
 
 
+@tool
+def jira_create_issue(project_key: str, issue_type: str, summary: str, description: str, trace_id: str = "unknown") -> str:
+    """通过 n8n Webhook 在 Jira 中创建 Issue。project_key 必须是已存在的项目 Key（如 AL、CT），issue_type 必须是有效类型（如 Task、Bug），summary 为标题，description 为描述。"""
+    logger.info(f"[{trace_id}] Jira 创建 Issue: project={project_key} type={issue_type} summary={summary[:60]}")
+    import uuid, re as _re2
+    raw_id = str(uuid.uuid4())
+    idempotency_key = f"alice-tx-{_re2.sub(r'[^a-zA-Z0-9\-]', '', raw_id)}"
+    result = n8n_webhook_call("alice-jira-create", {
+        "idempotency_key": idempotency_key,
+        "project_key": project_key,
+        "issue_type": issue_type,
+        "summary": summary,
+        "description": description,
+        "trace_id": trace_id,
+    }, timeout=3)
+    if not result.get("ok"):
+        return f"[Jira 创建失败: {result.get('error', '未知错误')}]"
+    data = result.get("data", {})
+    issue_key = data.get("key", data.get("issue_key", "?"))
+    logger.info(f"[{trace_id}] Jira 创建完成: {issue_key}")
+    return f"Jira Issue 已创建成功: {issue_key}"
+
+
 # 工具列表
-tools = [dify_rag_retrieval, n8n_jira_query, svn_query]
+tools = [dify_rag_retrieval, n8n_jira_query, svn_query, jira_create_issue]
 
 # v3.1 波次2: 模块级 KB 来源暂存（供 ai_bridge SSE 透传）
 _last_kb_sources: list[dict] = []

@@ -6,6 +6,7 @@ export type OperationActionResult = {
   ok: boolean;
   message?: string;
   error?: string;
+  error_code?: string;
   operation?: { created_issues?: { key?: string }[]; recovery?: unknown };
 };
 
@@ -65,11 +66,14 @@ export function useOperationActions(opts: UseOperationActionsOptions = {}) {
           ok: data.ok !== false,
           message: data.message,
           error: data.error,
+          error_code: data.error_code,
           operation: data.operation,
         };
         if (data.ok === false) {
           setLastError((e) => ({ ...e, [opId]: data.error || '操作失败' }));
-          throw new Error(data.error || '操作失败');
+          const err = new Error(data.error || '操作失败') as Error & { error_code?: string };
+          err.error_code = data.error_code;
+          throw err;
         }
         await opts.onConfirmSuccess?.(result);
         return result;

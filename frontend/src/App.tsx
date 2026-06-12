@@ -274,6 +274,18 @@ export const App: React.FC = () => {
 
   const { toast } = useToast();
   const triggerBadgeRefresh = useChatStore((s) => s.triggerBadgeRefresh);
+  const incrApprovalDataVersion = useChatStore((s) => s.incrApprovalDataVersion);
+
+  const mapConfirmError = (errorCode: string, fallback: string) => {
+    const map: Record<string, string> = {
+      N8N_TIMEOUT: '创建超时 n8n 暂不可用 请稍后重试',
+      JIRA_FORBIDDEN: '您没有该项目的创建权限',
+      JIRA_NOT_FOUND: '项目不存在 请检查项目 Key',
+      MISSING_PARAMS: '缺少必要信息 请补充后重试',
+      N8N_INVALID_RESPONSE: '创建遇到问题 请重试',
+    };
+    return map[errorCode] || fallback || '操作失败 请重试';
+  };
 
   const wrappedHandleConfirm = useCallback(
     async (
@@ -284,12 +296,13 @@ export const App: React.FC = () => {
         await handleConfirm(opId, opts);
         onConfirmResolved(opId, 'confirmed');
         triggerBadgeRefresh();
+        incrApprovalDataVersion();
         toast('✅ 已放行操作', { type: 'success' });
       } catch (e: any) {
-        toast(`放行失败：${e?.message || '请重试'}`, { type: 'error' });
+        toast(mapConfirmError(e?.error_code || '', e?.message || '请重试'), { type: 'error' });
       }
     },
-    [handleConfirm, onConfirmResolved, toast, triggerBadgeRefresh],
+    [handleConfirm, onConfirmResolved, toast, triggerBadgeRefresh, incrApprovalDataVersion],
   );
 
   const wrappedHandleReject = useCallback(
@@ -298,12 +311,13 @@ export const App: React.FC = () => {
         await handleReject(opId);
         onConfirmResolved(opId, 'rejected');
         triggerBadgeRefresh();
+        incrApprovalDataVersion();
         toast('❌ 已拒绝', { type: 'error' });
       } catch (e: any) {
         toast(`拒绝失败：${e?.message || '请重试'}`, { type: 'error' });
       }
     },
-    [handleReject, onConfirmResolved, toast, triggerBadgeRefresh],
+    [handleReject, onConfirmResolved, toast, triggerBadgeRefresh, incrApprovalDataVersion],
   );
 
   // ── 命令面板 ──

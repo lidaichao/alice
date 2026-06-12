@@ -117,13 +117,14 @@ class TestToolsDefinitions:
     """Phase 1.4：工具节点定义完整"""
 
     def test_all_three_tools_defined(self):
-        """验证 Dify RAG / n8n Jira / SVN 三个工具均已定义"""
-        from agent_graph import tools, dify_rag_retrieval, n8n_jira_query, svn_query
+        """验证 Dify RAG / n8n Jira / SVN / Jira 创建 四个工具均已定义"""
+        from agent_graph import tools, dify_rag_retrieval, n8n_jira_query, svn_query, jira_create_issue
         tool_names = [t.name for t in tools]
         assert "dify_rag_retrieval" in tool_names, "Dify RAG 检索工具应已注册"
         assert "n8n_jira_query" in tool_names, "n8n Jira 查询工具应已注册"
         assert "svn_query" in tool_names, "SVN 查询工具应已注册"
-        assert len(tools) == 3
+        assert "jira_create_issue" in tool_names, "Jira 创建工具应已注册"
+        assert len(tools) >= 4
 
     def test_dify_rag_tool_handles_no_config(self):
         """Dify RAG 工具在不配置时应返回友好提示"""
