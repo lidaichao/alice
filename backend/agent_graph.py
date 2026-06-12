@@ -303,7 +303,7 @@ def should_continue(state: AgentState) -> Literal["continue", "end"]:
     """条件边：agent 输出含 tool_calls → action，否则 → END（约束#1）"""
     messages = state["messages"]
     last_message = messages[-1] if messages else None
-    if last_message and hasattr(last_message, "tool_calls") and last_message.tool_calls:
+    if last_message and last_message.tool_calls:
         logger.info(f"[{state.get('trace_id', '?')}] 路由 → 工具执行（{len(last_message.tool_calls)} 个调用）")
         return "continue"
     logger.info(f"[{state.get('trace_id', '?')}] 路由 → END（无需工具调用）")

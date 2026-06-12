@@ -79,8 +79,8 @@ def load_api_key(env: dict) -> str:
     return key
 
 
-def create_jira_credential(base_url: str, api_key: str, jira_pat: str, jira_url: str) -> str | None:
-    """创建 n8n Jira HTTP Header Auth 凭据，返回 credential_id"""
+def create_jira_credential(base_url: str, api_key: str, jira_pat: str, jira_url: str, jira_email: str) -> str | None:
+    """创建 n8n Jira Software API 凭据，返回 credential_id"""
 
     # 先检查是否已存在同名凭据
     try:
@@ -98,13 +98,14 @@ def create_jira_credential(base_url: str, api_key: str, jira_pat: str, jira_url:
     except Exception as e:
         print(f"  ⚠️  查询凭据列表失败: {e}")
 
-    # 创建新凭据
+    # 创建新凭据（per n8n_api.md §一：Jira 用 jiraSoftwareApi 类型）
     payload = {
         "name": "Alice Jira PAT",
-        "type": "httpHeaderAuth",
+        "type": "jiraSoftwareApi",
         "data": {
-            "name": "Authorization",
-            "value": f"Bearer {jira_pat}",
+            "url": jira_url,
+            "email": jira_email,
+            "apiToken": jira_pat,
         },
     }
     try:
@@ -239,13 +240,15 @@ def main():
     base_url = os.getenv("N8N_BASE_URL", env.get("N8N_BASE_URL", "http://localhost:5678"))
     api_key = load_api_key(env)
     jira_pat = os.getenv("JIRA_PAT", config.get("JIRA_PAT", ""))
-    jira_url = os.getenv("JIRA_BASE_URL", config.get("JIRA_BASE_URL", ""))
+    jira_url = os.getenv("JIRA_BASE_URL", config.get("JIRA_BASE_URL", "http://ctjira1.lmdgame.com:8080"))
+    jira_email = os.getenv("JIRA_EMAIL", config.get("JIRA_EMAIL", "squirtle@lmdgame.com"))
 
     print(f"\n  配置:")
     print(f"    n8n URL: {base_url}")
     print(f"    API Key: {'已配置' if api_key else '❌ 未配置'}")
     print(f"    Jira PAT: {'已配置' if jira_pat else '❌ 未配置'}")
     print(f"    Jira URL: {jira_url}")
+    print(f"    Jira Email: {jira_email}")
 
     if not api_key:
         print("\n  ❌ N8N_API_KEY 未配置，请在 .env.n8n 中设置后重试")
@@ -262,7 +265,7 @@ def main():
     print(f"\n  [2/4] 配置 Jira 凭据...")
     credential_id = None
     if jira_pat:
-        credential_id = create_jira_credential(base_url, api_key, jira_pat, jira_url)
+        credential_id = create_jira_credential(base_url, api_key, jira_pat, jira_url, jira_email)
     else:
         print("  ⚠️  JIRA_PAT 未配置，跳过凭据创建")
 

@@ -1,14 +1,15 @@
 """
 backend/agent/state.py — V2.0 Plan-and-Execute Agent State
 """
-from typing import TypedDict, Annotated, List
-from langgraph.graph.message import add_messages
+from typing import TypedDict, Annotated, List, Sequence
+from langgraph.graph import add_messages
+from langchain_core.messages import BaseMessage
 
 
 class AgentState(TypedDict):
     """Plan-and-Execute 智能体状态"""
     # 对话历史 (自动合并消息)
-    messages: Annotated[list, add_messages]
+    messages: Annotated[Sequence[BaseMessage], add_messages]
 
     # 当前步骤规划
     plan: List[str]

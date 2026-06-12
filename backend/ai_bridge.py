@@ -2961,7 +2961,7 @@ def agent_stream():
                     messages = state.values["messages"]
                     if messages:
                         last = messages[-1]
-                        if hasattr(last, "tool_calls") and last.tool_calls:
+                        if last.tool_calls:
                             pending_tool = last.tool_calls[0]
 
                 idempotency_key = _generate_idempotency_key()
@@ -3958,7 +3958,6 @@ def admin_proxy_n8n_jira():
         resp = http.post(
             url,
             json={"jql": req.jql, "limit": req.max_results},
-            headers={"X-N8N-API-KEY": N8N_API_KEY} if N8N_API_KEY else {},
             timeout=3.0,
         )
         if resp.status_code == 200:
