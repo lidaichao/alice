@@ -97,8 +97,8 @@ export const EnginePicker: React.FC<EnginePickerProps> = ({ onOpenSettings, onEn
     return !mode;
   };
 
-  let label = 'Auto · composer-2.5';
-  if (choice.engine === 'deepseek') label = 'DeepSeek · deepseek-chat';
+  let label = '⚡ 自动分流 · composer-2.5';
+  if (choice.engine === 'deepseek') label = '💬 DeepSeek · deepseek-chat';
   else if (choice.engine === 'cursor') label = 'Cursor';
 
   const buttonEl = compact ? (
@@ -130,7 +130,7 @@ export const EnginePicker: React.FC<EnginePickerProps> = ({ onOpenSettings, onEn
           className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-2"
         >
           <Zap size={12} className="text-muted-foreground" />
-          <span>⚡ 自动分流</span>
+          <span>⚡ 自动分流 · composer-2.5</span>
           {isSelected('auto') && <Check size={12} className="ml-auto" />}
         </button>
         <button
@@ -138,7 +138,7 @@ export const EnginePicker: React.FC<EnginePickerProps> = ({ onOpenSettings, onEn
           className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-2"
         >
           <MessageCircle size={12} />
-          <span>💬 DeepSeek</span>
+          <span>💬 DeepSeek · deepseek-chat</span>
           {isSelected('deepseek') && <Check size={12} className="ml-auto" />}
         </button>
         {engines && hasCursorKey && engines.cursor.modes.map((m) => (

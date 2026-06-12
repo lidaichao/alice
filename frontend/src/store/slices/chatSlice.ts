@@ -396,6 +396,9 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
     set({ abortController: ctrl });
 
     try {
+      // AL-158: 深度模型 8 秒超时提示
+      let thoughtTimer: ReturnType<typeof setTimeout> | null = null;
+
       // P0 RBAC: fetch user permissions before sending
       get().fetchUserPermissions().catch(() => {});
       // AL-146: Auto/Agent 模式 → Agent 管道 /v1/agent/stream
@@ -459,6 +462,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
       while (reader && !done) {
         const { value, done: readerDone } = await reader.read();
         done = readerDone;
+        if (readerDone && thoughtTimer) { clearTimeout(thoughtTimer); thoughtTimer = null; }
         if (value) {
           const chunk = decoder.decode(value, { stream: true });
           const lines = chunk.split('\n');
@@ -474,6 +478,24 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
                     ? 'cursor' : 'deepseek';
                   const thinkText = model === 'cursor' || get().enginePreference.engine === 'auto'
                     ? '🧠 正在深度分析...' : '正在思考...';
+                  // AL-158: 8 秒后追加超时提示
+                  if ((model === 'cursor' || get().enginePreference.engine === 'auto') && !thoughtTimer) {
+                    thoughtTimer = setTimeout(() => {
+                      set((state) => ({
+                        sessions: state.sessions.map(s2 => {
+                          if (s2.id !== activeSessionId) return s2;
+                          const lastMsg2 = s2.messages[s2.messages.length - 1];
+                          if (lastMsg2.id === aiMsgId) {
+                            const cur = lastMsg2.content || '';
+                            if (!cur.includes('思考时间稍长')) {
+                              return { ...s2, messages: [...s2.messages.slice(0, -1), { ...lastMsg2, content: cur + '\n\n⏳ 思考时间稍长，请稍候...' }] };
+                            }
+                          }
+                          return s2;
+                        })
+                      }));
+                    }, 8000);
+                  }
                   set((state) => ({
                     sessions: state.sessions.map(s => {
                       if (s.id !== activeSessionId) return s;
@@ -774,6 +796,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
         }
       }
     } finally {
+      if (thoughtTimer) { clearTimeout(thoughtTimer); thoughtTimer = null; }
       set((s) => ({
         generatingSessions: { ...s.generatingSessions, [activeSessionId]: false },
         abortController: null,
