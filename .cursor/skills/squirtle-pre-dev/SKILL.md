@@ -4,7 +4,8 @@ description: >-
   When Squirtle receives a development order from Rabbit that includes Jira
   subtask IDs (10702), task IDs (10701), or bug IDs (10011), run mandatory
   checks before coding: verify assignees, walk the three-layer (Epic→Task→Subtask)
-  hierarchy to read descriptions, and confirm target files. Use before any code
+  hierarchy to read descriptions, consult alice/specs/ for any involved open-source
+  project (LangGraph/Dify/n8n), and confirm target files. Use before any code
   change.
 ---
 
@@ -93,3 +94,17 @@ for c in (bug["fields"].get("comment", {}).get("comments", []) or []):
 ```
 
 不遵守 → 只看初报不看回归评论 → 漏掉新信息 → 修完仍不通过 → 反复返工。
+
+## 第⑤检：开源项目源码/文档（涉及 LangGraph / Dify / n8n 时必做）
+
+`alice/specs/` 存放 Alice 所依赖开源项目的源码和 API 文档。开发任何涉及以下三方库的功能时，**必须先读对应文档**，禁止凭记忆猜 API 参数或行为。
+
+| Alice 代码区域 | 需读的 specs 文件 | 说明 |
+|------|------|------|
+| `agent_graph.py` / LangGraph 编排 | `specs/langgraph_api.md` | StateGraph、HITL interrupt、tool 定义、streaming 完整模板 |
+| Dify 知识库 RAG 检索 | `specs/dify_api.md` | `/v1/datasets/{id}/retrieve` 参数、响应格式、权限头部 |
+| n8n Webhook / REST 调用 | `specs/n8n_api.md` | 凭证管理、工作流激活、execution 查询 |
+| n8n 工作流节点设计 | `specs/n8n_workflow.md` | Webhook trigger、Jira 节点、HTTP Request 节点、JSON 结构 |
+| Dify 前端/后端适配 | `specs/dify/` 子树 | 优先读 `AGENTS.md`（编码规范）；按需读 `web/docs/`、`api/controllers/`、`dify-agent/docs/` |
+
+> 如果 rabbit 指令点名了新三方（如 Composer SDK），先确认 `specs/` 是否有对应文档；若无 → 先用 `WebSearch` 查官方文档，再动手。
