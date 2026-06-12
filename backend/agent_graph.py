@@ -42,7 +42,7 @@ def _load_config() -> dict:
 _config = _load_config()
 DEEPSEEK_URL = os.getenv("DEEPSEEK_URL", _config.get("DEEPSEEK_URL", "https://api.deepseek.com/v1"))
 DEEPSEEK_KEY = os.getenv("DEEPSEEK_KEY", _config.get("DEEPSEEK_KEY", ""))
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", _config.get("DEEPSEEK_MODEL", "deepseek-chat"))
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", _config.get("DEEPSEEK_MODEL", "composer-2.5"))
 
 # 确保 base_url 是纯 /v1 根路径（处理 global_config.json 中误带 /chat/completions 后缀的情况）
 _DEEPSEEK_BASE = DEEPSEEK_URL.removesuffix("/chat/completions").rstrip("/")
@@ -114,10 +114,7 @@ def n8n_webhook_call(workflow_path: str, payload: dict, timeout: int = 3) -> dic
         return {"ok": False, "error": "创建超时 n8n 暂不可用 请稍后重试", "error_code": "N8N_TIMEOUT"}
     except requests.exceptions.ConnectionError:
         logger.error(f"[{trace_id}] n8n Webhook 连接失败: {workflow_path}")
-        return {"ok": False, "error": "创建超时 n8n 暂不可用 请稍后重试", "error_code": "N8N_TIMEOUT"}
-    except requests.exceptions.ConnectionError:
-        logger.error(f"[{trace_id}] n8n Webhook 连接失败: {workflow_path}")
-        return {"ok": False, "error": "无法连接到 n8n 服务，请确认 n8n 已启动"}
+        return {"ok": False, "error": "无法连接到 n8n 服务，请确认 n8n 已启动", "error_code": "N8N_UNREACHABLE"}
     except Exception as e:
         logger.error(f"[{trace_id}] n8n Webhook 异常: {e}")
         return {"ok": False, "error": "外部服务异常，请联系管理员"}

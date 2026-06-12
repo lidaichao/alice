@@ -518,11 +518,15 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set,
                   continue;
                 }
                 if (data.type === 'confirm_card') {
+                  const card = buildConfirmCardFromApi(data.idempotency_key, {
+                    type: data.action || 'unknown',
+                    summary: data.args?.summary || '',
+                    description: data.args?.description || '',
+                    project: data.args?.project_key || '',
+                  });
+                  card.permissionMode = get().hasJiraWritePermission ? 'direct' : 'approval';
                   set((state) => ({
-                    pendingConfirmations: [
-                      ...state.pendingConfirmations,
-                      { op_id: data.idempotency_key, action: data.action, args: data.args, thread_id: data.thread_id, status: 'pending', timestamp: Date.now() },
-                    ],
+                    pendingConfirmations: [...state.pendingConfirmations, card],
                   }));
                   continue;
                 }
