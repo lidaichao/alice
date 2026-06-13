@@ -20,6 +20,7 @@ alwaysApply: true
 7. **战报三件套** — 每次交付含：pytest + 蓝图修订记录 + `CURRENT_SPRINT.md` 进度板
 8. **Bug 先读描述** — 兔子指令附 `🔗 缺陷单 AL-XXX` 时，先 `GET /issue/AL-XXX?fields=description,comment` 读夏洛克的 QA 反馈（description=初次报告 · comments=回归不通过的补充说明），再动手修
 9. **开源项目先读源码** — 若开发涉及 LangGraph / Dify / n8n，动代码前先 `Read` 对应 `alice/specs/` 文件；不凭记忆猜 API 参数或行为
+10. **服务器验证** — 部署后禁止用 localhost 验证功能。战报必须含 `curl http://192.168.72.147:5000/health` 输出（服务器地址）。开发在本地、跑在服务器
 
 ## 按需加载
 
