@@ -21,6 +21,21 @@ alwaysApply: true
 8. **Bug 先读描述** — 兔子指令附 `🔗 缺陷单 AL-XXX` 时，先 `GET /issue/AL-XXX?fields=description,comment` 读夏洛克的 QA 反馈（description=初次报告 · comments=回归不通过的补充说明），再动手修
 9. **开源项目先读源码** — 若开发涉及 LangGraph / Dify / n8n，动代码前先 `Read` 对应 `alice/specs/` 文件；不凭记忆猜 API 参数或行为
 10. **服务器验证** — 部署后禁止用 localhost 验证功能。战报必须含 `curl http://192.168.72.147:5000/health` 输出（服务器地址）。开发在本地、跑在服务器
+11. **n8n Web 后台凭据** — 浏览器操作 n8n 工作流/凭据时使用：
+    - 地址：`http://192.168.72.147:5678`
+    - 邮箱：`admin@alice.local`
+    - 密码：`Huaban123!`
+    - 角色：`global:owner`（不用再设 N8N_BASIC_AUTH）
+
+## 火星计划 · 服务器关键地址
+
+| 服务 | 地址 |
+|------|------|
+| Alice Hub (Chat) | `http://192.168.72.147:5000/` |
+| Admin 后台 | `http://192.168.72.147:8080/` |
+| n8n Web 后台 | `http://192.168.72.147:5678/` |
+| Dify Web | `http://192.168.72.147:18808/` |
+| SSH | `ssh alice@192.168.72.147` (pwd: huaban123!) |
 
 ## 按需加载
 
