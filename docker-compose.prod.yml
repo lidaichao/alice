@@ -44,6 +44,7 @@ services:
       - alice_data:/app/data
       - alice_logs:/app/logs
       - ./backend/global_config.json:/app/global_config.json:ro
+      - ./frontend/dist:/frontend/dist:ro
     depends_on:
       - dify-api
       - n8n
