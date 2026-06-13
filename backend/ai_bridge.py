@@ -3004,7 +3004,7 @@ def agent_confirm():
     Mock 模式: _send_to_n8n_mock → 1s sleep + 硬编码 Jira 响应
     非 Mock: n8n_webhook_call("alice-jira-create", ...) → 幂等去重
     """
-    from agent_graph import graph, n8n_webhook_call
+    from agent_graph import graph, jira_create_direct
 
     if request.method == "OPTIONS":
         return Response(status=204)
@@ -3022,18 +3022,14 @@ def agent_confirm():
             logger.info(f"[{trace_id}] Mock n8n: action={payload.action}")
             result = _send_to_n8n_mock(payload.action, payload.issue_data)
         else:
-            # H1: 复用 payload 中的 idempotency_key 保证幂等去重（非生成新 Key）
-            result_raw = n8n_webhook_call(
-                "alice-jira-create",
-                {
-                    "idempotency_key": payload.idempotency_key,
-                    "project_key": payload.issue_data.get("project_key", ""),
-                    "summary": payload.issue_data.get("summary", ""),
-                    "issue_type": payload.issue_data.get("issue_type", "Task"),
-                    "description": payload.issue_data.get("description", ""),
-                    "trace_id": trace_id,
-                },
-                timeout=3,
+            # v3.1 火星验收修复：直连 Jira REST API（绕过 n8n 表达式限制）
+            result_raw = jira_create_direct(
+                project_key=payload.issue_data.get("project_key", ""),
+                issue_type=payload.issue_data.get("issue_type", "任务"),
+                summary=payload.issue_data.get("summary", ""),
+                description=payload.issue_data.get("description", ""),
+                idempotency_key=payload.idempotency_key,
+                trace_id=trace_id,
             )
             if not result_raw.get("ok"):
                 err = result_raw.get("error", "外部服务异常")
@@ -3048,7 +3044,7 @@ def agent_confirm():
                         err_code = "N8N_INVALID_RESPONSE"
                 return jsonify({"ok": False, "error_code": err_code, "error": err}), 502
             result_data = result_raw.get("data", {})
-            result = result_data.get("data") if isinstance(result_data, dict) else result_data
+            result = result_data
 
         # 恢复 LangGraph 执行（C3: 必须 as_node="action" 才能从 interrupt 恢复）
         if thread_id:

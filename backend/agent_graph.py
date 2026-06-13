@@ -63,6 +63,10 @@ N8N_BASE_URL = os.getenv("N8N_BASE_URL", _config.get("N8N_BASE_URL", "http://loc
 N8N_API_KEY = os.getenv("N8N_API_KEY", _config.get("N8N_API_KEY", ""))
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_BASE_URL", N8N_BASE_URL)
 
+# Jira 直连配置（v3.1 火星验收修复：绕过 n8n 1.87.0 Jira Create 节点 bug）
+JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", _config.get("JIRA_BASE_URL", "http://ctjira1.lmdgame.com:8080"))
+JIRA_PAT = os.getenv("JIRA_PAT", _config.get("JIRA_PAT", ""))
+
 
 # ═══════════════════════════════════════════════════════════════
 # 1. State 定义（约束#1：TypedDict + add_messages）
@@ -118,6 +122,79 @@ def n8n_webhook_call(workflow_path: str, payload: dict, timeout: int = 3) -> dic
     except Exception as e:
         logger.error(f"[{trace_id}] n8n Webhook 异常: {e}")
         return {"ok": False, "error": "外部服务异常，请联系管理员"}
+
+
+# ═══════════════════════════════════════════════════════════════
+# 1.5 Jira 直连 API（v3.1 火星验收修复：绕过 n8n 1.87.0 Jira Create 节点 RL 参数破坏 bug）
+#   直接调用 Jira REST API POST /rest/api/2/issue，不依赖 n8n 表达式求值。
+# ═══════════════════════════════════════════════════════════════
+
+def jira_create_direct(
+    project_key: str,
+    issue_type: str,
+    summary: str,
+    description: str,
+    idempotency_key: str,
+    trace_id: str = "unknown",
+    timeout: int = 10,
+) -> dict:
+    """直连 Jira REST API 创建 Issue（绕过 n8n HTTP Request 节点表达式限制）。
+    返回: {"ok": True/False, "data": {"key": "AL-xxx", "id": "...", ...} / "error": "..."}
+    """
+    if not JIRA_PAT:
+        logger.error(f"[{trace_id}] JIRA_PAT 未配置，无法直连 Jira")
+        return {"ok": False, "error": "Jira 凭证未配置，请联系管理员"}
+    url = f"{JIRA_BASE_URL}/rest/api/2/issue"
+    jira_payload = {
+        "fields": {
+            "project": {"key": project_key},
+            "summary": summary,
+            "description": description or "",
+            "issuetype": {"name": issue_type},
+            "labels": [idempotency_key],
+        }
+    }
+    logger.info(f"[{trace_id}] Jira 直连创建: project={project_key} type={issue_type} summary={summary[:60]}")
+    try:
+        resp = requests.post(
+            url,
+            json=jira_payload,
+            headers={
+                "Authorization": f"Bearer {JIRA_PAT}",
+                "Content-Type": "application/json",
+            },
+            timeout=timeout,
+        )
+        if resp.status_code in (200, 201):
+            data = resp.json()
+            issue_key = data.get("key", "?")
+            logger.info(f"[{trace_id}] Jira 直连创建完成: {issue_key} ({resp.elapsed.total_seconds():.1f}s)")
+            return {"ok": True, "data": data}
+        else:
+            logger.error(f"[{trace_id}] Jira 直连创建失败: HTTP {resp.status_code} {resp.text[:300]}")
+            error_msg = "Jira 创建失败"
+            if resp.status_code == 400:
+                try:
+                    err_detail = resp.json()
+                    errors = err_detail.get("errors", {})
+                    if errors:
+                        error_msg = f"参数错误: {list(errors.keys())[0]} {list(errors.values())[0]}"
+                except Exception:
+                    error_msg = "请求参数不正确，请检查项目 Key 和问题类型"
+            elif resp.status_code == 401:
+                error_msg = "Jira 认证失败，请检查凭证配置"
+            elif resp.status_code == 403:
+                error_msg = f"没有项目 {project_key} 的创建权限"
+            return {"ok": False, "error": error_msg, "status_code": resp.status_code}
+    except requests.exceptions.Timeout:
+        logger.error(f"[{trace_id}] Jira 直连超时 >{timeout}s")
+        return {"ok": False, "error": "Jira 连接超时，请稍后重试", "error_code": "JIRA_TIMEOUT"}
+    except requests.exceptions.ConnectionError:
+        logger.error(f"[{trace_id}] Jira 直连连接失败: {JIRA_BASE_URL}")
+        return {"ok": False, "error": "无法连接到 Jira 服务", "error_code": "JIRA_UNREACHABLE"}
+    except Exception as e:
+        logger.error(f"[{trace_id}] Jira 直连异常: {e}")
+        return {"ok": False, "error": f"Jira 服务异常: {str(e)[:200]}"}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -219,23 +296,23 @@ def svn_query(path: str, trace_id: str = "unknown") -> str:
 
 @tool
 def jira_create_issue(project_key: str, issue_type: str, summary: str, description: str, trace_id: str = "unknown") -> str:
-    """通过 n8n Webhook 在 Jira 中创建 Issue。project_key 必须是已存在的项目 Key（如 AL、CT），issue_type 必须是有效类型（如 Task、Bug），summary 为标题，description 为描述。"""
+    """通过 Jira REST API 直连创建 Issue。project_key 必须是已存在的项目 Key（如 AL、CT），issue_type 必须是有效类型（如 任务、缺陷），summary 为标题，description 为描述。"""
     logger.info(f"[{trace_id}] Jira 创建 Issue: project={project_key} type={issue_type} summary={summary[:60]}")
     import uuid, re as _re2
     raw_id = str(uuid.uuid4())
     idempotency_key = f"alice-tx-{_re2.sub(r'[^a-zA-Z0-9\-]', '', raw_id)}"
-    result = n8n_webhook_call("alice-jira-create", {
-        "idempotency_key": idempotency_key,
-        "project_key": project_key,
-        "issue_type": issue_type,
-        "summary": summary,
-        "description": description,
-        "trace_id": trace_id,
-    }, timeout=3)
+    result = jira_create_direct(
+        project_key=project_key,
+        issue_type=issue_type,
+        summary=summary,
+        description=description,
+        idempotency_key=idempotency_key,
+        trace_id=trace_id,
+    )
     if not result.get("ok"):
         return f"[Jira 创建失败: {result.get('error', '未知错误')}]"
     data = result.get("data", {})
-    issue_key = data.get("key", data.get("issue_key", "?"))
+    issue_key = data.get("key", "?")
     logger.info(f"[{trace_id}] Jira 创建完成: {issue_key}")
     return f"Jira Issue 已创建成功: {issue_key}"
 
