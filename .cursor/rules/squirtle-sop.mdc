@@ -19,11 +19,21 @@ Windows：`$env:PYTHONIOENCODING='utf-8'` 后再跑 pytest。
 ## 服务器部署（2026-06-13 火星计划后生效 · 强制步骤）
 
 - **Alice 生产地址**：`http://192.168.72.147:5000`
-- **部署流程**：`ssh alice@192.168.72.147` → `cd alice` → `git pull` → `docker compose -f docker-compose.prod.yml up -d --build`
-- **何时执行**：每次本地开发完成 + commit + push 到 GitHub 后，**必须**部署到服务器（代码改动不自动生效，需 compose up）
+- **何时执行**：每次本地开发完成 + commit + push 到 GitHub 后，**必须**部署到服务器（代码改动不自动生效）
 - **验证约束**：部署后禁止用 `localhost` 路径验证功能——必须以服务器地址打开浏览器/curl 确认
 - **战报要求**：含 `curl http://192.168.72.147:5000/health` 输出（替代本地 health check）
 - **核心地址**：Chat `:5000/chat/` · Admin `:8080` · n8n `:5678` · Dify Web `:5001`
+
+### 增量部署策略（按改动类型分叉，避免全量重建）
+
+| 改动类型 | 部署方式 | 耗时 |
+|------|------|:--:|
+| `.cursor/rules/` `.mdc` 文件 | scp 直接覆盖到服务器对应路径 | 1s |
+| `frontend/dist/` 前端产物 | scp dist/ 到服务器 + `docker compose restart alice-hub`（卷挂载即时生效） | 5s |
+| `backend/*.py` 源码 | `git pull` 到服务器 + `docker compose -f docker-compose.prod.yml up -d --build`（需重建镜像） | 3-5min |
+| `docker-compose.prod.yml` / `.env.prod` | scp + `docker compose up -d`（指定受影响的服务） | 10s |
+
+**原则**：git pull 是增量（只拉差异），`--build` 仅源码改动时触发。规则/配置/前端用 scp + 轻量重启，不做 `--build`。
 
 ## 自动加载的 Skills
 
