@@ -20,8 +20,9 @@ alwaysApply: true
 7. **战报三件套** — 每次交付含：pytest + 蓝图修订记录 + `CURRENT_SPRINT.md` 进度板
 8. **Bug 先读描述** — 兔子指令附 `🔗 缺陷单 AL-XXX` 时，先 `GET /issue/AL-XXX?fields=description,comment` 读夏洛克的 QA 反馈（description=初次报告 · comments=回归不通过的补充说明），再动手修
 9. **开源项目先读源码** — 若开发涉及 LangGraph / Dify / n8n，动代码前先 `Read` 对应 `alice/specs/` 文件；不凭记忆猜 API 参数或行为
-10. **服务器验证** — 部署后禁止用 localhost 验证功能。战报必须含 `curl http://192.168.72.147:5000/health` 输出（服务器地址）。开发在本地、跑在服务器
-11. **n8n Web 后台凭据** — 浏览器操作 n8n 工作流/凭据时使用：
+10. **先搜后写 · 禁止重复造轮子** — 在任何文件中新增函数/类/常量前，必须先用 `Grep` + `SemanticSearch` 搜索代码库中已有的同类实现（Jira 操作→先搜 `JiraClient` / `jira_api` / `create_issue` · n8n→先搜 `n8n_webhook` · 配置→先搜 `global_config` · 字段映射→先搜 `draft_to_fields`）。**发现已有能力就复用扩展，绝不重写一条平行链路。** 本规则因 2026-06-13 火星验收事故（绕过 `JiraClient.create_issue_from_draft` 重复造了 `jira_create_direct` 并硬编码 labels/issueType）新增
+11. **服务器验证** — 部署后禁止用 localhost 验证功能。战报必须含 `curl http://192.168.72.147:5000/health` 输出（服务器地址）。开发在本地、跑在服务器
+12. **n8n Web 后台凭据** — 浏览器操作 n8n 工作流/凭据时使用：
     - 地址：`http://192.168.72.147:5678`
     - 邮箱：`admin@alice.local`
     - 密码：`Huaban123!`

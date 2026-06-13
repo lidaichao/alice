@@ -95,6 +95,31 @@ for c in (bug["fields"].get("comment", {}).get("comments", []) or []):
 
 不遵守 → 只看初报不看回归评论 → 漏掉新信息 → 修完仍不通过 → 反复返工。
 
+## 第⑥检：搜索已有实现（防重复造轮子 · 铁律#10）
+
+**在新建任何函数/类/常量之前**，先用 `Grep` + `SemanticSearch` 搜索代码库：
+
+```python
+# 必做：按功能关键词搜索已有实现
+# 示例 — 当你需要创建 Jira Issue 时：
+Grep("create_issue|JiraClient|jira_api", path="backend/")         # 找已有类/函数
+Grep("draft_to_fields|global_config|issuetype", path="backend/")  # 找已有字段处理
+SemanticSearch("How does Alice create Jira issues?", target_directories=["backend/"])
+```
+
+| 你要做什么 | 先搜什么 |
+|------|------|
+| Jira 操作（创建/查询/流转） | `JiraClient` · `jira_api` · `create_issue` · `search_issues` |
+| n8n 交互 | `n8n_webhook` · `n8n_bridge` · `webhook_call` |
+| 读配置 | `global_config` · `load_global_config` · `tenant_synonyms` |
+| 字段映射/校验 | `draft_to_fields` · `issuetype` · `JIRA_ISSUETYPE_MAP` |
+| SVN 操作 | `svn_proxy` · `svn_log` |
+| Dify RAG | `dify_rag` · `dataset` · `retrieve` |
+
+**发现已有能力 → 复用扩展。绝不重写一条平行链路。**
+
+> 本检因 2026-06-13 事故新增：n8n 阻塞后绕过已有 `JiraClient.create_issue_from_draft()` 重复造了 `jira_create_direct`，硬编码 labels/issueType，违反 admin 配置。
+
 ## 第⑤检：开源项目源码/文档（涉及 LangGraph / Dify / n8n 时必做）
 
 `alice/specs/` 存放 Alice 所依赖开源项目的源码和 API 文档。开发任何涉及以下三方库的功能时，**必须先读对应文档**，禁止凭记忆猜 API 参数或行为。
