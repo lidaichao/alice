@@ -23,7 +23,7 @@ description: >-
 | npm start | Hub 启动 ✅ |
 | npm run desktop | 注册/登录/发消息 ✅ |
 
-**探活**（部署后）: curl http://192.168.72.147:5000/health → 200
+**探活**（部署后）: curl http://192.168.72.31:5000/health → 200
 
 ### 2. 进度板
 
@@ -47,7 +47,7 @@ description: >-
 **pytest**: X passed ✅
 **npm build**: Chat ✅ · Admin-UI ✅
 **蓝图**: alice三期蓝图计划.md → vX.Y-rcZ
-**探活**: curl http://192.168.72.147:5000/health
+**探活**: curl http://192.168.72.31:5000/health
 ```
 
 ## Jira 流转

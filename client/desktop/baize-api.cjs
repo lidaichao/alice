@@ -1,4 +1,4 @@
-const PRODUCTION_HUB_URL = 'http://192.168.72.147:5000';
+const PRODUCTION_HUB_URL = 'http://192.168.72.31:5000';
 const DEFAULT_SERVER_URL = process.env.BAIZE_DESKTOP_SERVER_URL || PRODUCTION_HUB_URL;
 
 function normalizeServerUrl(serverUrl = DEFAULT_SERVER_URL) {

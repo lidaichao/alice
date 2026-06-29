@@ -37,7 +37,7 @@ export default defineConfig({
   testDir: './tests/visual',
   snapshotDir: './tests/visual-snapshots',
   use: {
-    baseURL: 'http://192.168.72.147:5000',
+    baseURL: 'http://192.168.72.31:5000',
     viewport: { width: 1440, height: 900 },
   },
   expect: {
@@ -157,7 +157,7 @@ A: 检查 diff 图。若是预期的布局变更 → 审批后更新基线；若
 A: 检查 mask 配置是否覆盖该区域。遵循"遮数据内容，不遮布局结构"原则。
 
 **Q: Admin 页面需要登录怎么办？**
-A: AL-272 已实现白名单鉴权——服务器本地 IP（127.0.0.1/192.168.72.147）跳过认证。
+A: AL-272 已实现白名单鉴权——服务器本地 IP（127.0.0.1/192.168.72.31）跳过认证。
 Playwright 在服务器本地跑时无需登录流程。
 
 ## 关联 Jira

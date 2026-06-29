@@ -10,7 +10,7 @@ alwaysApply: true
 | 改动范围 | 运行 |
 |----------|------|
 | `aliceV2/` 任意 | `npm test` |
-| Hub / API | `npm start` + `curl http://192.168.72.147:5000/health` |
+| Hub / API | `npm start` + `curl http://192.168.72.31:5000/health` |
 | Electron 客户端 | `npm run desktop`（注册/登录/发一条消息） |
 | 波次 A 建仓 | 复制 `alice/specs/baize/` @ `b989830` → `aliceV2/` |
 

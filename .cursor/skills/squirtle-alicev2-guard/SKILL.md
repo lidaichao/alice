@@ -42,7 +42,7 @@ description: >-
 | 项 | 标准 |
 |----|------|
 | 本地 | `npm test` + `npm start` + `npm run desktop` |
-| 服务器 | `curl http://192.168.72.147:5000/health` → 200 |
+| 服务器 | `curl http://192.168.72.31:5000/health` → 200 |
 | 客户端 | Electron 连 147:5000 · 登录 · Claude 流式 |
 | **废弃** | `/chat/` · Admin `:8080` · Flask pytest 矩阵 |
 
