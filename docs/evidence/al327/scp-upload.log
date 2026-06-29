@@ -1,22 +1,19 @@
-# AL-329 scp upload log (updated 2026-06-29)
+# AL-329 scp upload log (rebuild · 2026-06-29)
 
 local=H:\workbuddy\aliceV2\releases\白泽 Setup.exe
 remote=alice@192.168.72.31:/tmp/alicev2-releases/白泽 Setup.exe
-bytes=217738456
-sha256=10297C0E7C71A171B6706A867A3A1AAEF77E74A7C67814044BA2B223D0820BC5
+bytes=217738670
+sha256=60529A240286155A64F8E6FEF7A3E93E509120F4670D0A93102BB03BCD803649
 status=OK
+note=Rebuild after baize-api.cjs .31 commit 6ebcf60; supersedes prior 217738456 / 10297C0E…820BC5 upload
 
-## Attempt 1–3 (192.168.72.147 — superseded)
-147 DHCP drift: ping OK, TCP/22 and TCP/5000 refused from dev machine. See prior entries in git history.
-
-## Attempt 4 — Git Bash scp to .31 (IP 变更后 · 2026-06-29)
+## Attempt 5 — Git Bash scp (post desktop:dist rebuild · 2026-06-29)
 shell=C:\Program Files\Git\bin\bash.exe
-ssh_config=~/.ssh/config Host alice-server → 192.168.72.31
 command=scp releases/白泽 Setup.exe alice-server:/tmp/alicev2-releases/
-remote_ls=-rwxr-xr-x 1 alice alice 217738456 Jun 29 12:32 白泽 Setup.exe
+remote_ls=(see ssh ls below)
 exit_code=0
 
 ## Network probe (.31)
-ping 192.168.72.31=OK (2/2, <1ms)
-SSH alice-server=OK (ssh_ok, hostname alice-server)
-HTTP http://192.168.72.31:5000/health=200 (service=ai-bridge-v5)
+ping 192.168.72.31=OK
+SSH alice-server=OK
+HTTP http://192.168.72.31:5000/health=200

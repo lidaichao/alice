@@ -1,0 +1,5 @@
+connectionStatus=连接检测中
+defaultHub=http://192.168.72.31:5000
+packagedExe=H:\workbuddy\aliceV2\dist\desktop\win-unpacked\白泽.exe
+authRegister=404
+note=Production .31 still runs v3.2 ai-bridge; Baize /auth/* available after step⑦ Node Hub deploy.

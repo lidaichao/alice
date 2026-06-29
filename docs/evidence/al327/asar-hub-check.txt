@@ -1,0 +1,10 @@
+# asar Hub URL verification (2026-06-29 rebuild)
+
+source=dist/desktop/win-unpacked/resources/app.asar
+extract=dist/desktop/_asar_extract/client/desktop/baize-api.cjs
+
+PRODUCTION_HUB_URL = 'http://192.168.72.31:5000'
+192.168.72.147=NOT_FOUND
+
+build=desktop:dist @ baize-api.cjs mtime after .31 commit 6ebcf60
+result=PASS
