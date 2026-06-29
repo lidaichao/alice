@@ -1,0 +1,30 @@
+---
+description: 杰尼龟标准操作索引——测试矩阵 + 技能导航（≤20行）
+alwaysApply: true
+---
+
+# 杰尼龟操作索引
+
+## AliceV2 活仓（默认）
+
+| 改动范围 | 运行 |
+|----------|------|
+| `aliceV2/` 任意 | `npm test` |
+| Hub / API | `npm start` + `curl http://192.168.72.147:5000/health` |
+| Electron 客户端 | `npm run desktop`（注册/登录/发一条消息） |
+| 波次 A 建仓 | 复制 `alice/specs/baize/` @ `b989830` → `aliceV2/` |
+
+**产品真源**：`pm-Carroll/AliceV2_开发计划_总纲_v1.0.md` · Epic **AL-301**
+
+## v3.2 归档（`alice/` 只读 · 维护时）
+
+| 改动范围 | 运行 |
+|----------|------|
+| `backend/*.py` | `pytest backend/tests/ -v` |
+| `frontend/` / `admin-ui/` | `npm run build` |
+
+Windows pytest：`$env:PYTHONIOENCODING='utf-8'`
+
+## Skills
+
+`squirtle-startup-check` · `squirtle-pre-dev` · `squirtle-alicev2-guard` · `squirtle-battle-report` · `squirtle-v3-guard`（仅 v3.2）

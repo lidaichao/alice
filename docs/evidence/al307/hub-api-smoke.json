@@ -1,0 +1,100 @@
+[
+  {
+    "step": "register",
+    "status": 200,
+    "body": {
+      "ok": true,
+      "data": {
+        "user": {
+          "id": "user-93643adf-5b12-46e2-bf8c-ec8a71105b9e",
+          "username": "al307_mqz24qgy",
+          "displayName": "al307_mqz24qgy",
+          "status": "active",
+          "createdAt": "2026-06-29T10:10:47.196Z",
+          "updatedAt": "2026-06-29T10:10:47.196Z",
+          "lastLoginAt": "2026-06-29T10:10:47.196Z",
+          "jiraDefaults": {
+            "defaultProjectKey": null,
+            "username": null
+          }
+        },
+        "token": "7Z9Iaj229lMenwh91e7QFXIjfbLBfR4DId8GzhJCu-Y",
+        "session": {
+          "id": "session-8125fdcc-96a8-4887-833c-62a6b193292f",
+          "userId": "user-93643adf-5b12-46e2-bf8c-ec8a71105b9e",
+          "platform": "windows",
+          "deviceId": "al307-smoke",
+          "clientVersion": null,
+          "createdAt": "2026-06-29T10:10:47.230Z",
+          "expiresAt": "2026-07-29T10:10:47.230Z",
+          "lastSeenAt": "2026-06-29T10:10:47.230Z"
+        }
+      }
+    }
+  },
+  {
+    "step": "login",
+    "status": 200,
+    "body": {
+      "ok": true,
+      "data": {
+        "user": {
+          "id": "user-93643adf-5b12-46e2-bf8c-ec8a71105b9e",
+          "username": "al307_mqz24qgy",
+          "displayName": "al307_mqz24qgy",
+          "status": "active",
+          "createdAt": "2026-06-29T10:10:47.196Z",
+          "updatedAt": "2026-06-29T10:10:47.269Z",
+          "lastLoginAt": "2026-06-29T10:10:47.269Z",
+          "jiraDefaults": {
+            "defaultProjectKey": null,
+            "username": null
+          }
+        },
+        "token": "aWV0jgdGpG20Ul8FxQF4h8XoJcDDqZuFUjX8SfUcETY",
+        "session": {
+          "id": "session-17c6502f-3e93-4754-be8a-56a41166c71b",
+          "userId": "user-93643adf-5b12-46e2-bf8c-ec8a71105b9e",
+          "platform": "windows",
+          "deviceId": "al307-smoke",
+          "clientVersion": null,
+          "createdAt": "2026-06-29T10:10:47.270Z",
+          "expiresAt": "2026-07-29T10:10:47.270Z",
+          "lastSeenAt": "2026-06-29T10:10:47.270Z"
+        }
+      }
+    }
+  },
+  {
+    "step": "chat",
+    "status": 200,
+    "body": {
+      "ok": true,
+      "data": {
+        "reply": "白泽：这个请求需要 Claude Code 判断和处理，但服务器当前没有启用 Claude Code。请先在服务器配置中启用 Claude Code 后再试。",
+        "message": {
+          "platform": "windows",
+          "userId": "user-93643adf-5b12-46e2-bf8c-ec8a71105b9e",
+          "conversationId": "conv-7a96337f-9e84-4e60-9a22-cca81e5c7a55",
+          "clientId": "al307-smoke",
+          "text": "AL-307 smoke hello",
+          "attachmentIds": []
+        },
+        "results": [],
+        "provider": "claude_code",
+        "conversation": {
+          "id": "conv-7a96337f-9e84-4e60-9a22-cca81e5c7a55",
+          "title": "AL-307 smoke hello",
+          "createdAt": "2026-06-29T10:10:47.275Z",
+          "updatedAt": "2026-06-29T10:10:47.284Z",
+          "turnCount": 2
+        },
+        "pendingOperation": null,
+        "jiraOperation": null,
+        "jiraSearchSupplement": null,
+        "bugAnalysisRun": null,
+        "requirementCompletionRun": null
+      }
+    }
+  }
+]
