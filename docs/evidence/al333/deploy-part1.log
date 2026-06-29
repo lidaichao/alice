@@ -1,0 +1,15 @@
+[al333] === AL-334 env check ===
+v22.22.1
+9.2.0
+7.0.3
+[al333] === AL-335 stop old stack ===
+[al333] no alice containers running
+[al333] archive already exists: /home/alice/alice.archived-2026-06-29
+[al333] === AL-336 deploy code ===
+[sudo: authenticate] Password: 
+Cloning into '/opt/aliceV2'...
+Host key verification failed.
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
