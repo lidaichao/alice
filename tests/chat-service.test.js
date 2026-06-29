@@ -231,6 +231,38 @@ describe('baize chat service', () => {
     );
   });
 
+  it('returns Baize reply from an injected Cursor provider without Claude route classifier', async () => {
+    const { baizeRoot } = await seedKnowledgeBaseRoot();
+    let providerInput;
+    let classifierCalled = false;
+
+    await fs.mkdir(path.join(baizeRoot, 'config'), { recursive: true });
+    await fs.writeFile(path.join(baizeRoot, 'config', 'claude.yaml'), 'provider: cursor\n', 'utf8');
+
+    const result = await handleChatMessage({ text: '今天天气怎么样' }, {
+      baizeRoot,
+      claudeRouteClassifier: async () => {
+        classifierCalled = true;
+        throw new Error('classifier should not run for cursor provider');
+      },
+      cursorReplyGenerator: async (input) => {
+        providerInput = input;
+        return '白泽：Cursor 已结合上下文回答。';
+      }
+    });
+
+    expect(classifierCalled).toBe(false);
+    expect(result).toMatchObject({
+      provider: 'cursor',
+      reply: '白泽：Cursor 已结合上下文回答。',
+      message: {
+        platform: 'desktop',
+        text: '今天天气怎么样'
+      }
+    });
+    expect(providerInput.knowledgeResults).toEqual(expect.any(Array));
+  });
+
   it('passes Baize memory, logic, and skills context to Claude provider', async () => {
     const { baizeRoot } = await seedKnowledgeBaseRoot();
     let providerInput;

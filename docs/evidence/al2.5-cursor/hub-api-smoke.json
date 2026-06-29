@@ -1,0 +1,109 @@
+[
+  {
+    "step": "health",
+    "status": 200,
+    "body": {
+      "ok": true,
+      "service": "baize-local-hub",
+      "phase": "1"
+    }
+  },
+  {
+    "step": "register",
+    "status": 200,
+    "body": {
+      "ok": true,
+      "data": {
+        "user": {
+          "id": "user-91e9e424-d413-49af-9df2-e4c0079daeea",
+          "username": "al364_mqz36kqf",
+          "displayName": "al364_mqz36kqf",
+          "status": "active",
+          "createdAt": "2026-06-29T10:40:12.698Z",
+          "updatedAt": "2026-06-29T10:40:12.698Z",
+          "lastLoginAt": "2026-06-29T10:40:12.698Z",
+          "jiraDefaults": {
+            "defaultProjectKey": null,
+            "username": null
+          }
+        },
+        "token": "Vhr-HgQLPsv6xNTI1fNGsHuVCU_S8eYyTxAhdnrgh68",
+        "session": {
+          "id": "session-4dca89ee-dc11-41ac-a6fe-940633064b4a",
+          "userId": "user-91e9e424-d413-49af-9df2-e4c0079daeea",
+          "platform": "windows",
+          "deviceId": "al364-smoke",
+          "clientVersion": null,
+          "createdAt": "2026-06-29T10:40:12.731Z",
+          "expiresAt": "2026-07-29T10:40:12.731Z",
+          "lastSeenAt": "2026-06-29T10:40:12.731Z"
+        }
+      }
+    }
+  },
+  {
+    "step": "login",
+    "status": 200,
+    "body": {
+      "ok": true,
+      "data": {
+        "user": {
+          "id": "user-91e9e424-d413-49af-9df2-e4c0079daeea",
+          "username": "al364_mqz36kqf",
+          "displayName": "al364_mqz36kqf",
+          "status": "active",
+          "createdAt": "2026-06-29T10:40:12.698Z",
+          "updatedAt": "2026-06-29T10:40:12.764Z",
+          "lastLoginAt": "2026-06-29T10:40:12.764Z",
+          "jiraDefaults": {
+            "defaultProjectKey": null,
+            "username": null
+          }
+        },
+        "token": "aUFZjhwqX3SUpR-cQkidhEZeXgBWy9XtQ7HCf4tv3zw",
+        "session": {
+          "id": "session-1b7dc30c-24e9-4220-8780-63f7aa9adb6f",
+          "userId": "user-91e9e424-d413-49af-9df2-e4c0079daeea",
+          "platform": "windows",
+          "deviceId": "al364-smoke",
+          "clientVersion": null,
+          "createdAt": "2026-06-29T10:40:12.765Z",
+          "expiresAt": "2026-07-29T10:40:12.765Z",
+          "lastSeenAt": "2026-06-29T10:40:12.765Z"
+        }
+      }
+    }
+  },
+  {
+    "step": "chat",
+    "status": 200,
+    "body": {
+      "ok": true,
+      "data": {
+        "reply": "白泽是你部署在自有服务器上的**项目智能中枢**，为团队提供统一的智能协作与项目知识服务入口。",
+        "message": {
+          "platform": "windows",
+          "userId": "user-91e9e424-d413-49af-9df2-e4c0079daeea",
+          "conversationId": "conv-d043786c-3bf0-4ea1-94fd-bcf7285c20b7",
+          "clientId": "al364-smoke",
+          "text": "请用一句话介绍白泽是什么，不要提 Jira 或工程任务。",
+          "attachmentIds": []
+        },
+        "results": [],
+        "provider": "cursor",
+        "conversation": {
+          "id": "conv-d043786c-3bf0-4ea1-94fd-bcf7285c20b7",
+          "title": "请用一句话介绍白泽是什么，不要提 Jira 或工程任务。",
+          "createdAt": "2026-06-29T10:40:12.770Z",
+          "updatedAt": "2026-06-29T10:40:18.296Z",
+          "turnCount": 2
+        },
+        "pendingOperation": null,
+        "jiraOperation": null,
+        "jiraSearchSupplement": null,
+        "bugAnalysisRun": null,
+        "requirementCompletionRun": null
+      }
+    }
+  }
+]

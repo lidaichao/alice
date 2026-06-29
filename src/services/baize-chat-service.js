@@ -1,6 +1,7 @@
 const path = require('path');
 const paths = require('../config/paths');
 const { generateChatRouteClassification, generateClaudeReply, generateClaudeReplyStream, generateJiraDraftTextFromXlsx } = require('./claude-service');
+const { generateCursorReply, generateCursorReplyStream } = require('./cursor-service');
 const { runClaudeCodeTask } = require('./claude-code-service');
 const {
   appendConversationMessage,
@@ -1298,10 +1299,20 @@ async function collectShallowMemoryContext({ query, baizeRoot }) {
   return sanitizeMemoryResults(await searchShallowMemory({ baizeRoot }));
 }
 
+function resolveOrdinaryChatProvider(selectedProvider) {
+  if (selectedProvider === 'local_kb') {
+    return 'local_kb';
+  }
+  if (selectedProvider === 'cursor') {
+    return 'cursor';
+  }
+  return 'claude';
+}
+
 async function resolveProvider({ provider, baizeRoot } = {}) {
   const claudeConfig = await getClaudeConfig({ baizeRoot });
   const selectedProvider = provider || claudeConfig.provider || (claudeConfig.enabled === true ? 'claude' : 'local_kb');
-  if (!['local_kb', 'claude', 'claude_code'].includes(selectedProvider)) {
+  if (!['local_kb', 'claude', 'claude_code', 'cursor'].includes(selectedProvider)) {
     throw validationError('Unsupported chat provider.');
   }
 
@@ -1442,7 +1453,7 @@ function resolveChatRouteWithLocalRules({ message, selectedProvider, claudeCodeC
   }
 
   if (isOrdinaryChatIntent(message)) {
-    return { provider: selectedProvider === 'local_kb' ? 'local_kb' : 'claude', intent, claudeCodeConfig };
+    return { provider: resolveOrdinaryChatProvider(selectedProvider), intent, claudeCodeConfig };
   }
 
   return { provider: claudeCodeConfig.enabled === true ? 'claude_code_operation' : selectedProvider, intent, claudeCodeConfig };
@@ -1461,7 +1472,7 @@ function routeFromClaudeClassification({ classification, selectedProvider, claud
   };
 
   if (classification.route === 'ordinary_chat') {
-    return { provider: selectedProvider === 'local_kb' ? 'local_kb' : 'claude', intent, claudeCodeConfig };
+    return { provider: resolveOrdinaryChatProvider(selectedProvider), intent, claudeCodeConfig };
   }
   if (classification.route === 'dangerous') {
     return { provider: 'claude_code_blocked', intent, claudeCodeConfig };
@@ -1489,6 +1500,17 @@ async function resolveChatRoute({ message, conversation, historyMessages, result
       claudeCodeConfig,
       pendingJiraOperation
     };
+  }
+
+  if (selectedProvider === 'cursor') {
+    const localRoute = resolveChatRouteWithLocalRules({
+      message,
+      selectedProvider,
+      claudeCodeConfig,
+      attachments,
+      historyMessages
+    });
+    return { ...localRoute, pendingJiraOperation };
   }
 
   if (explicitProvider) {
@@ -1870,6 +1892,7 @@ async function handleChatMessage(input = {}, {
   baizeRoot,
   provider,
   claudeReplyGenerator = generateClaudeReply,
+  cursorReplyGenerator = generateCursorReply,
   claudeRouteClassifier = generateChatRouteClassification,
   jiraDraftTextGenerator = generateJiraDraftTextFromXlsx,
   claudeCodeReplyGenerator = runClaudeCodeTask,
@@ -1911,6 +1934,23 @@ async function handleChatMessage(input = {}, {
       const { shallowMemoryResults, logicContext, skillsContext } = await collectClaudeContext(message, baizeRoot, timings);
 
       reply = await measureTiming(timings, 'claudeReplyMs', () => claudeReplyGenerator({
+        message,
+        knowledgeResults: results,
+        attachments,
+        shallowMemoryResults,
+        logicContext,
+        skillsContext,
+        conversationMessages: historyMessages,
+        conversationSummary: conversation.manager && conversation.manager.summary,
+        baizeRoot,
+        onTiming: (name, value) => {
+          timings[name] = value;
+        }
+      }));
+    } else if (selectedProvider === 'cursor') {
+      const { shallowMemoryResults, logicContext, skillsContext } = await collectClaudeContext(message, baizeRoot, timings);
+
+      reply = await measureTiming(timings, 'cursorReplyMs', () => cursorReplyGenerator({
         message,
         knowledgeResults: results,
         attachments,
@@ -2286,6 +2326,7 @@ async function handleChatMessageStream(input = {}, {
   baizeRoot,
   provider,
   claudeReplyGenerator = generateClaudeReplyStream,
+  cursorReplyGenerator = generateCursorReplyStream,
   claudeRouteClassifier = generateChatRouteClassification,
   jiraDraftTextGenerator = generateJiraDraftTextFromXlsx,
   claudeCodeReplyGenerator = runClaudeCodeTask,
@@ -2333,6 +2374,24 @@ async function handleChatMessageStream(input = {}, {
       emitActivity('claude_reply', '正在让 Claude 整合知识库与上下文生成回复。');
       const { shallowMemoryResults, logicContext, skillsContext } = await collectClaudeContext(message, baizeRoot, timings);
       reply = await measureTiming(timings, 'claudeReplyMs', () => claudeReplyGenerator({
+        message,
+        knowledgeResults: results,
+        attachments,
+        shallowMemoryResults,
+        logicContext,
+        skillsContext,
+        conversationMessages: historyMessages,
+        conversationSummary: conversation.manager && conversation.manager.summary,
+        baizeRoot,
+        onDelta: (text) => emit({ type: 'delta', text }),
+        onTiming: (name, value) => {
+          timings[name] = value;
+        }
+      }));
+    } else if (selectedProvider === 'cursor') {
+      emitActivity('cursor_reply', '正在让 Cursor 整合知识库与上下文生成回复。');
+      const { shallowMemoryResults, logicContext, skillsContext } = await collectClaudeContext(message, baizeRoot, timings);
+      reply = await measureTiming(timings, 'cursorReplyMs', () => cursorReplyGenerator({
         message,
         knowledgeResults: results,
         attachments,

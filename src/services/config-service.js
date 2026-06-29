@@ -61,6 +61,29 @@ async function readYamlConfig(filePath) {
   return yamlText.trim() === '' ? {} : YAML.parse(yamlText) || {};
 }
 
+async function getCursorConfig({ baizeRoot = paths.BAIZE_ROOT } = {}) {
+  const fileConfig = await readYamlConfig(path.join(baizeRoot, 'config', 'cursor.yaml'));
+  const cursorConfig = fileConfig.cursor && typeof fileConfig.cursor === 'object' ? fileConfig.cursor : fileConfig;
+
+  return {
+    apiKey: readString(process.env.CURSOR_SDK_KEY) || readString(process.env.CURSOR_API_KEY) || readString(cursorConfig.apiKey) || null,
+    model: readString(process.env.CURSOR_SDK_MODEL) || readString(cursorConfig.model) || 'composer-2.5',
+    workspacePath: readString(process.env.CURSOR_SDK_WORKSPACE) || readString(cursorConfig.workspacePath) || baizeRoot
+  };
+}
+
+function toPublicCursorConfig(config) {
+  return {
+    apiKeyConfigured: Boolean(config.apiKey),
+    model: config.model,
+    workspaceConfigured: Boolean(config.workspacePath)
+  };
+}
+
+async function getPublicCursorConfig(options) {
+  return toPublicCursorConfig(await getCursorConfig(options));
+}
+
 async function getClaudeConfig({ baizeRoot = paths.BAIZE_ROOT } = {}) {
   const fileConfig = await readYamlConfig(path.join(baizeRoot, 'config', 'claude.yaml'));
   const claudeConfig = fileConfig.claude && typeof fileConfig.claude === 'object' ? fileConfig.claude : {};
@@ -329,6 +352,8 @@ async function getPublicClaudeCodeConfig(options) {
 
 module.exports = {
   getGlobalConfig,
+  getCursorConfig,
+  getPublicCursorConfig,
   getClaudeConfig,
   getPublicClaudeConfig,
   getJiraConfig,
