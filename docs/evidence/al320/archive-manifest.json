@@ -1,0 +1,30 @@
+[
+  {
+    "path": "dify-datasets/datasets-manifest.json",
+    "bytes": 166
+  },
+  {
+    "path": "docker-volumes/volume-inspect-dify-n8n.json.txt",
+    "bytes": 1127
+  },
+  {
+    "path": "docker-volumes/volume-ls.txt",
+    "bytes": 253
+  },
+  {
+    "path": "hub-config/env.prod.redacted",
+    "bytes": 539
+  },
+  {
+    "path": "hub-config/global_config.redacted.json",
+    "bytes": 2868
+  },
+  {
+    "path": "n8n-workflows/workflows-all.redacted.json",
+    "bytes": 93473
+  },
+  {
+    "path": "n8n-workflows/workflows-index.json",
+    "bytes": 2827
+  }
+]

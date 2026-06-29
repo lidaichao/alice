@@ -1,0 +1,35 @@
+{
+  "active_requests": 0,
+  "api_version": "1.0",
+  "cache": {
+    "context": 0,
+    "semantic": 0,
+    "svn_commits": 0
+  },
+  "engine": "deepseek-v4-flash",
+  "faiss_indexed_docs": 0,
+  "hub_only_jira": false,
+  "integrations": {
+    "jira": {
+      "latency_ms": 26,
+      "status": "ok"
+    },
+    "kb": {
+      "detail": "Notion + Google \u4e91\u76d8\u5df2\u914d\u7f6e",
+      "status": "ok"
+    },
+    "model": {
+      "detail": "API Key \u5df2\u914d\u7f6e",
+      "status": "configured",
+      "url_set": true
+    }
+  },
+  "max_threads": 32,
+  "service": "ai-bridge-v5",
+  "status": "degraded",
+  "thread_pool": {
+    "active": 35,
+    "max": 32,
+    "saturated": true
+  }
+}

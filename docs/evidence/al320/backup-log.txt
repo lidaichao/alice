@@ -1,0 +1,6 @@
+AL-321 hub-config OK (redacted)
+AL-322 n8n workflows=29 (CLI export; REST API degraded)
+AL-323 dify datasets=0
+AL-324/325 docker volumes OK
+health=200 during backup
+archive files=7

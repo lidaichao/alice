@@ -1,0 +1,9 @@
+DRIVER    VOLUME NAME
+local     alice_alice_data
+local     alice_alice_logs
+local     alice_dify_pgdata
+local     alice_dify_redis
+local     alice_dify_sandbox
+local     alice_dify_storage
+local     alice_dify_weaviate
+local     alice_n8n_data

@@ -1,0 +1,33 @@
+[
+    {
+        "CreatedAt": "2026-06-13T06:38:37Z",
+        "Driver": "local",
+        "Labels": {
+            "com.docker.compose.config-hash": "2894078f0f6c3d8469549591aa11c92bb7ff8fecc41d1b4ace155b94daf05f39",
+            "com.docker.compose.project": "alice",
+            "com.docker.compose.version": "2.40.3",
+            "com.docker.compose.volume": "dify_pgdata"
+        },
+        "Mountpoint": "/var/lib/docker/volumes/alice_dify_pgdata/_data",
+        "Name": "alice_dify_pgdata",
+        "Options": null,
+        "Scope": "local"
+    }
+]
+
+[
+    {
+        "CreatedAt": "2026-06-15T12:44:45Z",
+        "Driver": "local",
+        "Labels": {
+            "com.docker.compose.config-hash": "f9be8b50987dceff55371a7c6b4fe5c51a8d611a83343bfe600295e68e1bd669",
+            "com.docker.compose.project": "alice",
+            "com.docker.compose.version": "2.40.3",
+            "com.docker.compose.volume": "n8n_data"
+        },
+        "Mountpoint": "/var/lib/docker/volumes/alice_n8n_data/_data",
+        "Name": "alice_n8n_data",
+        "Options": null,
+        "Scope": "local"
+    }
+]
