@@ -1,0 +1,7 @@
+local=H:\workbuddy\aliceV2\releases\白泽 Setup.exe
+remote=alice@192.168.72.147:/tmp/alicev2-releases/白泽 Setup.exe
+bytes=217738456
+sha256=10297C0E7C71A171B6706A867A3A1AAEF77E74A7C67814044BA2B223D0820BC5
+status=FAILED
+error=SSH connection refused (port 22) from dev machine to 192.168.72.147
+note=Installer ready locally; scp pending when network/SSH to 147 is reachable. Does not block local AL-328/330.

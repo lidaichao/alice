@@ -1,4 +1,5 @@
-const DEFAULT_SERVER_URL = process.env.BAIZE_DESKTOP_SERVER_URL || 'https://baize.baizerobotai.site';
+const PRODUCTION_HUB_URL = 'http://192.168.72.147:5000';
+const DEFAULT_SERVER_URL = process.env.BAIZE_DESKTOP_SERVER_URL || PRODUCTION_HUB_URL;
 
 function normalizeServerUrl(serverUrl = DEFAULT_SERVER_URL) {
   try {
@@ -523,6 +524,7 @@ function applyRequirementCompletionRecovery(serverUrl, runId, input = {}, option
 }
 
 module.exports = {
+  PRODUCTION_HUB_URL,
   DEFAULT_SERVER_URL,
   normalizeServerUrl,
   registerAccount,

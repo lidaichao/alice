@@ -1,4 +1,6 @@
 const {
+  PRODUCTION_HUB_URL,
+  DEFAULT_SERVER_URL,
   normalizeServerUrl,
   registerAccount,
   loginAccount,
@@ -49,6 +51,11 @@ function jsonResponse(body, { status = 200 } = {}) {
 }
 
 describe('desktop Baize API wrapper', () => {
+  it('defaults production hub URL to 147:5000', () => {
+    expect(PRODUCTION_HUB_URL).toBe('http://192.168.72.147:5000');
+    expect(DEFAULT_SERVER_URL).toBe(PRODUCTION_HUB_URL);
+  });
+
   it('normalizes server URLs', () => {
     expect(normalizeServerUrl('http://127.0.0.1:3000/path')).toBe('http://127.0.0.1:3000');
   });

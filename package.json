@@ -36,6 +36,7 @@
   "build": {
     "appId": "com.baize.desktop",
     "productName": "白泽",
+    "npmRebuild": false,
     "directories": {
       "output": "dist/desktop"
     },
@@ -52,6 +53,7 @@
     ],
     "win": {
       "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
       "target": [
         "nsis"
       ]

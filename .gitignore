@@ -13,6 +13,8 @@ baize/config/wecom.yaml
 baize/config/speech.yaml
 baize/config/unity-build.yaml
 dist/
+releases/
+build/
 build/
 github/
 tools/nssm.exe
