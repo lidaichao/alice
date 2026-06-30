@@ -1,9 +1,9 @@
 @echo off
 chcp 65001 >nul
-cd /d "H:\workbuddy\baize"
+cd /d "%~dp0"
 echo.
 echo ╔════════════════════════════════════╗
-echo ║     Alice Baize Local Hub         ║
+echo ║     Alice Local Hub               ║
 echo ║     启动中...                     ║
 echo ╚════════════════════════════════════╝
 echo.

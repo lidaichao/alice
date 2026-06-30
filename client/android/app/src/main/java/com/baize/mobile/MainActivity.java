@@ -195,7 +195,7 @@ public class MainActivity extends Activity {
         authRoot.setBackgroundColor(BACKGROUND);
 
         TextView brand = new TextView(this);
-        brand.setText("白泽账号");
+        brand.setText("Alice 账号");
         brand.setTextColor(GREEN);
         brand.setTextSize(14);
         brand.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -287,7 +287,7 @@ public class MainActivity extends Activity {
     private void renderAuthMode() {
         boolean isRegister = registerMode;
         authTitle.setText(isRegister ? "注册" : "登录");
-        authDescription.setText(isRegister ? "创建账号后，Windows 和 Android 都可以用这个账号登录。" : "登录后可在 Windows 和 Android 共用同一个白泽账号。");
+        authDescription.setText(isRegister ? "创建账号后，Windows 和 Android 都可以用这个账号登录。" : "登录后可在 Windows 和 Android 共用同一个Alice 账号。");
         confirmPasswordInput.setVisibility(isRegister ? View.VISIBLE : View.GONE);
         authSubmitButton.setText(isRegister ? "注册并登录" : "登录");
         authSwitchButton.setText(isRegister ? "返回登录" : "注册账号");
@@ -373,7 +373,7 @@ public class MainActivity extends Activity {
         renderUpdateStatus();
         chatStatus.setText("");
         if (messagesLayout.getChildCount() == 0) {
-            addMessage("白泽", "你可以开始和白泽对话。");
+            addMessage("Alice", "你可以开始和Alice 对话。");
         }
         setContentView(chatRoot);
     }
@@ -392,7 +392,7 @@ public class MainActivity extends Activity {
         chatRoot.addView(header, matchWrap());
 
         TextView title = new TextView(this);
-        title.setText("白泽");
+        title.setText("Alice");
         title.setTextColor(TEXT);
         title.setTextSize(18);
         title.setGravity(Gravity.CENTER_VERTICAL);
@@ -439,7 +439,7 @@ public class MainActivity extends Activity {
         settingsPanel.addView(accountText, matchWrap(dp(8)));
 
         TextView defaultsTitle = new TextView(this);
-        defaultsTitle.setText("Jira 默认配置（跟随白泽账号）");
+        defaultsTitle.setText("Jira 默认配置（跟随Alice账号）");
         defaultsTitle.setTextColor(TEXT);
         defaultsTitle.setTextSize(15);
         defaultsTitle.setPadding(0, dp(4), 0, dp(4));
@@ -850,7 +850,7 @@ public class MainActivity extends Activity {
         }
         if (!getPackageManager().canRequestPackageInstalls()) {
             pendingUpdateApk = apkFile;
-            setUpdateMessage("请先允许白泽安装未知应用，返回后会继续安装。");
+            setUpdateMessage("请先允许Alice安装未知应用，返回后会继续安装。");
             Intent settingsIntent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName()));
             startActivity(settingsIntent);
             return;
@@ -971,14 +971,14 @@ public class MainActivity extends Activity {
             @Override
             public void onError(Exception error) {
                 setChatLoading(false);
-                addMessage("白泽", messageOf(error));
+                addMessage("Alice", messageOf(error));
             }
         });
     }
 
     private void sendChatFallback(JSONObject body) throws Exception {
         JSONObject data = request("POST", "/chat", body, token);
-        final String reply = data.optString("reply", "白泽没有返回内容。");
+        final String reply = data.optString("reply", "Alice没有返回内容。");
         JSONObject conversation = data.optJSONObject("conversation");
         if (conversation != null) {
             conversationId = conversation.optString("id", conversationId);
@@ -986,7 +986,7 @@ public class MainActivity extends Activity {
         runOnMain(new Runnable() {
             @Override
             public void run() {
-                addMessage("白泽", reply);
+                addMessage("Alice", reply);
                 setChatLoading(false);
             }
         });
@@ -1063,10 +1063,10 @@ public class MainActivity extends Activity {
             return;
         }
         if ("error".equals(type)) {
-            throw new ApiException(event.optString("message", "白泽流式回复失败。"));
+            throw new ApiException(event.optString("message", "Alice流式回复失败。"));
         }
         if ("done".equals(type)) {
-            final String reply = event.optString("reply", "白泽没有返回内容。");
+            final String reply = event.optString("reply", "Alice没有返回内容。");
             JSONObject conversation = event.optJSONObject("conversation");
             if (conversation != null) {
                 conversationId = conversation.optString("id", conversationId);
@@ -1074,7 +1074,7 @@ public class MainActivity extends Activity {
             runOnMain(new Runnable() {
                 @Override
                 public void run() {
-                    addMessage("白泽", reply);
+                    addMessage("Alice", reply);
                     setChatLoading(false);
                 }
             });
@@ -1121,7 +1121,7 @@ public class MainActivity extends Activity {
         if (saveAccountJiraDefaultsButton != null) {
             saveAccountJiraDefaultsButton.setEnabled(!loading && !updateBusy);
         }
-        chatStatus.setText(loading ? "正在请求白泽。" : "");
+        chatStatus.setText(loading ? "正在请求Alice。" : "");
     }
 
     private void addMessage(String author, String text) {
@@ -1183,7 +1183,7 @@ public class MainActivity extends Activity {
         try {
             response = responseText == null || responseText.trim().isEmpty() ? new JSONObject() : new JSONObject(responseText);
         } catch (JSONException error) {
-            throw new ApiException("白泽服务器返回了非 JSON 响应：HTTP " + status + "。请确认服务器已重启到最新版本。");
+            throw new ApiException("Alice服务器返回了非 JSON 响应：HTTP " + status + "。请确认服务器已重启到最新版本。");
         }
         if (status >= 400 || !response.optBoolean("ok", false)) {
             JSONObject error = response.optJSONObject("error");

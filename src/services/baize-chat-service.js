@@ -18,7 +18,7 @@ const { getSkillsContext } = require('./plugin-service');
 const fs = require('fs/promises');
 const { appendJsonLine } = require('../lib/file-store');
 const { createPendingOperation } = require('./pending-operation-service');
-const { searchAndAnalyzeJira } = require('./jira-search-service');
+const { searchAndAnalyzeJira, extractJiraQuery, formatJiraAnalysisReply } = require('./jira-search-service');
 const { addJiraComment, deleteJiraAuthorComments, updateJiraIssue, transitionJiraIssue, deleteJiraIssue } = require('./jira-client-service');
 const { auditPluginOperation } = require('./plugin-gateway-service');
 const { createPendingAudit, markPendingAuditStatus, getPendingAudit } = require('./pending-audit-service');
@@ -410,36 +410,6 @@ function shouldDeleteJiraIssue(text) {
   return JIRA_DELETE_ISSUE_VERBS.test(source) && !/评论|备注|comment/i.test(source);
 }
 
-function extractJiraQuery(text) {
-  const assigneeMatch = text.match(/([一-龥A-Za-z0-9_.-]+)的[^，。\n]*(?:jira|Jira|JIRA)[^，。\n]*(?:需求单|issue|任务)/);
-  const statusMatch = text.match(/状态(?:是|为)?[「“\"']?([^，。\n」”\"']+)/);
-  return {
-    assignee: assigneeMatch ? assigneeMatch[1].replace(/^(查询|拉取|筛选|分析)/, '') : undefined,
-    status: statusMatch ? statusMatch[1].trim() : undefined
-  };
-}
-
-function formatJiraAnalysisReply(result) {
-  if (result && result.requiresUserInput) {
-    const supplement = result.supplement || {};
-    const choices = Array.isArray(supplement.choices) && supplement.choices.length > 0
-      ? supplement.choices.map((choice, index) => `${index + 1}. ${choice.label || choice.value}`).join('\n')
-      : null;
-    return ['Alice：Jira 查询需要补充条件。', supplement.prompt, choices].filter(Boolean).join('\n');
-  }
-  if (result && result.notRecoverable) {
-    const recovery = result.jiraSearchRecovery || {};
-    return ['Alice：暂时无法完成这次 Jira 查询。', recovery.summary, recovery.reason].filter(Boolean).join('\n');
-  }
-  const lines = result.issues.slice(0, 10).map((issue, index) => `${index + 1}. ${issue.key} ${issue.summary}（${issue.status || '未设置状态'}，${issue.assignee || '未分配'}）`);
-  const resolvedUsers = Array.isArray(result.resolvedUsers) && result.resolvedUsers.length > 0
-    ? `已解析 Jira 用户：${result.resolvedUsers.join('、')}`
-    : null;
-  const recoveryNote = result && result.jiraSearchRecovery && result.jiraSearchRecovery.status === 'retry_succeeded'
-    ? '已根据 Jira 错误自动修正查询。'
-    : null;
-  return ['Alice：已拉取 Jira 需求单并完成状态分析。', recoveryNote, resolvedUsers, result.analysis.summary, ...lines].filter(Boolean).join('\n');
-}
 
 function formatJiraCommentReply(issueKey, body) {
   const trimmed = body.length > 200 ? `${body.slice(0, 200)}…` : body;

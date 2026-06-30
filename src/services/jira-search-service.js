@@ -737,5 +737,40 @@ module.exports = {
   resolveJiraUsers,
   simplifyIssue,
   analyzeIssues,
-  searchAndAnalyzeJira
+  searchAndAnalyzeJira,
+  extractJiraQuery,
+  formatJiraAnalysisReply
 };
+
+// ========== 从 baize-chat-service.js 迁移的函数 ==========
+
+function extractJiraQuery(text) {
+  const assigneeMatch = text.match(/([一-龥A-Za-z0-9_.-]+)的[^，。\n]*(?:jira|Jira|JIRA)[^，。\n]*(?:需求单|issue|任务)/);
+  const statusMatch = text.match(/状态(?:是|为)?[「"']([^，。\n」"']+)/);
+  return {
+    assignee: assigneeMatch ? assigneeMatch[1].replace(/^(查询|拉取|筛选|分析)/, '') : undefined,
+    status: statusMatch ? statusMatch[1].trim() : undefined
+  };
+}
+
+function formatJiraAnalysisReply(result) {
+  if (result && result.requiresUserInput) {
+    const supplement = result.supplement || {};
+    const choices = Array.isArray(supplement.choices) && supplement.choices.length > 0
+      ? supplement.choices.map((choice, index) => `${index + 1}. ${choice.label || choice.value}`).join('\n')
+      : null;
+    return ['Alice：Jira 查询需要补充条件。', supplement.prompt, choices].filter(Boolean).join('\n');
+  }
+  if (result && result.notRecoverable) {
+    const recovery = result.jiraSearchRecovery || {};
+    return ['Alice：暂时无法完成这次 Jira 查询。', recovery.summary, recovery.reason].filter(Boolean).join('\n');
+  }
+  const lines = result.issues.slice(0, 10).map((issue, index) => `${index + 1}. ${issue.key} ${issue.summary}（${issue.status || '未设置状态'}，${issue.assignee || '未分配'}）`);
+  const resolvedUsers = Array.isArray(result.resolvedUsers) && result.resolvedUsers.length > 0
+    ? `已解析 Jira 用户：${result.resolvedUsers.join('、')}`
+    : null;
+  const recoveryNote = result && result.jiraSearchRecovery && result.jiraSearchRecovery.status === 'retry_succeeded'
+    ? '已根据 Jira 错误自动修正查询。'
+    : null;
+  return ['Alice：已拉取 Jira 需求单并完成状态分析。', recoveryNote, resolvedUsers, result.analysis.summary, ...lines].filter(Boolean).join('\n');
+}
