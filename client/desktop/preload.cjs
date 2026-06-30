@@ -156,5 +156,7 @@ contextBridge.exposeInMainWorld('baize', {
   setActiveWorkspace: (workspaceId) => ipcRenderer.invoke('workspace:setActive', workspaceId),
   revokeWorkspace: (workspaceId) => ipcRenderer.invoke('workspace:revoke', workspaceId),
   previewPatch: (input) => ipcRenderer.invoke('patch:preview', input),
-  applyPatch: (input) => ipcRenderer.invoke('patch:apply', input)
+  applyPatch: (input) => ipcRenderer.invoke('patch:apply', input),
+  getJiraConfig: () => ipcRenderer.invoke('settings:getJiraConfig'),
+  setJiraConfig: (input) => ipcRenderer.invoke('settings:setJiraConfig', input)
 });

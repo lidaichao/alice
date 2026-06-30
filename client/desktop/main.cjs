@@ -550,6 +550,8 @@ function registerIpcHandlers() {
   ipcMain.handle('account:saveWeComBinding', (event, input = {}) => getClientAccountStore().saveWeComBinding(input));
   ipcMain.handle('settings:getShowServerActivity', () => getShowServerActivity());
   ipcMain.handle('settings:setShowServerActivity', (event, value) => setShowServerActivity(value));
+  ipcMain.handle('settings:getJiraConfig', () => getJiraConfigStore().getPublicStatus());
+  ipcMain.handle('settings:setJiraConfig', (event, input = {}) => getJiraConfigStore().saveConfig(input));
   ipcMain.handle('debug:log', async (event, line) => {
     try {
       const logPath = path.join(app.getPath('userData'), 'baize-renderer.log');
@@ -794,12 +796,7 @@ function createWindow() {
     }
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'index.html'));
-  if (process.env.REACT_CLIENT) {
-    mainWindow.loadURL('http://localhost:5173');
-  } else {
-    mainWindow.loadFile(path.join(__dirname, 'index.html'));
-  }
+  mainWindow.loadFile(path.join(__dirname, '../client/desktop-react/dist/index.html'));
 }
 
 app.whenReady().then(() => {
