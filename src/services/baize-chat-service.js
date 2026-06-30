@@ -1557,6 +1557,17 @@ async function resolveChatRoute({ message, conversation, historyMessages, result
     }
   }
 
+  // AliceV2: Cursor 本地 miss 且 AI 分类器不可用/未命中时，保持 Cursor ordinary_chat
+  // 旧行为：Cursor 分支直接 return，永不至此；AL-429 fall-through 后需此保护
+  if (selectedProvider === 'cursor') {
+    return {
+      provider: 'cursor',
+      intent: { route: 'ordinary_chat', confidence: 0.5, reason: 'Cursor 本地规则未命中，AI 分类器不可用，保持 Cursor 作为默认通道。' },
+      claudeCodeConfig,
+      pendingJiraOperation
+    };
+  }
+
   return {
     provider: claudeCodeConfig.enabled === true ? 'claude_code_operation' : 'claude_code_unavailable',
     intent: { route: 'operation', confidence: 0.55, reason: 'Claude API 分类不可用，交给 Claude Code 判断。', requiresConfirmation: true },
