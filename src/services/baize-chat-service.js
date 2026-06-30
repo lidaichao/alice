@@ -19,7 +19,7 @@ const fs = require('fs/promises');
 const { appendJsonLine } = require('../lib/file-store');
 const { createPendingOperation } = require('./pending-operation-service');
 const { searchAndAnalyzeJira, extractJiraQuery, formatJiraAnalysisReply } = require('./jira-search-service');
-const { addJiraComment, deleteJiraAuthorComments, updateJiraIssue, transitionJiraIssue, deleteJiraIssue } = require('./jira-client-service');
+const { addJiraComment, deleteJiraAuthorComments, updateJiraIssue, transitionJiraIssue, deleteJiraIssue, listJiraTransitions } = require('./jira-client-service');
 const { auditPluginOperation } = require('./plugin-gateway-service');
 const { createPendingAudit, markPendingAuditStatus, getPendingAudit } = require('./pending-audit-service');
 const { getAttachment, listConversationAttachments, ensureSpreadsheetSemanticExtraction } = require('./attachment-service');
@@ -220,7 +220,14 @@ function formatJiraDraftUpdateReply(operation) {
 
 function shouldUseJiraPlugin(text) {
   const query = text.toLowerCase();
-  return query.includes('jira') && /(查询|拉取|筛选|分析|状态|需求单|issue)/i.test(text);
+  if (query.includes('jira')) {
+    return /(查询|拉取|筛选|分析|状态|需求单|issue)/i.test(text);
+  }
+  // AliceV2 补漏：不含 "jira" 但包含 BUG/缺陷等 Jira 语义关键词
+  if (/(缺陷|BUG|bug|Bug)/.test(text) && !/(代码|编译|报错|stack\s*trace|修复|修复建议)/i.test(text)) {
+    return /(查询|拉取|筛选|分析|状态|需求单|还没关|没关|未关|未关闭|还有|有哪些|列一下|查一下|看一下|看一下)/i.test(text);
+  }
+  return false;
 }
 
 const JIRA_COMMENT_VERBS = /(写入|添加|加|增加|补|发|留|提交|写一条|写一句)\s*(?:一个|一条|一句)?\s*(评论|备注|comment)/i;
@@ -306,8 +313,8 @@ function shouldBulkAddJiraComment(text) {
   return Boolean(extractJiraBulkCommentRequest(text));
 }
 
-const JIRA_OPERATION_INTENT_HINTS = /(分析|排查|定位|根因|原因|结论|处理建议|AI\s*分析|ai\s*分析|评论草稿|写上评论|写评论|自动.*评论|启动|开始|继续|恢复)/i;
-const JIRA_CONTEXT_REFERENCE_HINTS = /(jira|Jira|JIRA|BUG\s*单|Bug\s*单|bug\s*单|这(?:些|几个|四个|十个)?\s*BUG|这些单|这几个单|这四个单|上次查出的)/;
+const JIRA_OPERATION_INTENT_HINTS = /(分析|排查|定位|根因|原因|结论|处理建议|AI\s*分析|ai\s*分析|评论草稿|写上评论|写评论|自动.*评论|启动|开始|继续|恢复|查询|检查|查看|哪些|还没|没关|未关|未关闭|没修|未修复|未完成|待修复|待处理|还有|有多少|列一下|汇总|统计|状态|优先级|BUG|缺陷|bug)/i;
+const JIRA_CONTEXT_REFERENCE_HINTS = /(jira|Jira|JIRA|BUG\s*单|Bug\s*单|bug\s*单|缺陷|这(?:些|几个|四个|十个)?\s*BUG|这些单|这几个单|这四个单|上次查出的)/;
 const JIRA_BUG_ANALYSIS_CONTINUE_HINTS = /^(开始|开始分析|开始进行分析|继续|继续分析|继续\/恢复|恢复|恢复分析|重新分析|重新跑|重跑|再分析|进行分析)$/i;
 
 function shouldUseJiraOperationIntent(text) {
@@ -408,6 +415,18 @@ function shouldDeleteJiraIssue(text) {
     return false;
   }
   return JIRA_DELETE_ISSUE_VERBS.test(source) && !/评论|备注|comment/i.test(source);
+}
+
+function extractJiraTransitionRequest(text) {
+  const source = String(text || '');
+  const issueKeyMatch = source.match(JIRA_ISSUE_KEY_PATTERN);
+  if (!issueKeyMatch) {
+    return null;
+  }
+  const issueKey = issueKeyMatch[1];
+  // Extract target status: "改为完成" → "完成", "转到开发中" → "开发中", "进入已解决" → "已解决"
+  const targetMatch = source.match(/(?:改为|改成|转到|切到|进入|reopen|重新打开)\s*(\S+)/i);
+  return { issueKey, targetStatus: targetMatch ? targetMatch[1] : null };
 }
 
 
@@ -777,6 +796,29 @@ async function executeJiraTransitionIssue({ intent, baizeRoot, fetchImpl }) {
   try {
     await transitionJiraIssue(config, issueKey, transition, { fetchImpl });
     return { reply: `Alice：${issueKey} 已切换状态（${transition.id || transition.name}）。`, issueKey };
+  } catch (error) {
+    return { reply: `Alice：切换 ${issueKey} 状态失败：${error.publicMessage || error.message || '未知错误'}`, failed: true };
+  }
+}
+
+async function executeJiraTransitionDirect({ issueKey, targetStatus, baizeRoot, fetchImpl }) {
+  const config = await getJiraConfig({ baizeRoot });
+  try {
+    const transitions = await listJiraTransitions(config, issueKey, { fetchImpl });
+    if (!transitions || transitions.length === 0) {
+      return { reply: `Alice：${issueKey} 当前没有可用的状态流转。` };
+    }
+    // Fuzzy match: exact name match first, then includes match
+    let matched = transitions.find((t) => t.name === targetStatus || (t.to && t.to.name === targetStatus));
+    if (!matched) {
+      matched = transitions.find((t) => t.name.includes(targetStatus) || (t.to && t.to.name.includes(targetStatus)));
+    }
+    if (!matched) {
+      const available = transitions.map((t) => t.name || (t.to && t.to.name)).filter(Boolean).join('、');
+      return { reply: `Alice：${issueKey} 无法转到"${targetStatus}"。可用的流转：${available || '无'}` };
+    }
+    await transitionJiraIssue(config, issueKey, matched, { fetchImpl });
+    return { reply: `Alice：${issueKey} 已切换状态至"${matched.name || (matched.to && matched.to.name)}"。`, issueKey };
   } catch (error) {
     return { reply: `Alice：切换 ${issueKey} 状态失败：${error.publicMessage || error.message || '未知错误'}`, failed: true };
   }
@@ -1345,7 +1387,7 @@ function routeJiraIssueWrite(claudeCodeConfig, route) {
   if (claudeCodeConfig && claudeCodeConfig.enabled === true) {
     return { provider: 'claude_code_operation', intent, claudeCodeConfig };
   }
-  return { provider: 'jira_summarize_then_comment_unavailable', intent, claudeCodeConfig: null };
+  return { provider: route, intent, claudeCodeConfig: null };
 }
 
 function routeFromEngineeringIntent(intent, claudeCodeConfig, selectedProvider) {
@@ -2227,6 +2269,26 @@ async function handleChatMessage(input = {}, {
       const deleteResult = await measureTiming(timings, 'jiraDeleteOwnCommentsMs', () => executeJiraDeleteOwnComments(route.intent, { baizeRoot, fetchImpl, claudeCodeRunner }));
       reply = deleteResult.reply;
       selectedProvider = 'jira';
+    } else if (selectedProvider === 'jira_transition_issue') {
+      const request = extractJiraTransitionRequest(message.text);
+      if (request && request.targetStatus) {
+        const result = await measureTiming(timings, 'jiraTransitionDirectMs', () => executeJiraTransitionDirect({
+          issueKey: request.issueKey,
+          targetStatus: request.targetStatus,
+          baizeRoot,
+          fetchImpl
+        }));
+        reply = result.reply;
+      } else {
+        reply = `Alice：无法确定要将 ${request ? request.issueKey : 'Jira 单'} 转到哪个状态。请说明目标状态，如"AL-444 改为完成"。`;
+      }
+      selectedProvider = 'jira';
+    } else if (selectedProvider === 'jira_update_issue') {
+      reply = 'Alice：Jira 字段更新（标题/描述/处理人变更）需要 AI 操作引擎解析具体字段，当前未启用 Claude Code。请使用 Jira 网页手动操作。';
+      selectedProvider = 'jira';
+    } else if (selectedProvider === 'jira_delete_issue') {
+      reply = 'Alice：Jira 单删除需要 AI 操作引擎确认删除对象，当前未启用 Claude Code。请使用 Jira 网页手动操作。';
+      selectedProvider = 'jira';
     } else if (selectedProvider === 'jira_summarize_then_comment_unavailable') {
       reply = 'Alice：自动总结后写 Jira 评论需要先启用 Claude Code。';
       selectedProvider = 'jira';
@@ -2762,6 +2824,30 @@ async function handleChatMessageStream(input = {}, {
         onIssueResult: (result) => emit({ type: 'jira_comment_delete_result', ...result })
       }));
       reply = deleteResult.reply;
+      selectedProvider = 'jira';
+      emit({ type: 'delta', text: reply });
+    } else if (selectedProvider === 'jira_transition_issue') {
+      const request = extractJiraTransitionRequest(message.text);
+      if (request && request.targetStatus) {
+        emitActivity('jira_transition_issue', `准备切换 ${request.issueKey} 状态至"${request.targetStatus}"。`);
+        const result = await measureTiming(timings, 'jiraTransitionDirectMs', () => executeJiraTransitionDirect({
+          issueKey: request.issueKey,
+          targetStatus: request.targetStatus,
+          baizeRoot,
+          fetchImpl
+        }));
+        reply = result.reply;
+      } else {
+        reply = `Alice：无法确定要将 ${request ? request.issueKey : 'Jira 单'} 转到哪个状态。请说明目标状态，如"AL-444 改为完成"。`;
+      }
+      selectedProvider = 'jira';
+      emit({ type: 'delta', text: reply });
+    } else if (selectedProvider === 'jira_update_issue') {
+      reply = 'Alice：Jira 字段更新（标题/描述/处理人变更）需要 AI 操作引擎解析具体字段，当前未启用 Claude Code。请使用 Jira 网页手动操作。';
+      selectedProvider = 'jira';
+      emit({ type: 'delta', text: reply });
+    } else if (selectedProvider === 'jira_delete_issue') {
+      reply = 'Alice：Jira 单删除需要 AI 操作引擎确认删除对象，当前未启用 Claude Code。请使用 Jira 网页手动操作。';
       selectedProvider = 'jira';
       emit({ type: 'delta', text: reply });
     } else if (selectedProvider === 'jira_summarize_then_comment_unavailable') {
