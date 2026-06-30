@@ -257,7 +257,7 @@ function simplifyIssue(issue = {}, { includeCompletionTiming = false } = {}) {
 
 function buildUserAmbiguityPrompt({ input, term, users }) {
   return [
-    '你是白泽的 Jira 搜索歧义分析器。服务器正在执行只读 Jira 查询，不会写入 Jira。',
+    '你是Alice的 Jira 搜索歧义分析器。服务器正在执行只读 Jira 查询，不会写入 Jira。',
     'Jira 用户搜索返回多个候选时，你需要根据用户原始查询、候选 displayName/name/email 判断是否能自动选择。',
     '如果能确定用户想要的是哪些候选，输出 resolved；如果不能确定且必须由用户选择，输出 needs_user_input。',
     '只输出严格 JSON，不要输出 Markdown 代码块，不要解释。',
