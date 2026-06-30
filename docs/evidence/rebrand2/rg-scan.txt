@@ -1,1 +1,1 @@
-H:/workbuddy/aliceV2/scripts/_rebrand2-evidence.sh: line 6: rg: command not found
+﻿0 matches for 鐧芥辰|灏忔辰|鑽掗噹涔辨枟 in baize/config/ assertions/ memory/ skills/wecom/
