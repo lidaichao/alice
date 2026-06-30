@@ -145,7 +145,7 @@ async function generateCursorReply(input = {}) {
   const { onTiming } = input;
   const config = await getCursorConfig({ baizeRoot: input.baizeRoot });
   if (!config.apiKey) {
-    throw configurationError('服务器尚未配置 Cursor SDK API Key（CURSOR_SDK_KEY）。');
+    return 'AI 引擎尚未配置密钥，暂时无法回答。请联系管理员完成 Cursor SDK 设置（详见 docs/SETUP.md）。';
   }
 
   const startedAt = Date.now();
@@ -170,7 +170,7 @@ async function generateCursorReplyStream(input = {}) {
   const { onDelta, onTiming } = input;
   const config = await getCursorConfig({ baizeRoot: input.baizeRoot });
   if (!config.apiKey) {
-    throw configurationError('服务器尚未配置 Cursor SDK API Key（CURSOR_SDK_KEY）。');
+    return 'AI 引擎尚未配置密钥，暂时无法回答。请联系管理员完成 Cursor SDK 设置（详见 docs/SETUP.md）。';
   }
 
   const startedAt = Date.now();
