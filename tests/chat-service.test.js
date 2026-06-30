@@ -243,7 +243,8 @@ describe('baize chat service', () => {
       baizeRoot,
       claudeRouteClassifier: async () => {
         classifierCalled = true;
-        throw new Error('classifier should not run for cursor provider');
+        // AL-429: Cursor 路径本地 miss 后应走 AI 分类器兜底，分类结果为 ordinary_chat 则仍用 cursor
+        return { route: 'ordinary_chat', confidence: 0.9, reason: '因果对话' };
       },
       cursorReplyGenerator: async (input) => {
         providerInput = input;
@@ -251,7 +252,8 @@ describe('baize chat service', () => {
       }
     });
 
-    expect(classifierCalled).toBe(false);
+    // AL-429: Cursor 路径本地 miss 后 AI 分类器会被调用（与旧行为不同——旧行为直接 return 不调分类器）
+    expect(classifierCalled).toBe(true);
     expect(result).toMatchObject({
       provider: 'cursor',
       reply: 'Alice：Cursor 已结合上下文回答。',
