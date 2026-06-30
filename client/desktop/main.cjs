@@ -796,7 +796,11 @@ function createWindow() {
     }
   });
 
-  mainWindow.loadFile(path.join(__dirname, '../client/desktop-react/dist/index.html'));
+  // #region agent log
+  const loadPath = path.join(__dirname, '../desktop-react/dist/index.html');
+  fetch('http://127.0.0.1:7436/ingest/4330d09f-d419-4ca8-8a86-8ca3eee2e815',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e0a02f'},body:JSON.stringify({sessionId:'e0a02f',location:'main.cjs:799',message:'loadFile path (fixed)',data:{__dirname,loadPath},timestamp:Date.now(),hypothesisId:'A',runId:'post-fix'})}).catch(()=>{});
+  // #endregion
+  mainWindow.loadFile(loadPath);
 }
 
 app.whenReady().then(() => {
