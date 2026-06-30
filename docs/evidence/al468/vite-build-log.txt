@@ -1,0 +1,25 @@
+﻿
+> desktop-react@0.0.0 build
+> vite build
+
+vite v5.4.21 building for production...
+transforming...
+鉁?7124 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                     0.46 kB 鈹?gzip:   0.30 kB
+dist/assets/index-gtkpNM1n.css      7.82 kB 鈹?gzip:   1.92 kB
+dist/assets/index-B3zqUpcQ.js   1,160.05 kB 鈹?gzip: 373.58 kB
+npm : 
+所在位置 C:\Users\Administrator\AppData\Local\Temp\ps-script-dc79db57-7407-43e7-8ae9-64e4b174eff7.ps1:83 字符: 153
++ ... -test.txt -Force; cd client\desktop-react; npm run build 2>&1 | Out-F ...
++                                                ~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-m
+anualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+鉁?built in 11.11s

@@ -1,0 +1,304 @@
+﻿
+> baize-local-hub@0.2.36 test
+> vitest run --globals
+
+
+ RUN  v1.6.1 H:/workbuddy/aliceV2
+
+ 鉁?tests/desktop-local-runtime.test.js  (22 tests) 206ms
+ 鉁?tests/desktop-local-jira-service.test.js  (7 tests) 294ms
+ 鉁?tests/desktop-api.test.js  (21 tests) 16ms
+ 鉁?tests/attachment-service.test.js  (12 tests) 271ms
+ 鉁?tests/desktop-local-claude-code.test.js  (29 tests) 104ms
+stdout | tests/chat-service.test.js > baize chat service > returns Baize reply with local knowledge results
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:09.000Z","conversationId":"desktop-conversation","provider":"local_kb","status":"ok","ensureConversationMs":1,"loadHistoryMs":1,"knowledgeSearchMs":5,"resolveProviderMs":0,"attachmentContextMs":1,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"persistTurnMs":16,"totalMs":26}
+
+npm : stderr | tests/claude-code-service.test.js > Claude Code service > returns a Chinese error when Claude Code comma
+nd is missing
+所在位置 C:\Users\Administrator\AppData\Local\Temp\ps-script-dc79db57-7407-43e7-8ae9-64e4b174eff7.ps1:83 字符: 26
++ cd H:\workbuddy\aliceV2; npm test 2>&1 | Out-File -Encoding utf8 H:\w ...
++                          ~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (stderr | tests/...mand is missing:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[claude-code] spawn error: ENOENT not found
+
+ 鉁?tests/claude-code-service.test.js  (53 tests) 117ms
+stdout | tests/chat-service.test.js > baize chat service > persists chat timing logs to runtime jsonl
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:09.079Z","conversationId":"timing-log-conversation-1","provider":"local_kb","status":"ok","ensureConversationMs":2,"loadHistoryMs":0,"knowledgeSearchMs":4,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"persistTurnMs":49,"totalMs":56}
+
+stdout | tests/wecom-service.test.js > wecom service > handles encrypted WeCom text callback and sends an active reply
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:09.096Z","conversationId":"user-1","provider":"local_kb","status":"ok","ensureConversationMs":9,"loadHistoryMs":4,"knowledgeSearchMs":35,"resolveProviderMs":1,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"persistTurnMs":15,"totalMs":66}
+
+stdout | tests/chat-service.test.js > baize chat service > returns Baize reply when no local knowledge matches
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:09.122Z","conversationId":"conv-000be173-b835-4a0f-a9fe-355e058a6737","provider":"local_kb","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":5,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"persistTurnMs":18,"totalMs":25}
+
+stdout | tests/wecom-service.test.js > wecom service > handles Alice wake word and returns a local knowledge reply
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:09.171Z","conversationId":"chat-1","provider":"local_kb","status":"ok","ensureConversationMs":1,"loadHistoryMs":1,"knowledgeSearchMs":8,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"persistTurnMs":19,"totalMs":30}
+
+stdout | tests/chat-service.test.js > baize chat service > returns Baize reply from an injected Claude provider
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:09.194Z","conversationId":"conv-3e041849-0b44-4f8b-810b-9e1f2f11ebf9","provider":"claude","status":"ok","ensureConversationMs":2,"loadHistoryMs":0,"knowledgeSearchMs":27,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":8,"claudeReplyMs":0,"persistTurnMs":15,"totalMs":53}
+
+stdout | tests/wecom-service.test.js > wecom service > handles Alice wake word (via user mention)
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:09.244Z","conversationId":"conversation-2","provider":"claude_code","status":"ok","ensureConversationMs":7,"loadHistoryMs":3,"knowledgeSearchMs":12,"resolveProviderMs":1,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"claudeRouteClassifierFailed":true,"persistTurnMs":16,"totalMs":40}
+
+stdout | tests/chat-service.test.js > baize chat service > returns Baize reply from an injected Cursor provider without Claude route classifier
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:09.309Z","conversationId":"conv-7e6eeae7-50c9-4dca-90c3-cf23b30687e5","provider":"cursor","status":"ok","ensureConversationMs":7,"loadHistoryMs":0,"knowledgeSearchMs":38,"resolveProviderMs":14,"attachmentContextMs":6,"pendingJiraLookupMs":2,"claudeCodeConfigMs":0,"contextCollectionMs":6,"cursorReplyMs":0,"persistTurnMs":13,"totalMs":89}
+
+ 鉁?tests/wecom-service.test.js  (9 tests) 354ms
+stdout | tests/chat-service.test.js > baize chat service > passes Baize memory, logic, and skills context to Claude provider
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:09.440Z","conversationId":"conv-1a716ab2-f7f1-4ddb-9225-ce2cfda8734a","provider":"claude","status":"ok","ensureConversationMs":2,"loadHistoryMs":0,"knowledgeSearchMs":6,"resolveProviderMs":1,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":58,"claudeReplyMs":0,"persistTurnMs":36,"totalMs":104}
+
+ 鉁?tests/config-service.test.js  (4 tests) 97ms
+stdout | tests/chat-service.test.js > baize chat service > passes prior messages to Claude when continuing a conversation
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:09.513Z","conversationId":"long-conversation-1","provider":"claude","status":"ok","ensureConversationMs":2,"loadHistoryMs":0,"knowledgeSearchMs":8,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":1,"claudeCodeConfigMs":0,"contextCollectionMs":27,"claudeReplyMs":0,"persistTurnMs":15,"totalMs":53}
+
+stdout | tests/chat-service.test.js > baize chat service > passes prior messages to Claude when continuing a conversation
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:09.629Z","conversationId":"long-conversation-1","provider":"claude","status":"ok","ensureConversationMs":0,"loadHistoryMs":0,"knowledgeSearchMs":17,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":30,"claudeReplyMs":0,"persistTurnMs":66,"totalMs":114}
+
+ 鉁?tests/desktop-jira-config-store.test.js  (5 tests) 83ms
+ 鉁?tests/logic-service.test.js  (5 tests) 189ms
+ 鉁?tests/client-version-service.test.js  (6 tests) 235ms
+ 鉁?tests/jira-audit-service.test.js  (11 tests) 372ms
+stdout | tests/chat-service.test.js > baize chat service > uses Claude provider selected by server config
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:09.831Z","conversationId":"conv-34372fbc-3a2b-43ea-8293-d9656a5db48e","provider":"claude","status":"ok","ensureConversationMs":6,"loadHistoryMs":0,"knowledgeSearchMs":71,"resolveProviderMs":5,"attachmentContextMs":4,"pendingJiraLookupMs":2,"claudeCodeConfigMs":1,"contextCollectionMs":27,"claudeReplyMs":0,"persistTurnMs":27,"totalMs":145}
+
+stdout | tests/chat-service.test.js > baize chat service > rejects Claude provider when API key is missing
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:09.891Z","conversationId":"conv-d23ec4c4-2a86-4ea4-9ca7-96096c915572","provider":"claude","status":"error","ensureConversationMs":6,"loadHistoryMs":1,"knowledgeSearchMs":12,"resolveProviderMs":0,"attachmentContextMs":2,"pendingJiraLookupMs":1,"claudeCodeConfigMs":1,"contextCollectionMs":4,"claudeReplyMs":1,"totalMs":29}
+
+ 鉁?tests/claude-service.test.js  (12 tests) 448ms
+stderr | tests/jira-bug-analysis-service.test.js > Jira Bug analysis service > marks active analyzing items failed afte
+r the one-hour item timeout
+[jira-bug-analysis] background run failed: bug-run-ca148439-b757-4c72-a631-2a0c0ced9339 Bug 鍒嗘瀽鎵规涓嶅瓨鍦ㄣ€?
+stdout | tests/chat-service.test.js > baize chat service > streams Claude replies and persists the final assistant message
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:09.957Z","conversationId":"stream-conversation-1","provider":"claude","status":"ok","ensureConversationMs":2,"loadHistoryMs":0,"knowledgeSearchMs":4,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":1,"claudeCodeConfigMs":0,"contextCollectionMs":17,"claudeReplyMs":0,"persistTurnMs":13,"totalMs":37}
+
+ 鉁?tests/unity-build-service.test.js  (11 tests) 457ms
+ 鉁?tests/jira-service.test.js  (29 tests) 1206ms
+stdout | tests/chat-service.test.js > baize chat service > streams Claude replies and persists the final assistant message
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:10.005Z","conversationId":"stream-conversation-1","provider":"claude","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":9,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"contextCollectionMs":5,"claudeReplyMs":0,"persistTurnMs":32,"totalMs":47}
+
+stdout | tests/chat-service.test.js > baize chat service > uses Claude API classification before routing ordinary chat
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:10.138Z","conversationId":"classifier-chat-conversation-1","provider":"claude","status":"ok","ensureConversationMs":2,"loadHistoryMs":0,"knowledgeSearchMs":4,"resolveProviderMs":1,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"contextCollectionMs":8,"claudeReplyMs":0,"persistTurnMs":8,"totalMs":23}
+
+ 鉁?tests/requirement-completion-service.test.js  (2 tests) 267ms
+ 鉁?tests/desktop-conversation-store.test.js  (5 tests) 206ms
+stdout | tests/chat-service.test.js > baize chat service > uses Claude API classification to send Jira creation to Claude Code confirmation flow
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:10.201Z","conversationId":"classifier-jira-create-conversation-1","provider":"jira","status":"ok","ensureConversationMs":5,"loadHistoryMs":1,"knowledgeSearchMs":5,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":5,"claudeCodeMs":0,"claudeCodeIntentMs":1,"jiraDraftOperationMs":6,"persistTurnMs":14,"totalMs":39}
+
+stdout | tests/chat-service.test.js > baize chat service > falls back to Claude Code operation intent when Claude API classification fails
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:10.299Z","conversationId":"classifier-fallback-conversation-1","provider":"jira","status":"ok","ensureConversationMs":3,"loadHistoryMs":1,"knowledgeSearchMs":18,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":2,"claudeCodeConfigMs":2,"claudeRouteClassifierFailed":true,"contextCollectionMs":6,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftOperationMs":3,"persistTurnMs":10,"totalMs":45}
+
+stdout | tests/chat-service.test.js > baize chat service > keeps explicit Jira creation on the operation path even when classification says readonly
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:10.359Z","conversationId":"classifier-jira-explicit-conversation-1","provider":"jira","status":"ok","ensureConversationMs":7,"loadHistoryMs":0,"knowledgeSearchMs":7,"resolveProviderMs":1,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":4,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftOperationMs":3,"persistTurnMs":15,"totalMs":38}
+
+stdout | tests/chat-service.test.js > baize chat service > does not call Claude API classification for explicit providers
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:10.416Z","conversationId":"conv-345238b8-023c-4917-b2ef-97db751b8ff6","provider":"claude","status":"ok","ensureConversationMs":2,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":1,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"contextCollectionMs":3,"claudeReplyMs":0,"persistTurnMs":12,"totalMs":21}
+
+ 鉁?tests/pending-operation-service.test.js  (3 tests) 113ms
+stdout | tests/chat-service.test.js > baize chat service > routes readonly engineering requests to Claude Code operation intent when enabled
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:10.466Z","conversationId":"code-conversation-1","provider":"claude_code","status":"ok","ensureConversationMs":1,"loadHistoryMs":1,"knowledgeSearchMs":5,"resolveProviderMs":1,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"contextCollectionMs":4,"claudeCodeMs":1,"claudeCodeIntentMs":1,"persistTurnMs":14,"totalMs":27}
+
+ 鉁?tests/desktop-local-sync-store.test.js  (2 tests) 43ms
+stdout | tests/chat-service.test.js > baize chat service > does not execute Claude Code operation intent when disabled
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:10.581Z","conversationId":"conv-878fa72a-02ba-4f4b-bdbe-762d44014133","provider":"claude_code","status":"ok","ensureConversationMs":16,"loadHistoryMs":0,"knowledgeSearchMs":13,"resolveProviderMs":0,"attachmentContextMs":1,"pendingJiraLookupMs":0,"claudeCodeConfigMs":2,"persistTurnMs":55,"totalMs":87}
+
+ 鉁?tests/cursor-service.test.js  (3 tests) 110ms
+ 鉁?tests/jira-bug-analysis-service.test.js  (12 tests) 1665ms
+ 鉁?tests/desktop-patch-apply.test.js  (3 tests) 72ms
+ 鉁?tests/memory-service.test.js  (5 tests) 163ms
+ 鉁?tests/desktop-client-account-store.test.js  (4 tests) 231ms
+stdout | tests/chat-service.test.js > baize chat service > streams Claude Code replies with compatible events
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:10.733Z","conversationId":"code-stream-conversation-1","provider":"claude_code","status":"ok","ensureConversationMs":14,"loadHistoryMs":1,"knowledgeSearchMs":40,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":1,"claudeCodeConfigMs":6,"contextCollectionMs":17,"claudeCodeMs":0,"claudeCodeIntentMs":0,"persistTurnMs":16,"totalMs":95}
+
+ 鉁?tests/plugin-gateway-guard.test.js  (2 tests) 12ms
+stdout | tests/chat-service.test.js > baize chat service > runs Claude Code operation intent for engineering write requests instead of local write gating
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:10.833Z","conversationId":"conv-097c08e8-3037-41e8-8f5b-42a266167c75","provider":"claude_code","status":"ok","ensureConversationMs":1,"loadHistoryMs":1,"knowledgeSearchMs":21,"resolveProviderMs":0,"attachmentContextMs":1,"pendingJiraLookupMs":0,"claudeCodeConfigMs":5,"contextCollectionMs":7,"claudeCodeMs":0,"claudeCodeIntentMs":0,"persistTurnMs":23,"totalMs":59}
+
+ 鉁?tests/conversation-service.test.js  (2 tests) 58ms
+stdout | tests/chat-service.test.js > baize chat service > routes Jira create requests through Claude Code draft confirmation
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:10.942Z","conversationId":"jira-create-conversation-1","provider":"jira","status":"ok","ensureConversationMs":5,"loadHistoryMs":0,"knowledgeSearchMs":16,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":1,"claudeCodeConfigMs":0,"contextCollectionMs":7,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftOperationMs":6,"persistTurnMs":25,"totalMs":61}
+
+ 鉁?tests/engineering-intent-service.test.js  (4 tests) 7ms
+stdout | tests/chat-service.test.js > baize chat service > does not treat logic assertion instructions as pending Jira draft updates
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.032Z","conversationId":"logic-assertion-with-pending-jira-1","provider":"jira","status":"ok","ensureConversationMs":2,"loadHistoryMs":0,"knowledgeSearchMs":16,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":11,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftOperationMs":4,"persistTurnMs":24,"totalMs":58}
+
+ 鉁?tests/knowledge-base-service.test.js  (6 tests) 487ms
+stdout | tests/chat-service.test.js > baize chat service > does not treat logic assertion instructions as pending Jira draft updates
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.096Z","conversationId":"logic-assertion-with-pending-jira-1","provider":"local_kb","status":"ok","ensureConversationMs":0,"loadHistoryMs":1,"knowledgeSearchMs":7,"resolveProviderMs":1,"attachmentContextMs":1,"pendingJiraLookupMs":1,"claudeCodeConfigMs":1,"contextCollectionMs":5,"claudeCodeMs":0,"claudeCodeIntentMs":0,"logicAssertionMs":3,"persistTurnMs":42,"totalMs":62}
+
+stdout | tests/wecom-aibot-service.test.js > WeCom AI bot service > handles text messages through existing WeCom webhook flow and replies through stream
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.139Z","conversationId":"chat-1","provider":"local_kb","status":"ok","ensureConversationMs":3,"loadHistoryMs":0,"knowledgeSearchMs":16,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":3,"persistTurnMs":17,"totalMs":42}
+
+ 鉁?tests/wecom-aibot-service.test.js  (5 tests) 78ms
+stdout | tests/chat-service.test.js > baize chat service > uses Claude Code operation intent to create Jira confirmation cards when enabled
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.175Z","conversationId":"jira-claude-code-create-conversation-1","provider":"jira","status":"ok","ensureConversationMs":3,"loadHistoryMs":0,"knowledgeSearchMs":12,"resolveProviderMs":0,"attachmentContextMs":1,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"claudeRouteClassifierFailed":true,"contextCollectionMs":8,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftOperationMs":3,"persistTurnMs":17,"totalMs":45}
+
+stdout | tests/chat-service.test.js > baize chat service > runs Claude Code confirmed intent before typed Jira confirmation when enabled
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.247Z","conversationId":"jira-claude-code-confirm-conversation-1","provider":"jira","status":"ok","ensureConversationMs":3,"loadHistoryMs":1,"knowledgeSearchMs":10,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":2,"claudeRouteClassifierFailed":true,"contextCollectionMs":8,"claudeCodeMs":0,"claudeCodeIntentMs":1,"jiraDraftOperationMs":12,"persistTurnMs":14,"totalMs":51}
+
+stdout | tests/chat-service.test.js > baize chat service > runs Claude Code confirmed intent before typed Jira confirmation when enabled
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.280Z","conversationId":"jira-claude-code-confirm-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":5,"resolveProviderMs":0,"attachmentContextMs":1,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"contextCollectionMs":6,"claudeCodeMs":0,"claudeCodeIntentMs":1,"jiraConfirmMs":7,"persistTurnMs":9,"totalMs":30}
+
+ 鉁?tests/patch-policy-service.test.js  (3 tests) 6ms
+ 鉁?tests/plugin-service.test.js  (2 tests) 39ms
+stdout | tests/chat-service.test.js > baize chat service > emits Jira recovery event when typed confirmation hits a recoverable plugin error
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.329Z","conversationId":"jira-recovery-stream-conversation-1","provider":"jira","status":"ok","ensureConversationMs":5,"loadHistoryMs":0,"knowledgeSearchMs":5,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":1,"claudeCodeConfigMs":1,"claudeRouteClassifierFailed":true,"contextCollectionMs":5,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftOperationMs":5,"persistTurnMs":8,"totalMs":30}
+
+ 鉁?tests/desktop-workspace-store.test.js  (2 tests) 13ms
+stdout | tests/chat-service.test.js > baize chat service > emits Jira recovery event when typed confirmation hits a recoverable plugin error
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.363Z","conversationId":"jira-recovery-stream-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":6,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":1,"claudeCodeConfigMs":0,"contextCollectionMs":6,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraConfirmMs":11,"persistTurnMs":6,"totalMs":32}
+
+stdout | tests/chat-service.test.js > baize chat service > uses server Claude to parse xlsx attachments with unclear columns
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.446Z","conversationId":"jira-xlsx-claude-fallback-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":1,"knowledgeSearchMs":5,"resolveProviderMs":0,"attachmentContextMs":9,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":6,"claudeCodeMs":0,"claudeCodeIntentMs":1,"jiraDraftOperationMs":7,"persistTurnMs":11,"totalMs":42}
+
+stdout | tests/chat-service.test.js > baize chat service > ignores flattened xlsx attachment summaries when asking Claude for Jira drafts
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.516Z","conversationId":"jira-xlsx-summary-pollution-conversation-1","provider":"jira","status":"ok","ensureConversationMs":2,"loadHistoryMs":1,"knowledgeSearchMs":6,"resolveProviderMs":0,"attachmentContextMs":7,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":5,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftOperationMs":5,"persistTurnMs":11,"totalMs":38}
+
+stdout | tests/chat-service.test.js > baize chat service > uses Claude Code with stored xlsx attachments for classified Jira create
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.571Z","conversationId":"jira-xlsx-classified-claude-code-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":5,"resolveProviderMs":0,"attachmentContextMs":5,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":6,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftOperationMs":4,"persistTurnMs":8,"totalMs":31}
+
+stdout | tests/api.test.js > baize local hub API > handles desktop chat messages through the unified chat endpoint
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.599Z","conversationId":"desktop-conversation","provider":"claude_code","status":"ok","ensureConversationMs":2,"loadHistoryMs":1,"knowledgeSearchMs":4,"resolveProviderMs":1,"attachmentContextMs":1,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"claudeRouteClassifierFailed":true,"persistTurnMs":7,"totalMs":17}
+
+stdout | tests/chat-service.test.js > baize chat service > routes non-ordinary other classification to Claude Code when enabled
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.600Z","conversationId":"classifier-other-claude-code-conversation-1","provider":"claude_code","status":"ok","ensureConversationMs":2,"loadHistoryMs":0,"knowledgeSearchMs":4,"resolveProviderMs":0,"attachmentContextMs":1,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"contextCollectionMs":3,"claudeCodeMs":0,"claudeCodeIntentMs":0,"persistTurnMs":6,"totalMs":16}
+
+stdout | tests/server.test.js > baize local hub server > starts a real HTTP server and returns health status
+baize-local-hub listening at http://127.0.0.1:32422
+
+stdout | tests/chat-service.test.js > baize chat service > uses Claude Code with latest conversation xlsx attachment without explicit attachment ids
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.645Z","conversationId":"jira-xlsx-claude-code-reuse-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":4,"resolveProviderMs":0,"attachmentContextMs":4,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":3,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftOperationMs":4,"persistTurnMs":6,"totalMs":23}
+
+ 鉁?tests/server.test.js  (1 test) 29ms
+stdout | tests/api.test.js > baize local hub API > streams desktop chat messages through the unified stream endpoint
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.677Z","conversationId":"desktop-stream-conversation","provider":"claude_code","status":"ok","ensureConversationMs":2,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":1,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"claudeRouteClassifierFailed":true,"persistTurnMs":6,"totalMs":13}
+
+stdout | tests/chat-service.test.js > baize chat service > reuses the latest conversation xlsx attachment for Jira drafts without reuploading
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.688Z","conversationId":"jira-xlsx-reuse-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":1,"attachmentContextMs":4,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"contextCollectionMs":3,"claudeCodeMs":1,"claudeCodeIntentMs":1,"jiraDraftOperationMs":3,"persistTurnMs":7,"totalMs":23}
+
+stdout | tests/chat-service.test.js > baize chat service > uses server Claude to parse xlsx attachments even when headers match directly
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.731Z","conversationId":"jira-xlsx-chat-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":5,"resolveProviderMs":0,"attachmentContextMs":3,"pendingJiraLookupMs":1,"claudeCodeConfigMs":0,"contextCollectionMs":4,"claudeCodeMs":1,"claudeCodeIntentMs":1,"jiraDraftOperationMs":2,"persistTurnMs":8,"totalMs":25}
+
+stdout | tests/chat-service.test.js > baize chat service > routes natural Jira create requests with project key to draft confirmation
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.763Z","conversationId":"jira-natural-create-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":3,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftOperationMs":3,"persistTurnMs":7,"totalMs":18}
+
+stdout | tests/api.test.js > baize local hub API > lists and loads persisted conversations through the API
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.793Z","conversationId":"api-conversation-test","provider":"claude_code","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":0,"attachmentContextMs":1,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"claudeRouteClassifierFailed":true,"persistTurnMs":5,"totalMs":11}
+
+stdout | tests/chat-service.test.js > baize chat service > updates latest pending Jira draft from typed assignee follow-up
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.794Z","conversationId":"jira-draft-update-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":4,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":3,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftOperationMs":2,"persistTurnMs":7,"totalMs":18}
+
+stdout | tests/chat-service.test.js > baize chat service > updates latest pending Jira draft from typed assignee follow-up
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.813Z","conversationId":"jira-draft-update-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":2,"resolveProviderMs":1,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"contextCollectionMs":4,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftUpdateMs":4,"persistTurnMs":6,"totalMs":18}
+
+stdout | tests/chat-service.test.js > baize chat service > updates pending Jira draft project key without falling through to Claude
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.852Z","conversationId":"jira-project-update-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":4,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":5,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftOperationMs":3,"persistTurnMs":10,"totalMs":24}
+
+stdout | tests/api.test.js > baize local hub API > returns validation error for missing chat text
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.863Z","conversationId":null,"provider":null,"status":"error","totalMs":0}
+
+stdout | tests/chat-service.test.js > baize chat service > updates pending Jira draft project key without falling through to Claude
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.872Z","conversationId":"jira-project-update-conversation-1","provider":"jira","status":"ok","ensureConversationMs":0,"loadHistoryMs":1,"knowledgeSearchMs":3,"resolveProviderMs":1,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"contextCollectionMs":4,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftUpdateMs":2,"persistTurnMs":8,"totalMs":19}
+
+stdout | tests/chat-service.test.js > baize chat service > does not update or confirm Jira operations from another conversation
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.904Z","conversationId":"jira-owner-conversation-1","provider":"jira","status":"ok","ensureConversationMs":2,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":1,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"contextCollectionMs":3,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftOperationMs":3,"persistTurnMs":6,"totalMs":18}
+
+stdout | tests/chat-service.test.js > baize chat service > does not update or confirm Jira operations from another conversation
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.917Z","conversationId":"jira-owner-conversation-2","provider":"local_kb","status":"ok","ensureConversationMs":1,"loadHistoryMs":1,"knowledgeSearchMs":3,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"persistTurnMs":7,"totalMs":12}
+
+stdout | tests/api.test.js > baize local hub API > routes chat through Claude Code fallback when Claude classification is unavailable
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.932Z","conversationId":"conv-dd50c493-93cc-444c-9df6-b5e12e3ee78c","provider":"claude_code","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":2,"resolveProviderMs":1,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"claudeRouteClassifierFailed":true,"persistTurnMs":5,"totalMs":14}
+
+stdout | tests/chat-service.test.js > baize chat service > supersedes old pending Jira draft when creating a new one in the same conversation
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.950Z","conversationId":"jira-supersede-conversation-1","provider":"jira","status":"ok","ensureConversationMs":2,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"contextCollectionMs":4,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftOperationMs":3,"persistTurnMs":8,"totalMs":20}
+
+stdout | tests/chat-service.test.js > baize chat service > supersedes old pending Jira draft when creating a new one in the same conversation
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.970Z","conversationId":"jira-supersede-conversation-1","provider":"jira","status":"ok","ensureConversationMs":0,"loadHistoryMs":1,"knowledgeSearchMs":3,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":1,"claudeCodeConfigMs":1,"contextCollectionMs":6,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftOperationMs":2,"persistTurnMs":5,"totalMs":19}
+
+stdout | tests/api.test.js > baize local hub API > handles encrypted WeCom callback messages and actively replies
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:11.981Z","conversationId":"api-wecom-user","provider":"claude_code","status":"ok","ensureConversationMs":2,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":0,"attachmentContextMs":1,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"claudeRouteClassifierFailed":true,"persistTurnMs":9,"totalMs":16}
+
+stdout | tests/api.test.js > baize local hub API > handles WeCom webhook messages that mention Baize
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.009Z","conversationId":"api-chat","provider":"claude_code","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":2,"resolveProviderMs":1,"attachmentContextMs":1,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"claudeRouteClassifierFailed":true,"persistTurnMs":6,"totalMs":12}
+
+stdout | tests/chat-service.test.js > baize chat service > enriches Jira drafts with read-only Jira project and user data before confirmation
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.014Z","conversationId":"jira-readonly-enrich-conversation-1","provider":"jira","status":"ok","ensureConversationMs":2,"loadHistoryMs":1,"knowledgeSearchMs":3,"resolveProviderMs":1,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":13,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftOperationMs":3,"persistTurnMs":6,"totalMs":31}
+
+stdout | tests/chat-service.test.js > baize chat service > enriches Jira drafts with read-only Jira project and user data before confirmation
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.037Z","conversationId":"jira-readonly-enrich-conversation-1","provider":"jira","status":"ok","ensureConversationMs":0,"loadHistoryMs":1,"knowledgeSearchMs":5,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":3,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftUpdateMs":3,"persistTurnMs":9,"totalMs":22}
+
+stdout | tests/chat-service.test.js > baize chat service > confirms latest pending Jira operation from typed confirmation
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.071Z","conversationId":"jira-typed-confirm-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":1,"knowledgeSearchMs":3,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":3,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDraftOperationMs":3,"persistTurnMs":7,"totalMs":19}
+
+stdout | tests/chat-service.test.js > baize chat service > confirms latest pending Jira operation from typed confirmation
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.091Z","conversationId":"jira-typed-confirm-conversation-1","provider":"jira","status":"ok","ensureConversationMs":0,"loadHistoryMs":1,"knowledgeSearchMs":2,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":3,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraConfirmMs":4,"persistTurnMs":7,"totalMs":18}
+
+stdout | tests/chat-service.test.js > baize chat service > streams Jira create operation events for desktop confirmation cards
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.127Z","conversationId":"jira-create-stream-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":0,"attachmentContextMs":1,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"contextCollectionMs":2,"claudeCodeMs":0,"claudeCodeIntentMs":1,"jiraDraftOperationMs":9,"persistTurnMs":7,"totalMs":24}
+
+stdout | tests/chat-service.test.js > baize chat service > streams Jira search supplement events only after Claude Code requests user choice
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.160Z","conversationId":"jira-search-supplement-stream-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":1,"knowledgeSearchMs":3,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"contextCollectionMs":3,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraSearchMs":4,"persistTurnMs":7,"totalMs":20}
+
+stdout | tests/chat-service.test.js > baize chat service > routes single-comment writes through the audit gateway and executes only after confirm
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.191Z","conversationId":"jira-comment-conversation-1","provider":"jira","status":"ok","ensureConversationMs":2,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":2,"claudeCodeMs":0,"claudeCodeIntentMs":1,"jiraAddCommentMs":3,"persistTurnMs":7,"totalMs":19}
+
+stdout | tests/chat-service.test.js > baize chat service > feeds Jira write failure back to Claude Code and stops after maxRecoveryAttempts
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.226Z","conversationId":"jira-write-recovery-conversation-1","provider":"jira","status":"ok","ensureConversationMs":2,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":1,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"claudeRouteClassifierFailed":true,"contextCollectionMs":3,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraUpdateIssueMs":1,"persistTurnMs":8,"totalMs":19}
+
+stdout | tests/chat-service.test.js > baize chat service > updates AI-created Jira issues through gateway with confirmation and Jira PUT
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.268Z","conversationId":"jira-update-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":4,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"claudeRouteClassifierFailed":true,"contextCollectionMs":3,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraUpdateIssueMs":2,"persistTurnMs":6,"totalMs":17}
+
+stdout | tests/chat-service.test.js > baize chat service > denies update_issue against non-AI created issues
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.304Z","conversationId":"jira-update-deny-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"claudeRouteClassifierFailed":true,"contextCollectionMs":3,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraUpdateIssueMs":1,"persistTurnMs":7,"totalMs":16}
+
+stdout | tests/chat-service.test.js > baize chat service > routes jira_delete_comment through the audit officer and stops at require_confirmation
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.338Z","conversationId":"audit-confirm-conversation","provider":"jira","status":"ok","ensureConversationMs":2,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":0,"attachmentContextMs":1,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"claudeRouteClassifierFailed":true,"contextCollectionMs":3,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDeleteCommentMs":3,"persistTurnMs":6,"totalMs":19}
+
+stdout | tests/chat-service.test.js > baize chat service > deletes only baize-authored AI-prefixed comments on the given Jira issues without confirmation
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.370Z","conversationId":"jira-delete-ai-comments-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":1,"knowledgeSearchMs":3,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"contextCollectionMs":5,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDeleteCommentMs":2,"persistTurnMs":6,"totalMs":19}
+
+ 鉁?tests/api.test.js  (59 tests) 2776ms
+stdout | tests/chat-service.test.js > baize chat service > refuses to delete Jira comments when there is no Jira account identity configured
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.407Z","conversationId":"jira-delete-no-identity-conversation-1","provider":"jira","status":"ok","ensureConversationMs":2,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":0,"attachmentContextMs":1,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"contextCollectionMs":2,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraDeleteCommentMs":2,"persistTurnMs":7,"totalMs":18}
+
+stdout | tests/chat-service.test.js > baize chat service > bulk-writes Jira comments with per-issue bodies without confirmation
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.440Z","conversationId":"jira-bulk-comment-entries-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"claudeRouteClassifierFailed":true,"contextCollectionMs":3,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraBulkAddCommentMs":2,"persistTurnMs":6,"totalMs":16}
+
+stdout | tests/chat-service.test.js > baize chat service > bulk-writes Jira comments across multiple issues without confirmation
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.476Z","conversationId":"jira-bulk-comment-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":1,"knowledgeSearchMs":2,"resolveProviderMs":0,"attachmentContextMs":1,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"claudeRouteClassifierFailed":true,"contextCollectionMs":3,"claudeCodeMs":0,"claudeCodeIntentMs":1,"jiraBulkAddCommentMs":2,"persistTurnMs":6,"totalMs":17}
+
+stdout | tests/chat-service.test.js > baize chat service > routes Jira BUG AI analysis comments through engineering bug analysis first
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.538Z","conversationId":"jira-bug-analysis-comment-conversation-1","provider":"jira","status":"ok","ensureConversationMs":3,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":1,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"claudeRouteClassifierFailed":true,"contextCollectionMs":14,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraBugAnalysisCommentMs":8,"persistTurnMs":15,"totalMs":45}
+
+stdout | tests/chat-service.test.js > baize chat service > routes contextual BUG analysis requests through Claude Code operation intent
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.575Z","conversationId":"jira-bug-analysis-contextual-routing-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":0,"contextCollectionMs":2,"claudeCodeMs":1,"claudeCodeIntentMs":1,"jiraBugAnalysisCommentMs":6,"persistTurnMs":10,"totalMs":24}
+
+stdout | tests/chat-service.test.js > baize chat service > routes short BUG analysis continuation requests from conversation context
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.611Z","conversationId":"jira-bug-analysis-short-context-conversation-1","provider":"local_kb","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":7,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"persistTurnMs":10,"totalMs":19}
+
+stdout | tests/chat-service.test.js > baize chat service > routes short BUG analysis continuation requests from conversation context
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.644Z","conversationId":"jira-bug-analysis-short-context-conversation-1","provider":"jira","status":"ok","ensureConversationMs":0,"loadHistoryMs":1,"knowledgeSearchMs":7,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"claudeRouteClassifierFailed":true,"contextCollectionMs":2,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraBugAnalysisCommentMs":9,"persistTurnMs":12,"totalMs":32}
+
+stdout | tests/chat-service.test.js > baize chat service > streams BUG analysis start events when Claude Code returns BUG analysis intent
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.714Z","conversationId":"jira-bug-analysis-stream-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":11,"resolveProviderMs":1,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"claudeRouteClassifierFailed":true,"contextCollectionMs":7,"claudeCodeMs":1,"claudeCodeIntentMs":1,"jiraBugAnalysisCommentMs":9,"persistTurnMs":19,"totalMs":50}
+
+stdout | tests/chat-service.test.js > baize chat service > does not start BUG analysis when Claude Code returns bulk comment intent
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.798Z","conversationId":"jira-bug-analysis-bulk-comment-decision-1","provider":"jira","status":"ok","ensureConversationMs":5,"loadHistoryMs":3,"knowledgeSearchMs":12,"resolveProviderMs":0,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"claudeRouteClassifierFailed":true,"contextCollectionMs":12,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraBulkAddCommentMs":5,"persistTurnMs":19,"totalMs":57}
+
+stdout | tests/chat-service.test.js > baize chat service > asks Claude Code to summarize and then writes the resulting Jira comment without confirmation
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.867Z","conversationId":"jira-summary-comment-conversation-1","provider":"jira","status":"ok","ensureConversationMs":1,"loadHistoryMs":0,"knowledgeSearchMs":3,"resolveProviderMs":0,"attachmentContextMs":1,"pendingJiraLookupMs":0,"claudeCodeConfigMs":1,"claudeRouteClassifierFailed":true,"contextCollectionMs":15,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraSummarizedCommentMs":3,"persistTurnMs":22,"totalMs":46}
+
+stdout | tests/chat-service.test.js > baize chat service > streams jira_comment_preview before writing the summarized Jira comment
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.971Z","conversationId":"jira-summary-comment-stream-conversation-1","provider":"jira","status":"ok","ensureConversationMs":4,"loadHistoryMs":0,"knowledgeSearchMs":7,"resolveProviderMs":1,"attachmentContextMs":0,"pendingJiraLookupMs":0,"claudeCodeConfigMs":6,"claudeRouteClassifierFailed":true,"contextCollectionMs":6,"claudeCodeMs":0,"claudeCodeIntentMs":0,"jiraSummarizedCommentMs":1,"persistTurnMs":17,"totalMs":44}
+
+stdout | tests/chat-service.test.js > baize chat service > rejects empty text
+[baize:chat:timing] {"loggedAt":"2026-06-30T18:51:12.987Z","conversationId":null,"provider":null,"status":"error","totalMs":0}
+
+ 鉁?tests/chat-service.test.js  (57 tests) 4033ms
+
+ Test Files  35 passed (35)
+      Tests  418 passed (418)
+   Start at  02:51:07
+   Duration  5.13s (transform 1.03s, setup 3ms, collect 8.18s, tests 14.86s, environment 20ms, prepare 11.83s)
+
