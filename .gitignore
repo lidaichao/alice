@@ -31,3 +31,7 @@ client/android/**/build/
 client/android/local.properties
 client/android/*.iml
 client/android/**/.idea/
+
+# 安全：排除含 PAT/Key 的运维脚本
+scripts/_read_jira.js
+scripts/_jira_*
