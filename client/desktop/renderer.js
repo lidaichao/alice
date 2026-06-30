@@ -141,7 +141,13 @@ async function submitAuth(event) {
     showAppShell(result.user);
     await loadAuthenticatedApp();
   } catch (error) {
-    elements.authStatus.textContent = describeError(error);
+    const statusCode = error && (error.status || error.statusCode);
+    if (statusCode === 429) {
+      const retryAfter = (error && error.retryAfter) || (error && error.data && error.data.retryAfter) || 30;
+      handleAuthRateLimit(retryAfter);
+    } else {
+      elements.authStatus.textContent = describeError(error);
+    }
   } finally {
     elements.authSubmit.disabled = false;
     elements.authSwitch.disabled = false;
@@ -392,6 +398,31 @@ function describeError(error) {
   }
 
   return cleanMessage;
+}
+
+function handleAuthRateLimit(retryAfter) {
+  let remaining = Math.max(1, Math.floor(retryAfter));
+  const update = () => {
+    elements.authStatus.textContent = `操作太快了，请 ${remaining} 秒后再试`;
+    if (remaining > 0) {
+      remaining--;
+      if (!state._rateLimitTimer) {
+        state._rateLimitTimer = setInterval(() => {
+          if (remaining <= 0) {
+            clearInterval(state._rateLimitTimer);
+            state._rateLimitTimer = null;
+            elements.authSubmit.disabled = false;
+            elements.authSwitch.disabled = false;
+            elements.authStatus.textContent = '';
+            return;
+          }
+          elements.authStatus.textContent = `操作太快了，请 ${remaining} 秒后再试`;
+          remaining--;
+        }, 1000);
+      }
+    }
+  };
+  update();
 }
 
 function formatTime(value) {
