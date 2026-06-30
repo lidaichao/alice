@@ -11,6 +11,7 @@
     "test": "vitest run --globals",
     "desktop": "electron client/desktop/main.cjs",
     "desktop:dev": "electron client/desktop/main.cjs",
+    "desktop:react": "cd client/desktop-react && npm run dev",
     "desktop:pack": "electron-builder --win --dir",
     "desktop:dist": "electron-builder --win nsis"
   },

@@ -795,6 +795,11 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  if (process.env.REACT_CLIENT) {
+    mainWindow.loadURL('http://localhost:5173');
+  } else {
+    mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  }
 }
 
 app.whenReady().then(() => {
