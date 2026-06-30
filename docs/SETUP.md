@@ -94,3 +94,43 @@ curl http://127.0.0.1:3000/health
 curl http://192.168.72.31:5000/health
 # 应返回 200
 ```
+
+## 密钥注入（安全要求）
+
+Cursor SDK Key 不写入仓库 `.env`，部署时通过环境变量注入。`.env` 中保留为占位符 `CURSOR_SDK_KEY=请通过系统环境变量或 PM2 启动时注入（详见 docs/SETUP.md）`。
+
+### 方式一：直接环境变量
+
+```bash
+# Windows
+set CURSOR_SDK_KEY=crsr_你的实际Key && npm start
+
+# Linux (含 .31 服务器)
+CURSOR_SDK_KEY=crsr_你的实际Key npm start
+```
+
+### 方式二：PM2 ecosystem.config.js
+
+```js
+module.exports = {
+  apps: [{
+    name: 'alice-hub',
+    script: 'src/server.js',
+    env: {
+      NODE_ENV: 'production',
+      PORT: 5000,
+      CURSOR_SDK_KEY: 'crsr_你的实际Key'
+    }
+  }]
+};
+```
+
+启动：`pm2 start ecosystem.config.js`
+
+### Key 轮换流程
+
+1. 在 Cursor Dashboard 生成新 Key
+2. 更新环境变量中的 `CURSOR_SDK_KEY`
+3. 重启服务
+4. 验证：`curl http://192.168.72.31:5000/health` → 200
+5. 吊销旧 Key
