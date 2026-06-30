@@ -56,3 +56,12 @@ description: >-
 | 完成开发任务后 | @兔子 | 战报：改动文件 + 测试结果 |
 | 收到兔子新指令 | @兔子 | 回复确认或提出问题 |
 | 遇到阻塞 | @协调者 | 阻塞原因 |
+
+## Confluence 战报规则
+
+Confluence 战报走 `confluence_channel.py` 模块。以下铁律：
+
+1. **战报内容必须中文** — 标题（h3）、列表项（li）、描述文字全部中文。科技名词（npm/Vite/IPC/SSE/Jira）保留英文，但段落文本不中英混写。
+2. **证据路径含仓库前缀** — `aliceV2/docs/evidence/alXXX/文件名`，不可只写 `docs/evidence/...`。
+3. **证据先存 aliceV2 再 commit** — 兔子只读 aliceV2 仓库。
+4. **提交 hash 标注仓库名** — 如 `e29276d (aliceV2)`。
