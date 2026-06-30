@@ -158,7 +158,7 @@ describe('baize chat service', () => {
         text: '能量机制'
       }
     });
-    expect(result.reply).toContain('白泽：');
+    expect(result.reply).toContain('Alice：');
     expect(result.reply).toContain('能量机制');
     expect(result.results).toEqual(
       expect.arrayContaining([
@@ -199,7 +199,7 @@ describe('baize chat service', () => {
       provider: 'local_kb',
       results: []
     });
-    expect(result.reply).toContain('白泽：');
+    expect(result.reply).toContain('Alice：');
     expect(result.reply).toContain('暂时没有在本地知识库中找到相关内容');
   });
 
@@ -212,13 +212,13 @@ describe('baize chat service', () => {
       provider: 'claude',
       claudeReplyGenerator: async (input) => {
         providerInput = input;
-        return `白泽：Claude 已结合 ${input.knowledgeResults[0].title} 回答。`;
+        return `Alice：Claude 已结合 ${input.knowledgeResults[0].title} 回答。`;
       }
     });
 
     expect(result).toMatchObject({
       provider: 'claude',
-      reply: '白泽：Claude 已结合 combat 回答。',
+      reply: 'Alice：Claude 已结合 combat 回答。',
       message: {
         platform: 'desktop',
         text: '能量机制'
@@ -247,14 +247,14 @@ describe('baize chat service', () => {
       },
       cursorReplyGenerator: async (input) => {
         providerInput = input;
-        return '白泽：Cursor 已结合上下文回答。';
+        return 'Alice：Cursor 已结合上下文回答。';
       }
     });
 
     expect(classifierCalled).toBe(false);
     expect(result).toMatchObject({
       provider: 'cursor',
-      reply: '白泽：Cursor 已结合上下文回答。',
+      reply: 'Alice：Cursor 已结合上下文回答。',
       message: {
         platform: 'desktop',
         text: '今天天气怎么样'
@@ -272,7 +272,7 @@ describe('baize chat service', () => {
     await fs.mkdir(path.join(baizeRoot, 'skills', 'wecom'), { recursive: true });
     await fs.writeFile(path.join(baizeRoot, 'config', 'claude.yaml'), 'provider: claude\nclaude:\n  apiKey: test-key\n', 'utf8');
     await fs.writeFile(path.join(baizeRoot, 'memory', 'shallow', 'project.md'), '# project\n能量机制属于战斗系统。\n', 'utf8');
-    await fs.writeFile(path.join(baizeRoot, 'logic', 'assertions', 'identity.md'), '# identity\n白泽应保持项目智能中枢身份。\n', 'utf8');
+    await fs.writeFile(path.join(baizeRoot, 'logic', 'assertions', 'identity.md'), '# identity\nAlice应保持项目智能中枢身份。\n', 'utf8');
     await fs.writeFile(path.join(baizeRoot, 'logic', 'rules', 'intent-routing.md'), '# 意图路由\n优先识别用户目标。\n', 'utf8');
     await fs.writeFile(path.join(baizeRoot, 'logic', 'executable', 'routing-rules.yaml'), 'rules:\n  - name: route-chat\n', 'utf8');
     await fs.writeFile(path.join(baizeRoot, 'skills', 'registry.yaml'), 'skills:\n  - id: wecom\n', 'utf8');
@@ -284,7 +284,7 @@ describe('baize chat service', () => {
       claudeRouteClassifier: async () => ({ route: 'ordinary_chat', confidence: 0.95, reason: '普通聊天', requiresConfirmation: false }),
       claudeReplyGenerator: async (input) => {
         providerInput = input;
-        return '白泽：Claude 已收到完整上下文。';
+        return 'Alice：Claude 已收到完整上下文。';
       }
     });
 
@@ -316,7 +316,7 @@ describe('baize chat service', () => {
     }, {
       baizeRoot,
       provider: 'claude',
-      claudeReplyGenerator: async () => '白泽：已记录。'
+      claudeReplyGenerator: async () => 'Alice：已记录。'
     });
 
     await handleChatMessage({
@@ -327,13 +327,13 @@ describe('baize chat service', () => {
       provider: 'claude',
       claudeReplyGenerator: async (input) => {
         secondInput = input;
-        return '白泽：你是 JUMP 群英集结的项目大管家。';
+        return 'Alice：你是 JUMP 群英集结的项目大管家。';
       }
     });
 
     expect(secondInput.conversationMessages).toEqual(expect.arrayContaining([
       expect.objectContaining({ role: 'user', text: '我是 JUMP 群英集结的项目大管家' }),
-      expect.objectContaining({ role: 'assistant', text: '白泽：已记录。' })
+      expect.objectContaining({ role: 'assistant', text: 'Alice：已记录。' })
     ]));
   });
 
@@ -351,12 +351,12 @@ describe('baize chat service', () => {
     const result = await handleChatMessage({ text: '能量机制' }, {
       baizeRoot,
       claudeRouteClassifier: async () => ({ route: 'ordinary_chat', confidence: 0.95, reason: '普通聊天', requiresConfirmation: false }),
-      claudeReplyGenerator: async () => '白泽：已使用配置文件中的 Claude。'
+      claudeReplyGenerator: async () => 'Alice：已使用配置文件中的 Claude。'
     });
 
     expect(result).toMatchObject({
       provider: 'claude',
-      reply: '白泽：已使用配置文件中的 Claude。'
+      reply: 'Alice：已使用配置文件中的 Claude。'
     });
   });
 
@@ -391,9 +391,9 @@ describe('baize chat service', () => {
       baizeRoot,
       provider: 'claude',
       claudeReplyGenerator: async ({ onDelta }) => {
-        onDelta('白泽：');
+        onDelta('Alice：');
         onDelta('流式回答。');
-        return '白泽：流式回答。';
+        return 'Alice：流式回答。';
       },
       onEvent: (event) => events.push(event)
     });
@@ -406,15 +406,15 @@ describe('baize chat service', () => {
       provider: 'claude',
       claudeReplyGenerator: async (input) => {
         expect(input.conversationMessages).toEqual(expect.arrayContaining([
-          expect.objectContaining({ role: 'assistant', text: '白泽：流式回答。' })
+          expect.objectContaining({ role: 'assistant', text: 'Alice：流式回答。' })
         ]));
-        return '白泽：上一轮已保存。';
+        return 'Alice：上一轮已保存。';
       }
     });
 
     expect(events.map((event) => event.type).filter((type) => type !== 'activity')).toEqual(['meta', 'delta', 'delta', 'done']);
-    expect(result.reply).toBe('白泽：流式回答。');
-    expect(saved.reply).toBe('白泽：上一轮已保存。');
+    expect(result.reply).toBe('Alice：流式回答。');
+    expect(saved.reply).toBe('Alice：上一轮已保存。');
   });
 
   it('uses Claude API classification before routing ordinary chat', async () => {
@@ -435,7 +435,7 @@ describe('baize chat service', () => {
       },
       claudeReplyGenerator: async (input) => {
         replyInput = input;
-        return '白泽：这是普通聊天回复。';
+        return 'Alice：这是普通聊天回复。';
       }
     });
 
@@ -443,7 +443,7 @@ describe('baize chat service', () => {
     expect(classifierInput.knowledgeResults).toEqual(expect.arrayContaining([expect.objectContaining({ title: 'combat' })]));
     expect(replyInput.message.text).toBe('能量机制');
     expect(result.provider).toBe('claude');
-    expect(result.reply).toBe('白泽：这是普通聊天回复。');
+    expect(result.reply).toBe('Alice：这是普通聊天回复。');
   });
 
   it('uses Claude API classification to send Jira creation to Claude Code confirmation flow', async () => {
@@ -550,7 +550,7 @@ describe('baize chat service', () => {
         classifierCalled = true;
         return { route: 'jira_create', confidence: 1, reason: 'should not be used', requiresConfirmation: true };
       },
-      claudeReplyGenerator: async () => '白泽：显式 provider 直接回复。'
+      claudeReplyGenerator: async () => 'Alice：显式 provider 直接回复。'
     });
 
     expect(classifierCalled).toBe(false);
@@ -570,13 +570,13 @@ describe('baize chat service', () => {
       claudeRouteClassifier: operationClassifier,
       claudeCodeRunner: async (input) => {
         runnerInput = input;
-        return JSON.stringify({ kind: 'engineering_reply', reply: '白泽：Claude Code 已完成只读分析。' });
+        return JSON.stringify({ kind: 'engineering_reply', reply: 'Alice：Claude Code 已完成只读分析。' });
       }
     });
 
     expect(result).toMatchObject({
       provider: 'claude_code',
-      reply: '白泽：Claude Code 已完成只读分析。'
+      reply: 'Alice：Claude Code 已完成只读分析。'
     });
     expect(runnerInput.permissionMode).toBe('operation_intent');
     expect(runnerInput.prompt).toContain('请帮我看看聊天流式接口是怎么实现的');
@@ -611,7 +611,7 @@ describe('baize chat service', () => {
     }, {
       baizeRoot,
       claudeRouteClassifier: operationClassifier,
-      claudeCodeRunner: async () => JSON.stringify({ kind: 'engineering_reply', reply: '白泽：Claude Code 流式只读分析完成。' }),
+      claudeCodeRunner: async () => JSON.stringify({ kind: 'engineering_reply', reply: 'Alice：Claude Code 流式只读分析完成。' }),
       onEvent: (event) => events.push(event)
     });
 
@@ -619,7 +619,7 @@ describe('baize chat service', () => {
     expect(events[0]).toMatchObject({ type: 'meta', provider: 'claude_code' });
     expect(result).toMatchObject({
       provider: 'claude_code',
-      reply: '白泽：Claude Code 流式只读分析完成。'
+      reply: 'Alice：Claude Code 流式只读分析完成。'
     });
   });
 
@@ -634,14 +634,14 @@ describe('baize chat service', () => {
       claudeRouteClassifier: operationClassifier,
       claudeCodeRunner: async (input) => {
         runnerInput = input;
-        return JSON.stringify({ kind: 'engineering_reply', reply: '白泽：Claude Code 已判断这是工程请求。' });
+        return JSON.stringify({ kind: 'engineering_reply', reply: 'Alice：Claude Code 已判断这是工程请求。' });
       },
       onEvent: (event) => events.push(event)
     });
 
     expect(runnerInput.permissionMode).toBe('operation_intent');
     expect(result.provider).toBe('claude_code');
-    expect(result.reply).toBe('白泽：Claude Code 已判断这是工程请求。');
+    expect(result.reply).toBe('Alice：Claude Code 已判断这是工程请求。');
     expect(result.pendingOperation).toBeNull();
     expect(events.map((event) => event.type).filter((type) => type !== 'activity')).toEqual(['meta', 'delta', 'done']);
   });
@@ -721,7 +721,7 @@ describe('baize chat service', () => {
     });
 
     expect(result.provider).toBe('local_kb');
-    expect(result.reply).toContain('白泽：已新增逻辑断言。');
+    expect(result.reply).toContain('Alice：已新增逻辑断言。');
     expect(result.reply).toContain('处理人如果有多个');
     expect(result.reply).not.toContain('已更新 Jira 草稿');
     expect(runnerInputs).toHaveLength(2);
@@ -1107,14 +1107,14 @@ describe('baize chat service', () => {
       claudeRouteClassifier: async () => ({ route: 'other', confidence: 0.9, reason: '非普通聊天操作请求', requiresConfirmation: false }),
       claudeCodeRunner: async (input) => {
         runnerInput = input;
-        return JSON.stringify({ kind: 'engineering_reply', reply: '白泽：Claude Code 已处理其它操作请求。' });
+        return JSON.stringify({ kind: 'engineering_reply', reply: 'Alice：Claude Code 已处理其它操作请求。' });
       },
       claudeReplyGenerator: async () => 'should not call normal claude'
     });
 
     expect(runnerInput.permissionMode).toBe('operation_intent');
     expect(result.provider).toBe('claude_code');
-    expect(result.reply).toBe('白泽：Claude Code 已处理其它操作请求。');
+    expect(result.reply).toBe('Alice：Claude Code 已处理其它操作请求。');
   });
 
   it('uses Claude Code with latest conversation xlsx attachment without explicit attachment ids', async () => {
@@ -1344,7 +1344,7 @@ describe('baize chat service', () => {
     }, {
       baizeRoot,
       claudeRouteClassifier: ordinaryChatClassifier,
-      claudeReplyGenerator: async () => '白泽：普通对话。'
+      claudeReplyGenerator: async () => 'Alice：普通对话。'
     });
 
     expect(result.provider).not.toBe('jira');

@@ -9,7 +9,7 @@ async function auditPluginOperation({ plugin, kind, issueKeys = [], triggerSourc
   if (!pluginId) {
     return {
       decision: 'deny',
-      summary: '白泽：网关需要明确的 plugin 名称。',
+      summary: 'Alice：网关需要明确的 plugin 名称。',
       perIssue: [],
       plugin: pluginId || null,
       kind: kind || null,
@@ -20,7 +20,7 @@ async function auditPluginOperation({ plugin, kind, issueKeys = [], triggerSourc
   if (!rules) {
     return {
       decision: 'deny',
-      summary: `白泽：插件 ${pluginId} 还没有登记审计规则，默认拒绝。`,
+      summary: `Alice：插件 ${pluginId} 还没有登记审计规则，默认拒绝。`,
       perIssue: [],
       plugin: pluginId,
       kind: kind || null,

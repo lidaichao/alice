@@ -61,8 +61,8 @@ describe('desktop Baize API wrapper', () => {
   });
 
   it('rejects invalid server URLs', () => {
-    expect(() => normalizeServerUrl('not a url')).toThrow('请输入有效的白泽服务器地址');
-    expect(() => normalizeServerUrl('file:///tmp/baize')).toThrow('请输入有效的白泽服务器地址');
+    expect(() => normalizeServerUrl('not a url')).toThrow('请输入有效的Alice服务器地址');
+    expect(() => normalizeServerUrl('file:///tmp/baize')).toThrow('请输入有效的Alice服务器地址');
   });
 
   it('calls account authentication endpoints', async () => {
@@ -249,7 +249,7 @@ describe('desktop Baize API wrapper', () => {
       return jsonResponse({
         ok: true,
         data: {
-          reply: '白泽：收到。',
+          reply: 'Alice：收到。',
           provider: 'local_kb',
           results: []
         }
@@ -273,7 +273,7 @@ describe('desktop Baize API wrapper', () => {
       conversationId: 'conversation-1',
       clientId: 'desktop-client-1'
     });
-    expect(result.reply).toBe('白泽：收到。');
+    expect(result.reply).toBe('Alice：收到。');
   });
 
   it('streams desktop chat messages', async () => {
@@ -290,8 +290,8 @@ describe('desktop Baize API wrapper', () => {
             controller.enqueue(encoder.encode('data: {"type":"meta","provider":"claude"}\n\n'));
             controller.enqueue(encoder.encode('data: {"type":"status","message":"正在分析"}\n\n'));
             controller.enqueue(encoder.encode('data: {"type":"permission_required","message":"需要确认"}\n\n'));
-            controller.enqueue(encoder.encode('data: {"type":"delta","text":"白泽："}\n\n'));
-            controller.enqueue(encoder.encode('data: {"type":"done","reply":"白泽：收到。","provider":"claude"}\n\n'));
+            controller.enqueue(encoder.encode('data: {"type":"delta","text":"Alice："}\n\n'));
+            controller.enqueue(encoder.encode('data: {"type":"done","reply":"Alice：收到。","provider":"claude"}\n\n'));
             controller.close();
           }
         })
@@ -318,7 +318,7 @@ describe('desktop Baize API wrapper', () => {
       clientId: 'desktop-client-1'
     });
     expect(events.map((event) => event.type)).toEqual(['meta', 'status', 'permission_required', 'delta', 'done']);
-    expect(result.reply).toBe('白泽：收到。');
+    expect(result.reply).toBe('Alice：收到。');
   });
 
   it('calls server conversation endpoints', async () => {

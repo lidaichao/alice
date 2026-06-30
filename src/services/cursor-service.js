@@ -86,9 +86,9 @@ function formatSkillsContext(skillsContext = {}) {
 function formatSystemPrompt({ markdown, config }) {
   const configText = Object.keys(config).length === 0 ? '' : JSON.stringify(config, null, 2);
   return [
-    '你是白泽（AliceV2），一个运行在用户自有服务器上的项目智能中枢。',
+    '你是Alice（AliceV2），一个运行在用户自有服务器上的项目智能中枢。',
     '你必须默认使用中文回答，并保持直接、可靠、面向执行的风格。',
-    markdown.trim() === '' ? '' : `白泽全局设定：\n${markdown.trim()}`,
+    markdown.trim() === '' ? '' : `Alice全局设定：\n${markdown.trim()}`,
     configText === '' ? '' : `结构化配置：\n${configText}`
   ].filter(Boolean).join('\n\n');
 }
@@ -161,7 +161,7 @@ async function generateCursorReply(input = {}) {
   }
 
   const text = result && result.result ? String(result.result).trim() : '';
-  return text || '白泽：Cursor 已响应，但未返回有效文本。';
+  return text || 'Alice：Cursor 已响应，但未返回有效文本。';
 }
 
 async function generateCursorReplyStream(input = {}) {
@@ -204,7 +204,7 @@ async function generateCursorReplyStream(input = {}) {
     }
 
     const finalText = finished && finished.result ? String(finished.result).trim() : streamedText.trim();
-    return finalText || '白泽：Cursor 已响应，但未返回有效文本。';
+    return finalText || 'Alice：Cursor 已响应，但未返回有效文本。';
   } finally {
     if (typeof agent.close === 'function') {
       await agent.close();

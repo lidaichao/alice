@@ -355,7 +355,7 @@ describe('Unity build scheduler service', () => {
     expect(message).toContain('error CS1002');
     expect(message).toContain('[本机路径]');
     expect(message).toContain('Build completed with a result of Failed');
-    expect(message).not.toContain('白泽 Unity 定时编译失败');
+    expect(message).not.toContain('Alice Unity 定时编译失败');
     expect(message).not.toContain('开始时间');
     expect(message).not.toContain('SVN 更新');
     expect(message).not.toContain('Unity MCP 编译');

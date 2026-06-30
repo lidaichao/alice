@@ -25,7 +25,7 @@ function publicError(message, code = 'VALIDATION_ERROR', statusCode = 400) {
   return error;
 }
 
-function unauthorized(message = '请先登录白泽账号。') {
+function unauthorized(message = '请先登录Alice 账号。') {
   return publicError(message, 'UNAUTHORIZED', 401);
 }
 

@@ -63,8 +63,8 @@ async function seedApiRoot() {
   await fs.mkdir(path.join(baizeRoot, 'docs'), { recursive: true });
   await fs.mkdir(path.join(baizeRoot, 'skills', 'knowledge-base'), { recursive: true });
 
-  await fs.writeFile(path.join(baizeRoot, 'config', 'global.md'), '# 白泽全局设定\n', 'utf8');
-  await fs.writeFile(path.join(baizeRoot, 'config', 'global.yaml'), 'system:\n  name: "白泽"\n', 'utf8');
+  await fs.writeFile(path.join(baizeRoot, 'config', 'global.md'), '# Alice全局设定\n', 'utf8');
+  await fs.writeFile(path.join(baizeRoot, 'config', 'global.yaml'), 'system:\n  name: "Alice"\n', 'utf8');
   await fs.writeFile(path.join(baizeRoot, 'config', 'claude.yaml'), 'provider: local_kb\nclaude:\n  apiKey: ""\n  baseURL: ""\n  model: claude-opus-4-7\n', 'utf8');
   await fs.writeFile(path.join(baizeRoot, 'config', 'claude-code.yaml'), 'enabled: false\n', 'utf8');
   await fs.writeFile(path.join(baizeRoot, 'config', 'client-runtime.yaml'), [
@@ -141,8 +141,8 @@ describe('baize local hub API', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.ok).toBe(true);
-    expect(response.body.data.markdown).toContain('白泽全局设定');
-    expect(response.body.data.config.system.name).toBe('白泽');
+    expect(response.body.data.markdown).toContain('Alice全局设定');
+    expect(response.body.data.config.system.name).toBe('Alice');
   });
 
   it('returns empty global config when config files are missing', async () => {
@@ -256,7 +256,7 @@ describe('baize local hub API', () => {
       ok: false,
       error: {
         code: 'UNAUTHORIZED',
-        message: '请先登录白泽账号。'
+        message: '请先登录Alice 账号。'
       }
     });
   });
@@ -726,7 +726,7 @@ describe('baize local hub API', () => {
         title: 'API 外部路径测试',
         path: 'G:/Robot/outside-project-memory.md',
         tags: ['API', '测试'],
-        summary: '拒绝探测白泽根目录外的路径。'
+        summary: '拒绝探测Alice根目录外的路径。'
       });
 
     expect(response.status).toBe(400);
@@ -973,7 +973,7 @@ describe('baize local hub API', () => {
         text: '能量机制'
       }
     });
-    expect(response.body.data.reply).toContain('白泽：');
+    expect(response.body.data.reply).toContain('Alice：');
   });
 
   it('streams desktop chat messages through the unified stream endpoint', async () => {
@@ -998,7 +998,7 @@ describe('baize local hub API', () => {
 
     expect(response.status).toBe(200);
     expect(events.map((event) => event.type).filter((type) => type !== 'activity')).toEqual(['meta', 'delta', 'done']);
-    expect(events.find((event) => event.type === 'delta').text).toContain('白泽：');
+    expect(events.find((event) => event.type === 'delta').text).toContain('Alice：');
     expect(events.find((event) => event.type === 'done').conversation).toMatchObject({ id: 'desktop-stream-conversation' });
   });
 
@@ -1207,7 +1207,7 @@ describe('baize local hub API', () => {
       '<FromUserName><![CDATA[api-wecom-user]]></FromUserName>',
       '<CreateTime>1710000000</CreateTime>',
       '<MsgType><![CDATA[text]]></MsgType>',
-      '<Content><![CDATA[白泽 能量机制]]></Content>',
+      '<Content><![CDATA[Alice 能量机制]]></Content>',
       '<MsgId>1</MsgId>',
       '<AgentID>1000002</AgentID>',
       '</xml>'
@@ -1245,7 +1245,7 @@ describe('baize local hub API', () => {
         from: 'api-user',
         chatid: 'api-chat',
         text: {
-          content: '白泽 能量机制'
+          content: 'Alice 能量机制'
         }
       });
 
@@ -1260,7 +1260,7 @@ describe('baize local hub API', () => {
         text: '能量机制'
       }
     });
-    expect(response.body.data.reply).toContain('白泽：');
+    expect(response.body.data.reply).toContain('Alice：');
     expect(response.body.data.reply).toContain('Claude Code');
   });
 

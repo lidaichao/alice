@@ -88,10 +88,10 @@ function formatSkillsContext(skillsContext = {}) {
 function formatSystemPrompt({ markdown, config }) {
   const configText = Object.keys(config).length === 0 ? '' : JSON.stringify(config, null, 2);
   return [
-    '你是白泽，一个运行在用户自有服务器上的项目智能中枢。',
+    '你是Alice，一个运行在用户自有服务器上的项目智能中枢。',
     '你必须默认使用中文回答，并保持直接、可靠、面向执行的风格。',
     '客户端、企业微信和其它插件都只是入口；服务器负责记忆、逻辑、知识库和 Claude 推理。',
-    markdown.trim() === '' ? '' : `白泽全局设定：\n${markdown.trim()}`,
+    markdown.trim() === '' ? '' : `Alice全局设定：\n${markdown.trim()}`,
     configText === '' ? '' : `结构化配置：\n${configText}`
   ].filter(Boolean).join('\n\n');
 }
@@ -345,7 +345,7 @@ async function generateJiraDraftTextFromWorkbookText({ fileName, workbookText, u
     system: [{
       type: 'text',
       text: [
-        '你是白泽服务器上的 Jira 批量导入解析器。',
+        '你是Alice服务器上的 Jira 批量导入解析器。',
         '服务器已将用户上传的 Excel 工作簿转换为纯文本表格内容。',
         '必须基于表格内容生成 Jira 草稿，忽略空行和说明性标题行。',
         '只输出纯文本，不要解释，不要 Markdown 代码块。',
@@ -417,7 +417,7 @@ async function generateJiraDraftTextFromXlsx({ fileName = 'jira-import.xlsx', bu
     system: [{
       type: 'text',
       text: [
-        '你是白泽服务器上的 Jira 批量导入解析器。',
+        '你是Alice服务器上的 Jira 批量导入解析器。',
         '用户上传了原始 Excel 文件，请使用 code_execution 读取工作簿和所有工作表，不要要求用户重新粘贴内容。',
         '必须基于 Excel 原始内容生成 Jira 草稿，忽略空行和说明性标题行。',
         '只输出纯文本，不要解释，不要 Markdown 代码块。',
@@ -459,7 +459,7 @@ function formatRouteHistory(messages = []) {
   return messages
     .filter((message) => ['user', 'assistant'].includes(message.role) && message.text)
     .slice(-8)
-    .map((message) => `${message.role === 'user' ? '用户' : '白泽'}：${message.text}`)
+    .map((message) => `${message.role === 'user' ? '用户' : 'Alice'}：${message.text}`)
     .join('\n') || '无历史消息。';
 }
 
@@ -488,7 +488,7 @@ async function generateChatRouteClassification(input = {}) {
     system: [{
       type: 'text',
       text: [
-        '你是白泽服务器的轻量聊天分类器，只负责判断当前用户消息是不是普通聊天。',
+        '你是Alice服务器的轻量聊天分类器，只负责判断当前用户消息是不是普通聊天。',
         '你不能回答用户问题，不能创建 Jira，不能执行代码，不能请求或使用任何凭据。',
         '不要判断 Jira、工程、逻辑断言、附件解析等具体业务意图；这些全部交给 Claude Code。',
         '只输出严格 JSON，不要输出 Markdown 代码块或解释。',
@@ -539,7 +539,7 @@ async function generateClaudeReply(input = {}) {
   }
 
   const text = extractText(response);
-  return text || '白泽：我已收到请求，但没有生成有效回复。';
+  return text || 'Alice：我已收到请求，但没有生成有效回复。';
 }
 
 async function generateClaudeReplyStream(input = {}) {
@@ -563,7 +563,7 @@ async function generateClaudeReplyStream(input = {}) {
   }
 
   const finalText = extractText(finalMessage);
-  return finalText || streamedText.trim() || '白泽：我已收到请求，但没有生成有效回复。';
+  return finalText || streamedText.trim() || 'Alice：我已收到请求，但没有生成有效回复。';
 }
 
 async function analyzeImageAttachment(input = {}) {
@@ -603,7 +603,7 @@ async function analyzeImageAttachment(input = {}) {
             {
               type: 'text',
               text: [
-                `请分析这张用户上传到白泽的图片，文件名：${fileName}。`,
+                `请分析这张用户上传到Alice的图片，文件名：${fileName}。`,
                 '请用中文返回 JSON，不要输出 Markdown 代码块，字段如下：',
                 '{"summary":"图片内容摘要","memoryCategory":"project","shouldRemember":true,"reason":"是否建议加入记忆区的原因","extractedText":"图片里可识别的文字，没有则为空字符串"}',
                 '如果图片包含界面、报错、文档、设计稿或项目上下文，请重点描述对后续对话有帮助的信息。'

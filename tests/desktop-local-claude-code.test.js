@@ -37,7 +37,7 @@ describe('desktop local Claude Code output parsing', () => {
     let runInput;
     const runner = async (input) => {
       runInput = input;
-      return { output: JSON.stringify({ summary: '图片展示客户端界面', memoryCategory: 'project', shouldRemember: true, reason: '有项目上下文', extractedText: '白泽' }) };
+      return { output: JSON.stringify({ summary: '图片展示客户端界面', memoryCategory: 'project', shouldRemember: true, reason: '有项目上下文', extractedText: 'Alice' }) };
     };
 
     const analysis = await analyzeLocalImageAttachment({
@@ -198,7 +198,7 @@ describe('desktop local Claude Code output parsing', () => {
           kill: () => {}
         };
         setTimeout(() => {
-          listeners['stdout:data'] && listeners['stdout:data'](Buffer.from('白泽：完成。'));
+          listeners['stdout:data'] && listeners['stdout:data'](Buffer.from('Alice：完成。'));
           listeners.close && listeners.close(0);
         }, 0);
         return child;
@@ -207,7 +207,7 @@ describe('desktop local Claude Code output parsing', () => {
 
     const result = await runner({ prompt: '你好' });
 
-    expect(result).toEqual({ output: '白泽：完成。', sessionId: '' });
+    expect(result).toEqual({ output: 'Alice：完成。', sessionId: '' });
     expect(spawned.command).toBe('custom-claude');
     expect(spawned.args).toEqual(expect.arrayContaining([
       '--permission-mode',
@@ -235,7 +235,7 @@ describe('desktop local Claude Code output parsing', () => {
           kill: () => {}
         };
         setTimeout(() => {
-          listeners['stdout:data'] && listeners['stdout:data'](Buffer.from('白泽：完成。'));
+          listeners['stdout:data'] && listeners['stdout:data'](Buffer.from('Alice：完成。'));
           listeners.close && listeners.close(0);
         }, 0);
         return child;
@@ -244,7 +244,7 @@ describe('desktop local Claude Code output parsing', () => {
 
     const result = await runner({ prompt: longPrompt });
 
-    expect(result).toEqual({ output: '白泽：完成。', sessionId: '' });
+    expect(result).toEqual({ output: 'Alice：完成。', sessionId: '' });
     expect(spawned.args).toContain('--print');
     expect(spawned.args).not.toContain(longPrompt);
     expect(spawned.options.stdio).toEqual(['pipe', 'pipe', 'pipe']);
@@ -265,7 +265,7 @@ describe('desktop local Claude Code output parsing', () => {
           kill: () => {}
         };
         setTimeout(() => {
-          listeners['stdout:data'] && listeners['stdout:data'](Buffer.from('白泽：完成。'));
+          listeners['stdout:data'] && listeners['stdout:data'](Buffer.from('Alice：完成。'));
           listeners.close && listeners.close(0);
         }, 0);
         return child;
@@ -295,7 +295,7 @@ describe('desktop local Claude Code output parsing', () => {
           kill: () => {}
         };
         setTimeout(() => {
-          listeners['stdout:data'] && listeners['stdout:data'](Buffer.from('白泽：完成。'));
+          listeners['stdout:data'] && listeners['stdout:data'](Buffer.from('Alice：完成。'));
           listeners.close && listeners.close(0);
         }, 0);
         return child;
@@ -321,7 +321,7 @@ describe('desktop local Claude Code output parsing', () => {
           kill: () => {}
         };
         setTimeout(() => {
-          listeners['stdout:data'] && listeners['stdout:data'](Buffer.from('白泽：完成。'));
+          listeners['stdout:data'] && listeners['stdout:data'](Buffer.from('Alice：完成。'));
           listeners.close && listeners.close(0);
         }, 0);
         return child;
@@ -337,7 +337,7 @@ describe('desktop local Claude Code output parsing', () => {
       }
     });
 
-    expect(result).toEqual({ output: '白泽：完成。', sessionId: '' });
+    expect(result).toEqual({ output: 'Alice：完成。', sessionId: '' });
     expect(spawned.options.env.ANTHROPIC_AUTH_TOKEN).toBe('server-token');
     expect(spawned.options.env.ANTHROPIC_BASE_URL).toBe('http://claude.example.test');
     expect(spawned.options.env.EMPTY_VALUE).toBeUndefined();
@@ -361,9 +361,9 @@ describe('desktop local Claude Code output parsing', () => {
             { type: 'system', subtype: 'init', session_id: 'session-1' },
             { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'D:/tmp/需求.xlsx' } }] } },
             { type: 'user', message: { content: [{ type: 'tool_result', content: 'ok' }] } },
-            { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '白泽：' } } },
+            { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Alice：' } } },
             { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '完成。' } } },
-            { type: 'result', subtype: 'success', result: '白泽：完成。', duration_ms: 1200 }
+            { type: 'result', subtype: 'success', result: 'Alice：完成。', duration_ms: 1200 }
           ].forEach((item) => listeners['stdout:data'] && listeners['stdout:data'](Buffer.from(`${JSON.stringify(item)}\n`)));
           listeners.close && listeners.close(0);
         }, 0);
@@ -373,12 +373,12 @@ describe('desktop local Claude Code output parsing', () => {
 
     const result = await runner({ prompt: '你好', streamJson: true, onEvent: (event) => events.push(event) });
 
-    expect(result).toEqual({ output: '白泽：完成。', sessionId: 'session-1' });
+    expect(result).toEqual({ output: 'Alice：完成。', sessionId: 'session-1' });
     expect(events).toEqual([
       { type: 'status', message: '本机 Claude Code 已启动，会话 session-1' },
       { type: 'status', message: 'Claude Code 正在读取文件：需求.xlsx' },
       { type: 'status', message: 'Claude Code 已收到 1 个工具结果，正在继续分析。' },
-      { type: 'delta', text: '白泽：' },
+      { type: 'delta', text: 'Alice：' },
       { type: 'delta', text: '完成。' },
       { type: 'status', message: 'Claude Code 执行完成，耗时 1 秒。' }
     ]);
@@ -399,7 +399,7 @@ describe('desktop local Claude Code output parsing', () => {
         };
         setTimeout(() => {
           listeners['stdout:data'] && listeners['stdout:data'](Buffer.from(`${JSON.stringify({ type: 'system', subtype: 'init', session_id: 'session-2' })}\n`));
-          listeners['stdout:data'] && listeners['stdout:data'](Buffer.from(`${JSON.stringify({ type: 'result', result: '白泽：继续。' })}\n`));
+          listeners['stdout:data'] && listeners['stdout:data'](Buffer.from(`${JSON.stringify({ type: 'result', result: 'Alice：继续。' })}\n`));
           listeners.close && listeners.close(0);
         }, 0);
         return child;
@@ -408,7 +408,7 @@ describe('desktop local Claude Code output parsing', () => {
 
     const result = await runner({ prompt: '继续', streamJson: true, resumeSessionId: 'session-1' });
 
-    expect(result).toEqual({ output: '白泽：继续。', sessionId: 'session-2' });
+    expect(result).toEqual({ output: 'Alice：继续。', sessionId: 'session-2' });
     expect(spawned.args).toEqual(expect.arrayContaining(['--resume', 'session-1']));
   });
 
@@ -422,7 +422,7 @@ describe('desktop local Claude Code output parsing', () => {
       },
       runner: async (input) => {
         calls.push(input);
-        return { output: `白泽：第 ${calls.length} 次回复。`, sessionId: `session-${calls.length}` };
+        return { output: `Alice：第 ${calls.length} 次回复。`, sessionId: `session-${calls.length}` };
       }
     });
 
@@ -450,8 +450,8 @@ describe('desktop local Claude Code output parsing', () => {
       },
       runner: async (input) => {
         calls.push(input);
-        input.onEvent && input.onEvent({ type: 'delta', text: '白泽：继续。' });
-        return { output: '白泽：继续。', sessionId: 'session-2' };
+        input.onEvent && input.onEvent({ type: 'delta', text: 'Alice：继续。' });
+        return { output: 'Alice：继续。', sessionId: 'session-2' };
       }
     });
 
@@ -463,11 +463,11 @@ describe('desktop local Claude Code output parsing', () => {
     expect(calls[0].streamJson).toBe(true);
     expect(sessions.get('conversation-1')).toBe('session-2');
     expect(events).toEqual([
-      { type: 'status', message: '白泽正在调用本机 Claude Code，全本地文件工具权限已启用。' },
-      { type: 'delta', text: '白泽：继续。' },
-      expect.objectContaining({ type: 'done', provider: 'local_claude_code', reply: '白泽：继续。' })
+      { type: 'status', message: 'Alice正在调用本机 Claude Code，全本地文件工具权限已启用。' },
+      { type: 'delta', text: 'Alice：继续。' },
+      expect.objectContaining({ type: 'done', provider: 'local_claude_code', reply: 'Alice：继续。' })
     ]);
-    expect(result).toMatchObject({ type: 'done', provider: 'local_claude_code', reply: '白泽：继续。' });
+    expect(result).toMatchObject({ type: 'done', provider: 'local_claude_code', reply: 'Alice：继续。' });
   });
 
   it('uses a 40 minute timeout for auto bug fix execution', async () => {
@@ -475,7 +475,7 @@ describe('desktop local Claude Code output parsing', () => {
     const chat = createLocalClaudeCodeChat({
       runner: async (input) => {
         calls.push(input);
-        return { output: '白泽：已完成自动修 BUG。', sessionId: 'session-1' };
+        return { output: 'Alice：已完成自动修 BUG。', sessionId: 'session-1' };
       }
     });
 
@@ -519,7 +519,7 @@ describe('desktop local Claude Code output parsing', () => {
             sessionId: 'session-1'
           };
         }
-        return { output: '白泽：平均完成时间 2 天。', sessionId: 'session-1' };
+        return { output: 'Alice：平均完成时间 2 天。', sessionId: 'session-1' };
       }
     });
 
@@ -534,7 +534,7 @@ describe('desktop local Claude Code output parsing', () => {
     expect(calls).toHaveLength(2);
     expect(calls[1].resumeSessionId).toBe('session-1');
     expect(calls[1].prompt).toContain('timingAnalysis');
-    expect(result.reply).toBe('白泽：平均完成时间 2 天。');
+    expect(result.reply).toBe('Alice：平均完成时间 2 天。');
   });
 
   it('allows Jira tool operations during confirmed execution mode', async () => {
@@ -552,7 +552,7 @@ describe('desktop local Claude Code output parsing', () => {
             sessionId: 'session-1'
           };
         }
-        return { output: '白泽：Jira 项目已确认。', sessionId: 'session-1' };
+        return { output: 'Alice：Jira 项目已确认。', sessionId: 'session-1' };
       }
     });
 
@@ -568,7 +568,7 @@ describe('desktop local Claude Code output parsing', () => {
     expect(calls[0].prompt).toContain('同一阶段不互相依赖的工具要尽量放在同一个 clientOperations 数组里一次输出');
     expect(calls[1].prompt).toContain('同一阶段不互相依赖的后续 Jira 工具要尽量合并到一个 clientOperations 数组里输出');
     expect(operations).toEqual([{ id: 'jira-tool-1', plugin: 'jira', action: 'get_project', input: { projectKey: 'BZ' } }]);
-    expect(result.reply).toBe('白泽：Jira 项目已确认。');
+    expect(result.reply).toBe('Alice：Jira 项目已确认。');
   });
 
   it('carries Jira create operation results into the final local chat result', async () => {
@@ -583,13 +583,13 @@ describe('desktop local Claude Code output parsing', () => {
         if (input.prompt.includes('用户消息')) {
           return {
             output: JSON.stringify({
-              reply: '白泽：已生成 Jira 草稿，请确认创建。',
+              reply: 'Alice：已生成 Jira 草稿，请确认创建。',
               clientOperations: [{ id: 'jira-create-1', plugin: 'jira', action: 'create_issue', input: { drafts: [{ summary: '客户端需求', projectKey: 'BZ' }] } }]
             }),
             sessionId: 'session-1'
           };
         }
-        return { output: '白泽：已生成 Jira 创建确认卡，请在客户端确认。', sessionId: 'session-1' };
+        return { output: 'Alice：已生成 Jira 创建确认卡，请在客户端确认。', sessionId: 'session-1' };
       }
     });
 
@@ -599,7 +599,7 @@ describe('desktop local Claude Code output parsing', () => {
 
     expect(result.jiraOperation).toBe(operation);
     expect(result.results).toEqual([{ ok: true, plugin: 'jira', action: 'create_issue', id: 'jira-create-1', operation }]);
-    expect(result.reply).toBe('白泽：已生成 Jira 创建确认卡，请在客户端确认。');
+    expect(result.reply).toBe('Alice：已生成 Jira 创建确认卡，请在客户端确认。');
   });
 
   it('carries auto-fix bug queues into the final local chat result', async () => {
@@ -615,13 +615,13 @@ describe('desktop local Claude Code output parsing', () => {
         if (input.prompt.includes('用户消息')) {
           return {
             output: JSON.stringify({
-              reply: '白泽：我先拉取 BUG 队列。',
+              reply: 'Alice：我先拉取 BUG 队列。',
               clientOperations: [{ id: 'jira-auto-fix-1', plugin: 'jira', action: 'auto_fix_bugs', input: { maxResults: 50 } }]
             }),
             sessionId: 'session-1'
           };
         }
-        return { output: '白泽：已梳理出自动修复队列，请在客户端确认。', sessionId: 'session-1' };
+        return { output: 'Alice：已梳理出自动修复队列，请在客户端确认。', sessionId: 'session-1' };
       }
     });
 
@@ -631,12 +631,12 @@ describe('desktop local Claude Code output parsing', () => {
 
     expect(result.autoFixBugQueue).toBe(autoFixBugQueue);
     expect(result.results).toEqual([{ ok: true, plugin: 'jira', action: 'auto_fix_bugs', id: 'jira-auto-fix-1', autoFixBugQueue }]);
-    expect(result.reply).toBe('白泽：已梳理出自动修复队列，请在客户端确认。');
+    expect(result.reply).toBe('Alice：已梳理出自动修复队列，请在客户端确认。');
   });
 
   it('parses structured replies with allowed sync events', () => {
     const result = parseLocalClaudeCodeOutput(JSON.stringify({
-      reply: '白泽：已记录逻辑断言。',
+      reply: 'Alice：已记录逻辑断言。',
       syncEvents: [
         { type: 'logic_assertion.created', payload: { statement: '多人负责人一对一拆单。' } },
         { type: 'memory.created', payload: { category: 'project', content: '客户端本地处理请求。' } }
@@ -644,7 +644,7 @@ describe('desktop local Claude Code output parsing', () => {
     }));
 
     expect(result).toEqual({
-      reply: '白泽：已记录逻辑断言。',
+      reply: 'Alice：已记录逻辑断言。',
       syncEvents: [
         { type: 'logic_assertion.created', payload: { statement: '多人负责人一对一拆单。' } },
         { type: 'memory.created', payload: { category: 'project', content: '客户端本地处理请求。' } }
@@ -654,10 +654,10 @@ describe('desktop local Claude Code output parsing', () => {
   });
 
   it('keeps plain text replies without sync events', () => {
-    const result = parseLocalClaudeCodeOutput('白泽：普通回复。');
+    const result = parseLocalClaudeCodeOutput('Alice：普通回复。');
 
     expect(result).toEqual({
-      reply: '白泽：普通回复。',
+      reply: 'Alice：普通回复。',
       syncEvents: [],
       clientOperations: []
     });
@@ -665,7 +665,7 @@ describe('desktop local Claude Code output parsing', () => {
 
   it('filters sync events that should not be uploaded by local chat', () => {
     const result = parseLocalClaudeCodeOutput(JSON.stringify({
-      reply: '白泽：普通分析完成。',
+      reply: 'Alice：普通分析完成。',
       syncEvents: [
         { type: 'audit.created', payload: { content: '普通分析审计。' } },
         { type: 'client_runtime.updated', payload: { enabled: false } },
@@ -676,7 +676,7 @@ describe('desktop local Claude Code output parsing', () => {
     }));
 
     expect(result).toEqual({
-      reply: '白泽：普通分析完成。',
+      reply: 'Alice：普通分析完成。',
       syncEvents: [
         { type: 'memory.updated', payload: { id: 'memory-1', content: '允许更新记忆。' } }
       ],

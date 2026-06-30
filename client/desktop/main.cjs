@@ -141,7 +141,7 @@ async function getAuthRequestOptions(extra = {}) {
 async function requireAuthRequestOptions(extra = {}) {
   const session = await getAuthStore().getSession();
   if (!session.token) {
-    const error = new Error('请先登录白泽账号。');
+    const error = new Error('请先登录Alice账号。');
     error.code = 'AUTH_REQUIRED';
     throw error;
   }
@@ -259,7 +259,7 @@ async function buildAuthPayload(input = {}) {
 async function saveAuthResult(serverUrl, result) {
   const payload = result && result.user && result.token ? result : result && result.data;
   if (!payload || !payload.user || !payload.token) {
-    throw new Error('白泽服务器返回的登录信息无效。');
+    throw new Error('Alice服务器返回的登录信息无效。');
   }
   await getAuthStore().saveSession({ user: payload.user, token: payload.token, serverUrl });
   return { user: payload.user, session: payload.session || null };
@@ -304,7 +304,7 @@ async function saveCurrentAccountJiraDefaults(input = {}) {
   const authStore = getAuthStore();
   const session = await authStore.getSession();
   if (!session.token) {
-    const error = new Error('请先登录白泽账号。');
+    const error = new Error('请先登录Alice账号。');
     error.code = 'AUTH_REQUIRED';
     throw error;
   }
@@ -751,7 +751,7 @@ function registerIpcHandlers() {
   ipcMain.handle('workspace:authorize', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openDirectory'],
-      title: '选择允许白泽修改的本地工作区'
+      title: '选择允许Alice修改的本地工作区'
     });
     if (result.canceled || !result.filePaths[0]) {
       return null;
@@ -784,7 +784,7 @@ function createWindow() {
     minWidth: 860,
     minHeight: 620,
     frame: false,
-    title: '白泽',
+    title: 'Alice',
     icon: path.join(__dirname, '..', '..', 'build', 'icon.ico'),
     backgroundColor: '#f4f4f1',
     webPreferences: {

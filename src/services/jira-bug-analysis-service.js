@@ -181,7 +181,7 @@ function settleRun(run = {}, now = new Date()) {
 
 function buildAnalysisPrompt({ run, item, issue, svnMaintenance }) {
   return [
-    '你是白泽的 Jira Bug 工程分析员。',
+    '你是Alice的 Jira Bug 工程分析员。',
     '服务器已在启动本 BUG 子任务前执行受控 SVN 维护；你必须基于下方 SVN 维护结果和当前工程文件分析，不要再次执行 svn cleanup 或 svn update。',
     '本流程只允许分析和只读查询；除服务器已执行的 SVN 维护外，不允许创建、修改或删除任何工程文件、分析文件或临时文件。',
     '如果 SVN 维护结果显示更新或冲突处理失败，仍必须基于当前可读取的工程工作副本继续进行工程级分析，并明确标注 SVN 更新失败原因、当前分析依据来自未完成更新的本地工程状态。',
@@ -206,7 +206,7 @@ function buildAnalysisPrompt({ run, item, issue, svnMaintenance }) {
 }
 
 function buildCommentDraft(analysis, item) {
-  return `${BUG_ANALYSIS_MARKER}\n白泽 Claude Code 工程级 BUG 分析（${item.issueKey}）：\n\n${analysis}`;
+  return `${BUG_ANALYSIS_MARKER}\nAlice Claude Code 工程级 BUG 分析（${item.issueKey}）：\n\n${analysis}`;
 }
 
 function buildSvnArgs(args, svnConfig = {}) {
@@ -352,7 +352,7 @@ function parseRecoveryActions(output) {
 
 function buildRecoveryPrompt({ run, item, error }) {
   return [
-    '请只做只读自诊断，分析白泽处理 Jira Bug 分析 Item 失败的原因，并输出恢复建议 JSON。',
+    '请只做只读自诊断，分析Alice处理 Jira Bug 分析 Item 失败的原因，并输出恢复建议 JSON。',
     '服务器只会执行白名单动作：retry_analysis、skip_item、cancel_run。不要返回其他动作。',
     'JSON 格式：{"kind":"jira_bug_analysis_recovery","summary":"...","reason":"...","actions":[{"id":"retry_analysis","label":"重试分析","requiresConfirmation":false}]}',
     '',

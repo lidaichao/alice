@@ -78,23 +78,23 @@ function sanitizeResults(results) {
 
 function formatReply(query, results) {
   if (results.length === 0) {
-    return `白泽：我已收到「${query}」，但暂时没有在本地知识库中找到相关内容。`;
+    return `Alice：我已收到「${query}」，但暂时没有在本地知识库中找到相关内容。`;
   }
 
   const lines = results.map((result, index) => `${index + 1}. ${result.title}：${result.snippet}`);
-  return `白泽：我在本地知识库中找到这些相关内容：\n${lines.join('\n')}`;
+  return `Alice：我在本地知识库中找到这些相关内容：\n${lines.join('\n')}`;
 }
 
 function formatEngineeringBlockedReply(intent) {
   if (intent && intent.route === 'dangerous') {
-    return '白泽：这个操作风险较高，当前阶段不会执行。';
+    return 'Alice：这个操作风险较高，当前阶段不会执行。';
   }
 
-  return '白泽：这个任务需要修改文件或运行命令。为了安全，需要先确认后才能生成补丁草案。';
+  return 'Alice：这个任务需要修改文件或运行命令。为了安全，需要先确认后才能生成补丁草案。';
 }
 
 function formatPendingOperationReply(operation) {
-  return `白泽：这个任务需要修改代码。我可以先让 Claude Code 生成补丁草案，但不会直接修改你的本地文件。请确认是否生成补丁草案。操作 ID：${operation.id}`;
+  return `Alice：这个任务需要修改代码。我可以先让 Claude Code 生成补丁草案，但不会直接修改你的本地文件。请确认是否生成补丁草案。操作 ID：${operation.id}`;
 }
 
 function toPermissionRequired(operation) {
@@ -102,7 +102,7 @@ function toPermissionRequired(operation) {
     operationId: operation.id,
     kind: 'claude_code_write_proposal',
     title: '需要确认后生成代码补丁',
-    message: '白泽可以生成补丁草案，但不会直接修改你的本地工作区。',
+    message: 'Alice可以生成补丁草案，但不会直接修改你的本地工作区。',
     requestedMode: operation.permission.mode,
     riskLevel: operation.risk.level,
     expiresAt: operation.expiresAt,
@@ -114,7 +114,7 @@ function toPermissionRequired(operation) {
 }
 
 function formatAmbiguousEngineeringReply() {
-  return '白泽：这个工程问题还不够明确。请告诉我你希望我只读分析什么文件、接口、报错或功能，我会先进行只读排查。';
+  return 'Alice：这个工程问题还不够明确。请告诉我你希望我只读分析什么文件、接口、报错或功能，我会先进行只读排查。';
 }
 
 function shouldCreateJiraIssue(text) {
@@ -178,7 +178,7 @@ function extractLogicAssertionStatement(text) {
 }
 
 function formatLogicAssertionReply(result, statement) {
-  return `白泽：已新增逻辑断言。\n\n- 分类：${result.category}\n- 断言：${statement}`;
+  return `Alice：已新增逻辑断言。\n\n- 分类：${result.category}\n- 断言：${statement}`;
 }
 
 function extractJiraDraftPatch(text) {
@@ -215,7 +215,7 @@ function extractJiraDraftPatch(text) {
 
 function formatJiraDraftUpdateReply(operation) {
   const draft = operation.draftImport.drafts[0] || {};
-  return ['白泽：已更新 Jira 草稿。', '', '当前 Jira 单草稿：', `- 项目 Key：${draft.projectKey || '未设置'}`, `- 单子名称：${draft.summary || '未设置'}`, `- 类型：${draft.issueType || '未设置'}`, `- 负责人：${draft.assignee || '未设置'}`, '', '如需创建，请点击确认按钮，或回复“确认创建”。'].join('\n');
+  return ['Alice：已更新 Jira 草稿。', '', '当前 Jira 单草稿：', `- 项目 Key：${draft.projectKey || '未设置'}`, `- 单子名称：${draft.summary || '未设置'}`, `- 类型：${draft.issueType || '未设置'}`, `- 负责人：${draft.assignee || '未设置'}`, '', '如需创建，请点击确认按钮，或回复“确认创建”。'].join('\n');
 }
 
 function shouldUseJiraPlugin(text) {
@@ -331,8 +331,8 @@ function shouldContinueJiraBugAnalysisFromContext(text, historyMessages = []) {
 }
 
 const JIRA_DELETE_VERBS = /(删除|删掉|清空|清除|移除|清理|撤回)/;
-const JIRA_AI_COMMENT_HINT = /(AI\s*评论|AI\s*分析\s*评论|白泽\s*评论|白泽\s*AI|AI\s*分析|AI\s*comment|baize\s*comment)/i;
-const JIRA_OWN_COMMENT_HINT = /(我(?:的|发的|写的)?\s*评论|白泽(?:的|发的|写的)?\s*评论|baize\s*的?评论)/i;
+const JIRA_AI_COMMENT_HINT = /(AI\s*评论|AI\s*分析\s*评论|Alice\s*评论|Alice\s*AI|AI\s*分析|AI\s*comment|baize\s*comment)/i;
+const JIRA_OWN_COMMENT_HINT = /(我(?:的|发的|写的)?\s*评论|Alice(?:的|发的|写的)?\s*评论|baize\s*的?评论)/i;
 
 function extractJiraDeleteOwnCommentsRequest(text) {
   const source = String(text || '');
@@ -425,11 +425,11 @@ function formatJiraAnalysisReply(result) {
     const choices = Array.isArray(supplement.choices) && supplement.choices.length > 0
       ? supplement.choices.map((choice, index) => `${index + 1}. ${choice.label || choice.value}`).join('\n')
       : null;
-    return ['白泽：Jira 查询需要补充条件。', supplement.prompt, choices].filter(Boolean).join('\n');
+    return ['Alice：Jira 查询需要补充条件。', supplement.prompt, choices].filter(Boolean).join('\n');
   }
   if (result && result.notRecoverable) {
     const recovery = result.jiraSearchRecovery || {};
-    return ['白泽：暂时无法完成这次 Jira 查询。', recovery.summary, recovery.reason].filter(Boolean).join('\n');
+    return ['Alice：暂时无法完成这次 Jira 查询。', recovery.summary, recovery.reason].filter(Boolean).join('\n');
   }
   const lines = result.issues.slice(0, 10).map((issue, index) => `${index + 1}. ${issue.key} ${issue.summary}（${issue.status || '未设置状态'}，${issue.assignee || '未分配'}）`);
   const resolvedUsers = Array.isArray(result.resolvedUsers) && result.resolvedUsers.length > 0
@@ -438,22 +438,22 @@ function formatJiraAnalysisReply(result) {
   const recoveryNote = result && result.jiraSearchRecovery && result.jiraSearchRecovery.status === 'retry_succeeded'
     ? '已根据 Jira 错误自动修正查询。'
     : null;
-  return ['白泽：已拉取 Jira 需求单并完成状态分析。', recoveryNote, resolvedUsers, result.analysis.summary, ...lines].filter(Boolean).join('\n');
+  return ['Alice：已拉取 Jira 需求单并完成状态分析。', recoveryNote, resolvedUsers, result.analysis.summary, ...lines].filter(Boolean).join('\n');
 }
 
 function formatJiraCommentReply(issueKey, body) {
   const trimmed = body.length > 200 ? `${body.slice(0, 200)}…` : body;
-  return `白泽：已直接写入 ${issueKey} 评论：${trimmed}`;
+  return `Alice：已直接写入 ${issueKey} 评论：${trimmed}`;
 }
 
 function formatJiraCommentFailedReply(issueKey, errorMessage) {
-  return `白泽：写入 ${issueKey} 评论失败：${errorMessage}`;
+  return `Alice：写入 ${issueKey} 评论失败：${errorMessage}`;
 }
 
 async function executeJiraAddComment(message, { baizeRoot, fetchImpl }) {
   const request = extractJiraCommentRequest(message.text);
   if (!request) {
-    return { reply: '白泽：没有解析到要评论的 Jira 单或评论内容。' };
+    return { reply: 'Alice：没有解析到要评论的 Jira 单或评论内容。' };
   }
   try {
     const config = await getJiraConfig({ baizeRoot });
@@ -468,13 +468,13 @@ async function executeJiraSummarizedComment(operationIntent, { baizeRoot, fetchI
   const issueKey = operationIntent && operationIntent.issueKey;
   const body = operationIntent && operationIntent.body;
   if (!issueKey || !body) {
-    return { reply: '白泽：Claude Code 没有生成可用的 Jira 评论草稿。', issueKey, body, sources: [] };
+    return { reply: 'Alice：Claude Code 没有生成可用的 Jira 评论草稿。', issueKey, body, sources: [] };
   }
   try {
     const config = await getJiraConfig({ baizeRoot });
     await addJiraComment(config, issueKey, body, { fetchImpl });
     return {
-      reply: `白泽：已根据分析向 ${issueKey} 写入评论：${body.length > 200 ? `${body.slice(0, 200)}…` : body}`,
+      reply: `Alice：已根据分析向 ${issueKey} 写入评论：${body.length > 200 ? `${body.slice(0, 200)}…` : body}`,
       issueKey,
       body,
       sources: Array.isArray(operationIntent.sources) ? operationIntent.sources : []
@@ -538,12 +538,12 @@ async function runPluginWriteThroughGateway({
 
   if (audit.decision === 'deny') {
     const denyReasons = audit.perIssue.filter((item) => item.decision === 'deny').map((item) => `${item.issueKey}：${item.reason}`).join('；');
-    return { reply: `白泽：审计官拒绝执行 ${kind}。${denyReasons ? '原因：' + denyReasons : audit.summary}`, audit };
+    return { reply: `Alice：审计官拒绝执行 ${kind}。${denyReasons ? '原因：' + denyReasons : audit.summary}`, audit };
   }
 
   if (audit.decision === 'require_confirmation') {
     const lines = [
-      `白泽：${kind} 已提交审计，需要在客户端审计卡上点击允许执行后才会真正写入。`,
+      `Alice：${kind} 已提交审计，需要在客户端审计卡上点击允许执行后才会真正写入。`,
       audit.perIssue.filter((item) => item.decision === 'require_confirmation').map((item) => `- ${item.issueKey}（${item.aiCreated ? 'AI 创建' : '非 AI 单'}）：${item.reason}`).join('\n'),
       audit.perIssue.filter((item) => item.decision === 'deny').length > 0
         ? '以下单审计官已拒绝，不会执行：\n' + audit.perIssue.filter((item) => item.decision === 'deny').map((item) => `- ${item.issueKey}：${item.reason}`).join('\n')
@@ -554,7 +554,7 @@ async function runPluginWriteThroughGateway({
 
   // allow
   if (typeof executor !== 'function') {
-    return { reply: '白泽：审计官放行，但服务端未注册该意图的执行器。', audit };
+    return { reply: 'Alice：审计官放行，但服务端未注册该意图的执行器。', audit };
   }
   if (typeof emitActivity === 'function') {
     emitActivity('plugin_gateway_allow', `审计官放行，开始执行 ${kind}。`);
@@ -608,7 +608,7 @@ async function executePluginIntentWithRecovery({
       break;
     }
     if (typeof emitActivity === 'function') {
-      emitActivity('jira_write_error_analysis', `白泽正在让 Claude Code 分析 ${kind} 写入失败。`);
+      emitActivity('jira_write_error_analysis', `Alice正在让 Claude Code 分析 ${kind} 写入失败。`);
     }
     let recovery;
     try {
@@ -638,7 +638,7 @@ async function executePluginIntentWithRecovery({
     }
     if (!recovery || recovery.status === 'not_recoverable') {
       return {
-        reply: `白泽：${kind} 写入失败：${errorMessage}。Claude Code 判断不可自动恢复。${recovery && recovery.reason ? '原因：' + recovery.reason : ''}`,
+        reply: `Alice：${kind} 写入失败：${errorMessage}。Claude Code 判断不可自动恢复。${recovery && recovery.reason ? '原因：' + recovery.reason : ''}`,
         audit,
         decision: 'allow',
         recovery,
@@ -647,7 +647,7 @@ async function executePluginIntentWithRecovery({
     }
     if (recovery.status === 'needs_user_input') {
       return {
-        reply: `白泽：${kind} 写入失败：${errorMessage}。Claude Code 需要用户补充：${recovery.summary || ''}`,
+        reply: `Alice：${kind} 写入失败：${errorMessage}。Claude Code 需要用户补充：${recovery.summary || ''}`,
         audit,
         decision: 'allow',
         recovery,
@@ -657,7 +657,7 @@ async function executePluginIntentWithRecovery({
     // retry_available: 再循环一次
   }
   return {
-    reply: `白泽：${kind} 写入失败：${lastError}（已尝试 ${maxRecoveryAttempts} 次自动恢复）。`,
+    reply: `Alice：${kind} 写入失败：${lastError}（已尝试 ${maxRecoveryAttempts} 次自动恢复）。`,
     audit,
     decision: 'allow',
     failed: true
@@ -693,7 +693,7 @@ async function executeJiraAddCommentSimple({ intent, baizeRoot, fetchImpl }) {
   const issueKey = intent && intent.issueKey;
   const body = intent && intent.body;
   if (!issueKey || !body) {
-    return { reply: '白泽：没有解析到要评论的 Jira 单或评论内容。' };
+    return { reply: 'Alice：没有解析到要评论的 Jira 单或评论内容。' };
   }
   try {
     const config = await getJiraConfig({ baizeRoot });
@@ -740,7 +740,7 @@ async function runEngineeringBugAnalysisForIssues({ operationIntent, message, ba
   const run = result.run;
   return {
     reply: [
-      `白泽：已${result.reused ? '恢复' : '创建'}工程级 BUG 分析后台任务。`,
+      `Alice：已${result.reused ? '恢复' : '创建'}工程级 BUG 分析后台任务。`,
       `Run ID：${run.id}`,
       `共 ${run.total} 个 BUG，当前状态：${run.status}。`,
       '客户端会轮询分析进度；生成评论草稿后，请在 BUG 分析卡片中逐条确认是否写入 Jira。'
@@ -769,7 +769,7 @@ async function runEngineeringRequirementCompletion({ operationIntent, message, b
   const run = result.run;
   return {
     reply: [
-      '白泽：已创建服务端需求工程完成任务，并完成只读计划阶段。',
+      'Alice：已创建服务端需求工程完成任务，并完成只读计划阶段。',
       `Run ID：${run.id}`,
       `当前状态：${run.status}。`,
       run.status === 'awaiting_execution_confirmation'
@@ -786,14 +786,14 @@ async function executeJiraUpdateIssue({ intent, baizeRoot, fetchImpl }) {
   const issueKey = intent && intent.issueKey;
   const fields = intent && intent.fields;
   if (!issueKey || !fields || Object.keys(fields).length === 0) {
-    return { reply: '白泽：缺少要更新的 Jira 单或字段。' };
+    return { reply: 'Alice：缺少要更新的 Jira 单或字段。' };
   }
   const config = await getJiraConfig({ baizeRoot });
   try {
     await updateJiraIssue(config, issueKey, fields, { fetchImpl });
-    return { reply: `白泽：${issueKey} 已按草稿更新。`, issueKey };
+    return { reply: `Alice：${issueKey} 已按草稿更新。`, issueKey };
   } catch (error) {
-    return { reply: `白泽：更新 ${issueKey} 失败：${error.publicMessage || error.message || '未知错误'}`, failed: true };
+    return { reply: `Alice：更新 ${issueKey} 失败：${error.publicMessage || error.message || '未知错误'}`, failed: true };
   }
 }
 
@@ -801,21 +801,21 @@ async function executeJiraTransitionIssue({ intent, baizeRoot, fetchImpl }) {
   const issueKey = intent && intent.issueKey;
   const transition = intent && intent.transition;
   if (!issueKey || !transition) {
-    return { reply: '白泽：缺少要切换状态的 Jira 单或目标 transition。' };
+    return { reply: 'Alice：缺少要切换状态的 Jira 单或目标 transition。' };
   }
   const config = await getJiraConfig({ baizeRoot });
   try {
     await transitionJiraIssue(config, issueKey, transition, { fetchImpl });
-    return { reply: `白泽：${issueKey} 已切换状态（${transition.id || transition.name}）。`, issueKey };
+    return { reply: `Alice：${issueKey} 已切换状态（${transition.id || transition.name}）。`, issueKey };
   } catch (error) {
-    return { reply: `白泽：切换 ${issueKey} 状态失败：${error.publicMessage || error.message || '未知错误'}`, failed: true };
+    return { reply: `Alice：切换 ${issueKey} 状态失败：${error.publicMessage || error.message || '未知错误'}`, failed: true };
   }
 }
 
 async function executeJiraDeleteIssue({ intent, audit, baizeRoot, fetchImpl, emit }) {
   const issueKeys = Array.isArray(intent && intent.issueKeys) ? intent.issueKeys : [];
   if (issueKeys.length === 0) {
-    return { reply: '白泽：没有要删除的 Jira 单。' };
+    return { reply: 'Alice：没有要删除的 Jira 单。' };
   }
   const config = await getJiraConfig({ baizeRoot });
   const deleted = [];
@@ -844,8 +844,8 @@ async function executeJiraDeleteIssue({ intent, audit, baizeRoot, fetchImpl, emi
     }
   }
   const summary = failed.length === 0
-    ? `白泽：已删除 ${deleted.length} 个 Jira 单：${deleted.join('、')}。`
-    : `白泽：删除完成，成功 ${deleted.length} 个（${deleted.join('、') || '无'}），失败 ${failed.length} 个（${failed.map((item) => `${item.issueKey}：${item.error}`).join('；')}）。`;
+    ? `Alice：已删除 ${deleted.length} 个 Jira 单：${deleted.join('、')}。`
+    : `Alice：删除完成，成功 ${deleted.length} 个（${deleted.join('、') || '无'}），失败 ${failed.length} 个（${failed.map((item) => `${item.issueKey}：${item.error}`).join('；')}）。`;
   return { reply: summary, deleted, failed };
 }
 
@@ -853,12 +853,12 @@ async function executeJiraDeleteComment({ intent, audit, baizeRoot, fetchImpl, e
   const targets = Array.isArray(intent && intent.targets) ? intent.targets : [];
   const filterScope = (intent && intent.filterScope) || 'self_ai_prefix';
   if (targets.length === 0) {
-    return { reply: '白泽：没有要删评论的目标。' };
+    return { reply: 'Alice：没有要删评论的目标。' };
   }
   const config = await getJiraConfig({ baizeRoot });
   const authorIdentifiers = filterScope === 'any' ? null : [config.username, config.email].filter(Boolean);
   if (filterScope !== 'any' && (!authorIdentifiers || authorIdentifiers.length === 0)) {
-    return { reply: '白泽：没有识别到当前 Jira 账号身份，不能安全删除评论。' };
+    return { reply: 'Alice：没有识别到当前 Jira 账号身份，不能安全删除评论。' };
   }
   const predicate = filterScope === 'self_ai_prefix'
     ? (comment) => /^\s*(?:【AI\s*分析|【AI\b|AI\s*分析)/i.test(String(comment && comment.body || ''))
@@ -894,8 +894,8 @@ async function executeJiraDeleteComment({ intent, audit, baizeRoot, fetchImpl, e
       }
     }
   }
-  const filterLabel = filterScope === 'any' ? '任意作者' : (filterScope === 'self' ? '白泽账号' : '【AI 分析】前缀');
-  const summary = `白泽：已扫描 ${targets.length} 个 Jira 单（仅删 ${filterLabel} 的评论），删除 ${totalDeleted} 条${totalFailed > 0 ? `，失败 ${totalFailed} 条` : ''}。`;
+  const filterLabel = filterScope === 'any' ? '任意作者' : (filterScope === 'self' ? 'Alice 账号' : '【AI 分析】前缀');
+  const summary = `Alice：已扫描 ${targets.length} 个 Jira 单（仅删 ${filterLabel} 的评论），删除 ${totalDeleted} 条${totalFailed > 0 ? `，失败 ${totalFailed} 条` : ''}。`;
   return { reply: summary, perIssue, totalDeleted, totalFailed };
 }
 
@@ -903,7 +903,7 @@ async function executeJiraDeleteCommentAudited(operationIntent, { baizeRoot, fet
   const targets = Array.isArray(operationIntent && operationIntent.targets) ? operationIntent.targets : [];
   const filterScope = operationIntent && operationIntent.filterScope ? operationIntent.filterScope : 'self_ai_prefix';
   if (targets.length === 0) {
-    return { reply: '白泽：Claude Code 没有生成可执行的删评论目标。', audit: null, perIssue: [] };
+    return { reply: 'Alice：Claude Code 没有生成可执行的删评论目标。', audit: null, perIssue: [] };
   }
   const audit = await auditPluginOperation({
     plugin: 'jira',
@@ -918,7 +918,7 @@ async function executeJiraDeleteCommentAudited(operationIntent, { baizeRoot, fet
   if (audit.decision === 'deny') {
     const denyReasons = audit.perIssue.filter((item) => item.decision === 'deny').map((item) => `${item.issueKey}：${item.reason}`).join('；');
     return {
-      reply: `白泽：审计官拒绝执行删评论。${denyReasons ? '原因：' + denyReasons : audit.summary}`,
+      reply: `Alice：审计官拒绝执行删评论。${denyReasons ? '原因：' + denyReasons : audit.summary}`,
       audit,
       perIssue: []
     };
@@ -928,7 +928,7 @@ async function executeJiraDeleteCommentAudited(operationIntent, { baizeRoot, fet
     const confirmKeys = audit.perIssue.filter((item) => item.decision === 'require_confirmation').map((item) => `${item.issueKey}（${item.reason}）`);
     const allowKeys = audit.perIssue.filter((item) => item.decision === 'allow').map((item) => item.issueKey);
     const lines = [
-      '白泽：以下删评论操作需要审计确认，请在客户端审计卡上选择是否执行。',
+      'Alice：以下删评论操作需要审计确认，请在客户端审计卡上选择是否执行。',
       confirmKeys.length > 0 ? `等待确认：\n- ${confirmKeys.join('\n- ')}` : null,
       allowKeys.length > 0 ? `定时任务可直接放行：\n- ${allowKeys.join('\n- ')}` : null,
       denyKeys.length > 0 ? `审计官拒绝：\n- ${denyKeys.join('\n- ')}` : null
@@ -946,7 +946,7 @@ async function executeJiraDeleteCommentAudited(operationIntent, { baizeRoot, fet
   const authorIdentifiers = filterScope === 'any' ? null : [config.username, config.email].filter(Boolean);
   if (filterScope !== 'any' && (!authorIdentifiers || authorIdentifiers.length === 0)) {
     return {
-      reply: '白泽：没有识别到当前 Jira 账号身份，不能安全删除评论。',
+      reply: 'Alice：没有识别到当前 Jira 账号身份，不能安全删除评论。',
       audit,
       perIssue: []
     };
@@ -991,8 +991,8 @@ async function executeJiraDeleteCommentAudited(operationIntent, { baizeRoot, fet
       }
     }
   }
-  const filterLabel = filterScope === 'any' ? '任意作者' : (filterScope === 'self' ? '白泽账号' : '【AI 分析】前缀');
-  const summary = `白泽：审计官放行，已扫描 ${targets.length} 个 Jira 单（仅删 ${filterLabel} 的评论），删除 ${totalDeleted} 条${totalFailed > 0 ? `，失败 ${totalFailed} 条` : ''}。`;
+  const filterLabel = filterScope === 'any' ? '任意作者' : (filterScope === 'self' ? 'Alice 账号' : '【AI 分析】前缀');
+  const summary = `Alice：审计官放行，已扫描 ${targets.length} 个 Jira 单（仅删 ${filterLabel} 的评论），删除 ${totalDeleted} 条${totalFailed > 0 ? `，失败 ${totalFailed} 条` : ''}。`;
   return { reply: summary, audit, perIssue, totalDeleted, totalFailed };
 }
 
@@ -1000,7 +1000,7 @@ async function executeJiraDeleteOwnComments(intent, { baizeRoot, fetchImpl, clau
   const config = await getJiraConfig({ baizeRoot });
   const authorIdentifiers = [config.username, config.email].filter(Boolean);
   if (authorIdentifiers.length === 0) {
-    return { reply: '白泽：没有识别到当前 Jira 账号身份，不能安全删除评论。', perIssue: [] };
+    return { reply: 'Alice：没有识别到当前 Jira 账号身份，不能安全删除评论。', perIssue: [] };
   }
   const onlyAiPrefix = Boolean(intent && intent.onlyAiPrefix);
   const predicate = onlyAiPrefix
@@ -1022,7 +1022,7 @@ async function executeJiraDeleteOwnComments(intent, { baizeRoot, fetchImpl, clau
   }
   if (issueKeys.length === 0) {
     return {
-      reply: '白泽：没有定位到要清理评论的 Jira 单。请直接给出 BUG 单号，或先让我搜索一下（例如：曾浩然的未开始 BUG 单）。',
+      reply: 'Alice：没有定位到要清理评论的 Jira 单。请直接给出 BUG 单号，或先让我搜索一下（例如：曾浩然的未开始 BUG 单）。',
       perIssue: [],
       resolvedSearch
     };
@@ -1053,15 +1053,15 @@ async function executeJiraDeleteOwnComments(intent, { baizeRoot, fetchImpl, clau
     }
   }
 
-  const filterLabel = onlyAiPrefix ? '【AI 分析】前缀' : '白泽账号';
-  const summary = `白泽：已扫描 ${issueKeys.length} 个 Jira 单（仅删 ${filterLabel} 的评论），删除 ${totalDeleted} 条${totalFailed > 0 ? `，失败 ${totalFailed} 条` : ''}。`;
+  const filterLabel = onlyAiPrefix ? '【AI 分析】前缀' : 'Alice 账号';
+  const summary = `Alice：已扫描 ${issueKeys.length} 个 Jira 单（仅删 ${filterLabel} 的评论），删除 ${totalDeleted} 条${totalFailed > 0 ? `，失败 ${totalFailed} 条` : ''}。`;
   return { reply: summary, perIssue, totalDeleted, totalFailed, resolvedSearch, issueKeys };
 }
 
 async function executeJiraBulkAddComment(operationIntent, { baizeRoot, fetchImpl, onIssueResult } = {}) {
   const entries = Array.isArray(operationIntent && operationIntent.entries) ? operationIntent.entries : [];
   if (entries.length === 0) {
-    return { reply: '白泽：Claude Code 没有生成可用的 Jira 批量评论草稿。', entries: [], succeeded: [], failed: [] };
+    return { reply: 'Alice：Claude Code 没有生成可用的 Jira 批量评论草稿。', entries: [], succeeded: [], failed: [] };
   }
   const config = await getJiraConfig({ baizeRoot });
   const succeeded = [];
@@ -1082,8 +1082,8 @@ async function executeJiraBulkAddComment(operationIntent, { baizeRoot, fetchImpl
     }
   }
   const summary = failed.length === 0
-    ? `白泽：已为 ${succeeded.length} 个 Jira 单各自写入对应评论（${succeeded.join('、')}）。`
-    : `白泽：批量写入完成，成功 ${succeeded.length} 个（${succeeded.join('、') || '无'}），失败 ${failed.length} 个（${failed.map((item) => `${item.issueKey}：${item.error}`).join('；')}）。`;
+    ? `Alice：已为 ${succeeded.length} 个 Jira 单各自写入对应评论（${succeeded.join('、')}）。`
+    : `Alice：批量写入完成，成功 ${succeeded.length} 个（${succeeded.join('、') || '无'}），失败 ${failed.length} 个（${failed.map((item) => `${item.issueKey}：${item.error}`).join('；')}）。`;
   return {
     reply: summary,
     entries,
@@ -1093,22 +1093,22 @@ async function executeJiraBulkAddComment(operationIntent, { baizeRoot, fetchImpl
 }
 
 function formatJiraCreateReply(operation) {
-  return `白泽：已解析 ${operation.draftImport.count} 个 Jira 需求单草稿，请确认是否创建。`;
+  return `Alice：已解析 ${operation.draftImport.count} 个 Jira 需求单草稿，请确认是否创建。`;
 }
 
 function formatJiraCreatedReply(operation) {
   const createdIssues = Array.isArray(operation.createdIssues) ? operation.createdIssues : [];
   const keys = createdIssues.map((issue) => issue.key).filter(Boolean).join('、');
-  return keys ? `白泽：Jira 单创建成功：${keys}` : '白泽：Jira 单创建成功。';
+  return keys ? `Alice：Jira 单创建成功：${keys}` : 'Alice：Jira 单创建成功。';
 }
 
 function formatJiraRecoveryRequiredReply(operation) {
   const recovery = operation.recovery || {};
-  return `白泽：Jira 创建失败，已生成恢复选项：${recovery.summary || '请在客户端选择下一步。'}`;
+  return `Alice：Jira 创建失败，已生成恢复选项：${recovery.summary || '请在客户端选择下一步。'}`;
 }
 
 function formatJiraRejectedReply() {
-  return '白泽：已取消当前 Jira 创建草稿。';
+  return 'Alice：已取消当前 Jira 创建草稿。';
 }
 
 function isJiraImportAttachment(attachment = {}) {
@@ -2191,7 +2191,7 @@ async function handleChatMessage(input = {}, {
       reply = formatEngineeringBlockedReply(route.intent);
       selectedProvider = 'claude_code';
     } else if (selectedProvider === 'claude_code_unavailable') {
-      reply = '白泽：这个请求需要 Claude Code 判断和处理，但服务器当前没有启用 Claude Code。请先在服务器配置中启用 Claude Code 后再试。';
+      reply = 'Alice：这个请求需要 Claude Code 判断和处理，但服务器当前没有启用 Claude Code。请先在服务器配置中启用 Claude Code 后再试。';
       selectedProvider = 'claude_code';
     } else if (selectedProvider === 'claude_code_ambiguous') {
       reply = formatAmbiguousEngineeringReply();
@@ -2258,7 +2258,7 @@ async function handleChatMessage(input = {}, {
       reply = deleteResult.reply;
       selectedProvider = 'jira';
     } else if (selectedProvider === 'jira_summarize_then_comment_unavailable') {
-      reply = '白泽：自动总结后写 Jira 评论需要先启用 Claude Code。';
+      reply = 'Alice：自动总结后写 Jira 评论需要先启用 Claude Code。';
       selectedProvider = 'jira';
     } else if (selectedProvider === 'jira_reject') {
       jiraOperation = await measureTiming(timings, 'jiraRejectMs', () => rejectJiraOperation(route.jiraOperation.id, {
@@ -2702,7 +2702,7 @@ async function handleChatMessageStream(input = {}, {
       selectedProvider = 'claude_code';
       emit({ type: 'delta', text: reply });
     } else if (selectedProvider === 'claude_code_unavailable') {
-      reply = '白泽：这个请求需要 Claude Code 判断和处理，但服务器当前没有启用 Claude Code。请先在服务器配置中启用 Claude Code 后再试。';
+      reply = 'Alice：这个请求需要 Claude Code 判断和处理，但服务器当前没有启用 Claude Code。请先在服务器配置中启用 Claude Code 后再试。';
       selectedProvider = 'claude_code';
       emit({ type: 'delta', text: reply });
     } else if (selectedProvider === 'claude_code_ambiguous') {
@@ -2784,7 +2784,7 @@ async function handleChatMessageStream(input = {}, {
       selectedProvider = 'jira';
       emit({ type: 'delta', text: reply });
     } else if (selectedProvider === 'jira_delete_own_comments') {
-      emitActivity('jira_delete_own_comments', '正在清理白泽自己写的 Jira 评论。');
+      emitActivity('jira_delete_own_comments', '正在清理Alice自己写的 Jira 评论。');
       const deleteResult = await measureTiming(timings, 'jiraDeleteOwnCommentsMs', () => executeJiraDeleteOwnComments(route.intent, {
         baizeRoot,
         fetchImpl,
@@ -2795,7 +2795,7 @@ async function handleChatMessageStream(input = {}, {
       selectedProvider = 'jira';
       emit({ type: 'delta', text: reply });
     } else if (selectedProvider === 'jira_summarize_then_comment_unavailable') {
-      reply = '白泽：自动总结后写 Jira 评论需要先启用 Claude Code。';
+      reply = 'Alice：自动总结后写 Jira 评论需要先启用 Claude Code。';
       selectedProvider = 'jira';
       emit({ type: 'delta', text: reply });
     } else if (selectedProvider === 'jira_reject') {

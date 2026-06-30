@@ -10,7 +10,7 @@ describe('desktop conversation store', () => {
 
     const conversation = await store.createConversation({ id: 'desktop-local-test', title: '本地会话' });
     await store.appendMessage(conversation.id, { role: 'user', text: '你好' });
-    await store.appendMessage(conversation.id, { role: 'assistant', text: '白泽：你好', meta: 'provider: claude' });
+    await store.appendMessage(conversation.id, { role: 'assistant', text: 'Alice：你好', meta: 'provider: claude' });
 
     const list = await store.listConversations();
     const loaded = await store.getConversation(conversation.id);
@@ -19,11 +19,11 @@ describe('desktop conversation store', () => {
       id: 'desktop-local-test',
       title: '本地会话',
       turnCount: 2,
-      lastMessagePreview: '白泽：你好'
+      lastMessagePreview: 'Alice：你好'
     });
     expect(loaded.messages).toEqual([
       expect.objectContaining({ role: 'user', text: '你好' }),
-      expect.objectContaining({ role: 'assistant', text: '白泽：你好', meta: 'provider: claude' })
+      expect.objectContaining({ role: 'assistant', text: 'Alice：你好', meta: 'provider: claude' })
     ]);
   });
 
@@ -34,7 +34,7 @@ describe('desktop conversation store', () => {
 
     await store.appendMessage(conversation.id, {
       role: 'assistant',
-      text: '白泽：已解析 1 个 Jira 需求单草稿，请确认是否创建。',
+      text: 'Alice：已解析 1 个 Jira 需求单草稿，请确认是否创建。',
       meta: 'provider: jira',
       jiraOperation: {
         id: 'jira-op-1',
@@ -61,7 +61,7 @@ describe('desktop conversation store', () => {
 
     await store.appendMessage(conversation.id, {
       role: 'assistant',
-      text: '白泽：已创建工程级 BUG 分析后台任务。',
+      text: 'Alice：已创建工程级 BUG 分析后台任务。',
       meta: 'provider: jira',
       bugAnalysisRun: {
         id: 'bug-run-1',

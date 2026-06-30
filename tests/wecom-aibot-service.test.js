@@ -96,7 +96,7 @@ describe('WeCom AI bot service', () => {
       body: {
         from: 'user-1',
         chatid: 'chat-1',
-        text: { content: '白泽 能量机制' }
+        text: { content: 'Alice 能量机制' }
       }
     });
 
@@ -105,7 +105,7 @@ describe('WeCom AI bot service', () => {
       streamId: 'stream-1',
       finish: true
     });
-    expect(client.replies[0].content).toContain('白泽：');
+    expect(client.replies[0].content).toContain('Alice：');
   });
 
   it('waits for authentication before connecting a send client', async () => {

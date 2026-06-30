@@ -3,7 +3,7 @@ const { getWeComConfig } = require('./config-service');
 const { decryptCallbackPayload, parseXml } = require('./wecom-crypto-service');
 const { assertConfigured, sendWeComTextMessage } = require('./wecom-client-service');
 
-const WAKE_WORDS = ['@白泽', '@小泽', '白泽', '小泽'];
+const WAKE_WORDS = ['@Alice', 'Alice'];
 
 function validationError(message) {
   const error = new Error(message);
@@ -103,7 +103,7 @@ async function handleWeComCallback({ query = {}, body = '' } = {}, options = {})
   if (result.handled && config.reply.enabled) {
     await sendWeComTextMessage({
       toUser: message.FromUserName,
-      content: result.reply || '白泽：已收到。'
+      content: result.reply || 'Alice：已收到。'
     }, { ...options, config });
   }
 

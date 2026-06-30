@@ -52,24 +52,24 @@ function summarizeDecisions(perIssue, kind, triggerSource) {
   if (denyKeys.length > 0 && allowedKeys.length === 0 && confirmKeys.length === 0) {
     return {
       decision: 'deny',
-      summary: `白泽：审计官拒绝执行 ${kind}：${denyKeys.length} 个单不允许这种操作。`
+      summary: `Alice：审计官拒绝执行 ${kind}：${denyKeys.length} 个单不允许这种操作。`
     };
   }
   if (confirmKeys.length > 0) {
     return {
       decision: 'require_confirmation',
-      summary: `白泽：${kind} 涉及 ${perIssue.length} 个 Jira 单，请确认后再执行。` + (denyKeys.length > 0 ? `（其中 ${denyKeys.length} 个会被审计官跳过：${denyKeys.join('、')}）` : '')
+      summary: `Alice：${kind} 涉及 ${perIssue.length} 个 Jira 单，请确认后再执行。` + (denyKeys.length > 0 ? `（其中 ${denyKeys.length} 个会被审计官跳过：${denyKeys.join('、')}）` : '')
     };
   }
   if (allowedKeys.length === perIssue.length && triggerSource === 'scheduled') {
     return {
       decision: 'allow',
-      summary: `白泽：定时任务，${kind} 已被审计官放行。`
+      summary: `Alice：定时任务，${kind} 已被审计官放行。`
     };
   }
   return {
     decision: 'allow',
-    summary: `白泽：${kind} 已被审计官放行。`
+    summary: `Alice：${kind} 已被审计官放行。`
   };
 }
 
@@ -77,14 +77,14 @@ async function audit({ kind, issueKeys = [], triggerSource = 'client', baizeRoot
   if (typeof kind !== 'string' || !kind) {
     return {
       decision: 'deny',
-      summary: '白泽：审计官无法识别空操作。',
+      summary: 'Alice：审计官无法识别空操作。',
       perIssue: []
     };
   }
   if (READ_KINDS.has(kind)) {
     return {
       decision: 'allow',
-      summary: `白泽：${kind} 是只读操作，审计官放行。`,
+      summary: `Alice：${kind} 是只读操作，审计官放行。`,
       perIssue: (issueKeys || []).map((key) => ({ issueKey: key, aiCreated: false, decision: 'allow', reason: '只读操作。' }))
     };
   }
@@ -92,13 +92,13 @@ async function audit({ kind, issueKeys = [], triggerSource = 'client', baizeRoot
     if (triggerSource === 'scheduled') {
       return {
         decision: 'allow',
-        summary: '白泽：定时任务创建 Jira 单，审计官放行。',
+        summary: 'Alice：定时任务创建 Jira 单，审计官放行。',
         perIssue: []
       };
     }
     return {
       decision: 'require_confirmation',
-      summary: '白泽：创建 Jira 单需要在客户端审计卡上确认。',
+      summary: 'Alice：创建 Jira 单需要在客户端审计卡上确认。',
       perIssue: []
     };
   }
@@ -106,7 +106,7 @@ async function audit({ kind, issueKeys = [], triggerSource = 'client', baizeRoot
   if (normalizedKeys.length === 0) {
     return {
       decision: 'deny',
-      summary: '白泽：审计官需要明确的 Jira 单号才能放行写动作。',
+      summary: 'Alice：审计官需要明确的 Jira 单号才能放行写动作。',
       perIssue: []
     };
   }

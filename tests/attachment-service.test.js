@@ -16,7 +16,7 @@ describe('attachment service', () => {
     const attachment = await uploadAttachment({
       fileName: 'notes.md',
       mimeType: 'text/markdown',
-      contentBase64: Buffer.from('# 项目说明\n白泽需要记住这段内容。').toString('base64'),
+      contentBase64: Buffer.from('# 项目说明\nAlice需要记住这段内容。').toString('base64'),
       conversationId: 'conversation-1',
       clientId: 'desktop-1'
     }, { baizeRoot });
@@ -28,7 +28,7 @@ describe('attachment service', () => {
       clientId: 'desktop-1',
       memory: { status: 'pending_confirmation', category: 'project' }
     });
-    expect(attachment.analysis.summary).toContain('白泽需要记住');
+    expect(attachment.analysis.summary).toContain('Alice需要记住');
     await expect(fs.access(path.join(baizeRoot, 'uploads', attachment.id, 'notes.md'))).resolves.toBeUndefined();
   });
 
@@ -122,14 +122,14 @@ describe('attachment service', () => {
     const extractedDir = path.join(baizeRoot, 'uploads', attachment.id, 'extracted');
     const archiveExtractor = vi.fn(async () => {
       await fs.mkdir(extractedDir, { recursive: true });
-      await fs.writeFile(path.join(extractedDir, 'debug.md'), '# 调试记录\n白泽需要记住 AIDebug。', 'utf8');
+      await fs.writeFile(path.join(extractedDir, 'debug.md'), '# 调试记录\nAlice需要记住 AIDebug。', 'utf8');
       return {
         extractedDir,
         files: [{
           path: path.join(extractedDir, 'debug.md'),
           relativePath: 'debug.md',
           size: 34,
-          preview: '调试记录 白泽需要记住 AIDebug。'
+          preview: '调试记录 Alice需要记住 AIDebug。'
         }]
       };
     });
@@ -170,7 +170,7 @@ describe('attachment service', () => {
       conversationId: 'conversation-image',
       clientAnalysis: {
         provider: 'local_claude_code',
-        summary: '图片显示一个白泽客户端错误弹窗。',
+        summary: '图片显示一个Alice客户端错误弹窗。',
         memoryCategory: 'project',
         shouldRemember: true,
         reason: '图片包含客户端调试上下文，建议加入记忆区。',
@@ -190,7 +190,7 @@ describe('attachment service', () => {
       },
       memory: { status: 'pending_confirmation', category: 'project' }
     });
-    expect(JSON.stringify(attachment)).not.toContain('图片显示一个白泽客户端错误弹窗');
+    expect(JSON.stringify(attachment)).not.toContain('图片显示一个Alice客户端错误弹窗');
     expect(JSON.stringify(attachment)).not.toContain('D:/secret');
     expect(JSON.stringify(attachment)).not.toContain('secret-token');
   });

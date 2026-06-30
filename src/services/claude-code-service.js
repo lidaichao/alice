@@ -66,12 +66,12 @@ function buildPermissionInstructions(permissionMode, claudeCodeConfig = {}) {
       getClaudeCodeOwnFolder(claudeCodeConfig)
     ].filter(Boolean);
     return [
-      '你是白泽服务器内部的 Claude Code BUG 工程分析助手，当前模式允许 SVN 工作副本维护和工程级分析。',
+      '你是Alice服务器内部的 Claude Code BUG 工程分析助手，当前模式允许 SVN 工作副本维护和工程级分析。',
       '服务器会在启动 BUG 子任务前执行受控 SVN cleanup 和 10 分钟超时的 svn update --accept theirs-full；你只能读取授权目录内的工程文件并执行只读查询命令。',
       '禁止自行执行 svn cleanup、svn update、svn revert 或其他会修改工作副本状态的 SVN 命令；如需确认状态，只允许执行 svn status、svn info 等只读 SVN 查询。',
       '禁止创建、修改、删除文件。',
       `授权目录：${allowedRoots.length > 0 ? allowedRoots.join('；') : '未配置'}`,
-      'Jira 写入仍必须由白泽服务器和审计流程执行，你不能直接调用 Jira 写接口或请求凭据。',
+      'Jira 写入仍必须由Alice服务器和审计流程执行，你不能直接调用 Jira 写接口或请求凭据。',
       '禁止读取密钥、令牌、密码、Cookie、Authorization、.env、credential、secret、token、apikey 等敏感文件。'
     ];
   }
@@ -83,7 +83,7 @@ function buildPermissionInstructions(permissionMode, claudeCodeConfig = {}) {
       getClaudeCodeOwnFolder(claudeCodeConfig)
     ].filter(Boolean);
     return [
-      '你是白泽服务器内部的 Claude Code 需求工程完成助手。',
+      '你是Alice服务器内部的 Claude Code 需求工程完成助手。',
       permissionMode === 'requirement_completion_plan'
         ? '当前是只读规划阶段：只能阅读、检索和运行只读查询命令，禁止修改文件。'
         : '当前是用户已确认的执行阶段：允许在授权工程目录内修改完成需求所必需的文件，但禁止提交代码、push、写 Jira 或扩大需求范围。',
@@ -95,7 +95,7 @@ function buildPermissionInstructions(permissionMode, claudeCodeConfig = {}) {
   }
 
   return [
-    '你是白泽服务器内部的 Claude Code 工程助手，当前模式为只读或意图解析。',
+    '你是Alice服务器内部的 Claude Code 工程助手，当前模式为只读或意图解析。',
     '你只能阅读和分析当前项目，不能修改文件，不能读取密钥。',
     '你可以使用 Bash 运行只读分析命令，包括 Python/Node 脚本读取和解析附件；不要执行写文件、删除、安装依赖、网络请求或破坏性命令。'
   ];
@@ -240,7 +240,7 @@ function buildClaudeCodePrompt({
   return [
     ...buildPermissionInstructions(permissionMode, claudeCodeConfig),
     '每次处理服务器请求时，必须先阅读逻辑官上下文，并自行判断是否需要调用记忆配合分析问题。',
-    '请用中文回答，并把结论整理成用户能直接理解的白泽回复。',
+    '请用中文回答，并把结论整理成用户能直接理解的Alice回复。',
     '如果请求需要读取附件，请优先使用 Read；遇到 xlsx 等二进制表格时，可以用 Bash 调用 Python/Node 在内存中解析原始文件。',
     '调用 Python/Node 解析附件时必须使用 node -e 或 python -c 这类单行只读命令，不要使用 heredoc、多行重定向或临时脚本文件。',
     '',
@@ -313,7 +313,7 @@ function buildClaudeCodeOperationIntentPrompt(input) {
     requiresJiraDrafts ? '' : '如果用户要修改某 Jira 单的字段（标题、描述、优先级、负责人、标签等），请输出 jira_update_issue：issueKey 必填、fields 必填且不能为空对象。除非用户明确要求清空，否则不要写 null。',
     requiresJiraDrafts ? '' : '如果用户要切换某 Jira 单的状态（开始/完成/关闭/转测试），请输出 jira_transition_issue：issueKey 必填、transition.id 或 transition.name 至少给一个；服务器会让 Jira 自己校验合法转换。',
     requiresJiraDrafts ? '' : '如果用户要删除某些 Jira 单本身（而不是删评论），请输出 jira_delete_issue：issueKeys 数组最多 20 个；审计官只会让 AI 创建的 Jira 单允许删除。',
-    requiresJiraDrafts ? '' : '如果用户要删 Jira 评论（“删除/清理/清空”等动词 + “评论/备注/comment”），请输出 jira_delete_comment。每个 target 至少包含 issueKey；如果用户指定了某些 commentId，可以用 commentIds 数组带上；filterScope 取值：self_ai_prefix（默认，只删白泽自己写的 AI 前缀评论）、self（白泽自己写的全部评论）、any（任意作者，仅当用户明确写“全部评论/任何评论”时才允许）。服务器会调用审计官按单子作者决定是否需要客户端确认，所以不要试图自己写入。',
+    requiresJiraDrafts ? '' : '如果用户要删 Jira 评论（“删除/清理/清空”等动词 + “评论/备注/comment”），请输出 jira_delete_comment。每个 target 至少包含 issueKey；如果用户指定了某些 commentId，可以用 commentIds 数组带上；filterScope 取值：self_ai_prefix（默认，只删Alice 自己写的 AI 前缀评论）、self（Alice 自己写的全部评论）、any（任意作者，仅当用户明确写“全部评论/任何评论”时才允许）。服务器会调用审计官按单子作者决定是否需要客户端确认，所以不要试图自己写入。',
     requiresJiraDrafts ? '' : '如果用户给出多个 Jira 单号并要求写入明确的固定评论文本，请输出 jira_bulk_add_comment，entries 数组里每一项是一个单号 + 它自己的评论 body；不要把多个单号合并到同一段评论里写到所有单上，每个 issueKey 必须配它自己的 body；entries 顺序保留用户原始顺序，最多 50 个；服务器会逐个写入，不弹确认卡。不要用 jira_bulk_add_comment 表示 BUG 工程级分析启动。',
     requiresJiraDrafts ? '' : '如果用户明确要新增、补充或更新逻辑官/逻辑断言/规则/记忆官断言，请输出 logic_assertion；category 只能是 programming、design、art、general、pm、project、identity，statement 写成可直接落盘的完整断言。',
     requiresJiraDrafts ? '' : '如果用户要修改当前待确认 Jira 草稿，请输出 jira_update_drafts；operationId 必须等于当前待确认 Jira 操作 id，patch 是应用到草稿的字段补丁。',
@@ -1146,7 +1146,7 @@ function parseClaudeCodeOperationIntent(output, options = {}) {
     }
     return {
       kind: 'engineering_reply',
-      reply: normalizeString(parsed.reply) || '白泽：Claude Code 已完成分析。'
+      reply: normalizeString(parsed.reply) || 'Alice：Claude Code 已完成分析。'
     };
   }
 
@@ -1483,14 +1483,14 @@ async function runClaudeCodeTask(input = {}) {
     onEvent({
       type: 'status',
       message: permissionMode === 'write_proposal'
-        ? '白泽正在调用 Claude Code 生成补丁草案。'
+        ? 'Alice正在调用 Claude Code 生成补丁草案。'
         : permissionMode === 'bug_analysis_workspace'
-          ? '白泽正在调用 Claude Code 在授权 BUG 分析目录内处理工程分析。'
+          ? 'Alice正在调用 Claude Code 在授权 BUG 分析目录内处理工程分析。'
           : permissionMode === 'requirement_completion_plan'
-            ? '白泽正在调用 Claude Code 生成需求工程完成计划。'
+            ? 'Alice正在调用 Claude Code 生成需求工程完成计划。'
             : permissionMode === 'requirement_completion_execution'
-              ? '白泽正在调用 Claude Code 执行已确认的需求工程完成计划。'
-              : '白泽正在调用 Claude Code 只读分析。'
+              ? 'Alice正在调用 Claude Code 执行已确认的需求工程完成计划。'
+              : 'Alice正在调用 Claude Code 只读分析。'
     });
   }
 
@@ -1522,7 +1522,7 @@ async function runClaudeCodeTask(input = {}) {
         if (typeof onEvent === 'function') {
           onEvent({
             type: 'status',
-            message: '白泽正在让 Claude Code 分析自己的执行失败。'
+            message: 'Alice正在让 Claude Code 分析自己的执行失败。'
           });
         }
         if (typeof onTiming === 'function') {
@@ -1565,7 +1565,7 @@ async function runClaudeCodeTask(input = {}) {
       if (typeof onEvent === 'function') {
         onEvent({
           type: 'status',
-          message: requireJiraBulkCreate ? '白泽正在按 Claude Code 自诊断结果重试。' : '白泽正在让 Claude Code 修复操作意图格式。'
+          message: requireJiraBulkCreate ? 'Alice正在按 Claude Code 自诊断结果重试。' : 'Alice正在让 Claude Code 修复操作意图格式。'
         });
       }
       if (typeof onTiming === 'function') {
@@ -1617,7 +1617,7 @@ async function runClaudeCodeTask(input = {}) {
       if (typeof onEvent === 'function') {
         onEvent({
           type: 'status',
-          message: '白泽正在让 Claude Code 修复插件恢复选项格式。'
+          message: 'Alice正在让 Claude Code 修复插件恢复选项格式。'
         });
       }
       if (typeof onTiming === 'function') {
@@ -1643,7 +1643,7 @@ async function runClaudeCodeTask(input = {}) {
 
   const finalReply = typeof reply === 'string' && reply.trim() !== ''
     ? reply.trim()
-    : '白泽：Claude Code 没有返回有效结果。';
+    : 'Alice：Claude Code 没有返回有效结果。';
 
   if (typeof onDelta === 'function') {
     onDelta(finalReply);

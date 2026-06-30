@@ -18,12 +18,12 @@ describe('cursor service', () => {
     const { baizeRoot } = await createTestRoot();
     const prompt = await buildUserPrompt({
       baizeRoot,
-      message: { text: '白泽你好', platform: 'client', userId: 'u1', conversationId: 'c1' },
+      message: { text: 'Alice你好', platform: 'client', userId: 'u1', conversationId: 'c1' },
       knowledgeResults: [{ title: 'Doc', relativePath: 'kb/doc.md', snippet: 'hello world' }],
       conversationMessages: [{ role: 'user', text: '上一轮' }]
     });
 
-    expect(prompt).toContain('白泽你好');
+    expect(prompt).toContain('Alice你好');
     expect(prompt).toContain('Doc');
     expect(prompt).toContain('hello world');
     expect(prompt).toContain('上一轮');

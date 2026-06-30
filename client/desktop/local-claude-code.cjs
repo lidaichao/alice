@@ -340,7 +340,7 @@ function formatLocalAttachmentContext(localAttachments = [], attachmentIds = [])
 function buildLocalClaudeCodePrompt(input = {}) {
   const attachmentIds = Array.isArray(input.attachmentIds) ? input.attachmentIds : [];
   return [
-    '你是白泽客户端本机 Claude Code 助手。',
+    '你是Alice客户端本机 Claude Code 助手。',
     '你在客户端本地处理用户消息，可以像 Claude Code 客户端一样调用本地工具完成任务。',
     '你拥有客户端本地文件的新增、删除、查询、修改权限；执行前要确认用户意图清楚，不要越过用户请求范围。',
     '默认不要上报服务器；普通聊天、普通问答、普通分析、只读文件分析都只返回中文文本，不要输出 syncEvents。',
@@ -351,16 +351,16 @@ function buildLocalClaudeCodePrompt(input = {}) {
     'Jira 只读查询操作格式：{"reply":"","clientOperations":[{"id":"唯一ID","plugin":"jira","action":"search_issue","input":{}}]}。',
     'Jira search_issue 常用 input：{"projectKey":"BUG","statusCategory":"Done","maxResults":10,"orderBy":"resolutiondate DESC, updated DESC","fields":["summary","status","assignee","issuetype","project","created","updated","resolutiondate","statuscategorychangedate"],"includeCompletionTiming":true}。',
     '当用户要求自动修改、自动修复、批量修复当前 Jira 账号下未开始阶段的 Bug 时，必须输出 action 为 auto_fix_bugs 的 clientOperations；客户端只会先拉取 assignee = 客户端 Jira 用户名、issuetype = Bug、statusCategory = To Do 的队列并展示确认卡，用户在客户端选择 BUG 并确认后才会启动本机 Claude Code 修改。',
-    'Jira auto_fix_bugs 格式：{"reply":"白泽：我先拉取当前 Jira 账号下未开始 BUG 队列，梳理完成后请在客户端确认要自动修改哪些 BUG。","clientOperations":[{"id":"jira-auto-fix-bugs-1","plugin":"jira","action":"auto_fix_bugs","input":{"maxResults":50}}]}。',
+    'Jira auto_fix_bugs 格式：{"reply":"Alice：我先拉取当前 Jira 账号下未开始 BUG 队列，梳理完成后请在客户端确认要自动修改哪些 BUG。","clientOperations":[{"id":"jira-auto-fix-bugs-1","plugin":"jira","action":"auto_fix_bugs","input":{"maxResults":50}}]}。',
     '当用户明确要求自动完成、自动实现、工程级完成某个需求时，必须输出 plugin 为 engineering、action 为 auto_complete_requirement 的 clientOperations；客户端只会先生成需求完成卡和只读执行计划，用户确认计划后才会启动本机 Claude Code 修改工程。',
-    '工程需求完成格式：{"reply":"白泽：我会先生成工程需求完成卡，请在客户端先生成并确认执行计划。","clientOperations":[{"id":"engineering-requirement-1","plugin":"engineering","action":"auto_complete_requirement","input":{"title":"需求标题","requirementText":"需求内容"}}]}。',
+    '工程需求完成格式：{"reply":"Alice：我会先生成工程需求完成卡，请在客户端先生成并确认执行计划。","clientOperations":[{"id":"engineering-requirement-1","plugin":"engineering","action":"auto_complete_requirement","input":{"title":"需求标题","requirementText":"需求内容"}}]}。',
     'Jira 创建第一步只能生成待确认卡，不能直接创建；需要创建 Jira 单时必须输出 action 为 create_issue 的 clientOperations，input.drafts 为草稿数组，summary 必填，description、projectKey、issueType、assignee、priority、labels 可选。',
-    'Jira create_issue 格式：{"reply":"白泽：已生成 Jira 草稿，请确认创建。","clientOperations":[{"id":"jira-create-1","plugin":"jira","action":"create_issue","input":{"drafts":[{"summary":"标题","description":"描述","projectKey":"项目Key","issueType":"任务","assignee":"负责人","labels":[]}]}}]}。',
+    'Jira create_issue 格式：{"reply":"Alice：已生成 Jira 草稿，请确认创建。","clientOperations":[{"id":"jira-create-1","plugin":"jira","action":"create_issue","input":{"drafts":[{"summary":"标题","description":"描述","projectKey":"项目Key","issueType":"任务","assignee":"负责人","labels":[]}]}}]}。',
     '不要只用普通文本说“现在调用 Jira 创建”；需要弹确认卡时必须输出 create_issue JSON。',
     '用户确认 Jira 创建后，你会收到已确认的 operation 上下文。此时你才可以输出 Jira 工具操作：get_project、get_create_meta、search_user、create_confirmed_issue，用这些工具分步校验项目、类型、用户和字段，再创建。',
     '确认后的 create_confirmed_issue 只允许使用已确认 operation 里的草稿内容或你根据 Jira 工具返回做出的安全字段格式修正；不要新增用户未确认的新需求单。',
     '确认后的 Jira 工具操作格式：{"reply":"","clientOperations":[{"id":"jira-tool-1","plugin":"jira","action":"get_project|get_create_meta|search_user|create_confirmed_issue","input":{}}]}。',
-    '拿到 search_issue 客户端操作结果后，必须基于结果计算并回答用户要的数值；不要改算白泽自身耗时日志。',
+    '拿到 search_issue 客户端操作结果后，必须基于结果计算并回答用户要的数值；不要改算Alice自身耗时日志。',
     '拿到 create_issue 客户端操作结果后，只能告诉用户确认卡已生成，必须在客户端点击“确认创建”后才会真正写入 Jira。',
     '如果用户只是询问、讨论、分析、总结，不要为了记录审计或上下文输出 syncEvents。',
     '如果附件上下文包含本机可读取路径，请优先使用 Read 工具读取该路径；不要把本机路径写入 syncEvents 或客户端插件请求。',
@@ -369,9 +369,9 @@ function buildLocalClaudeCodePrompt(input = {}) {
     '当用户要求根据 Excel 创建 Jira 单时，必须先读取 Excel 内容再生成 create_issue 确认卡；禁止回复“没有 Excel 解析工具”或要求用户重新粘贴表格。',
     '如果请求涉及 Jira Bug 工程分析，必须要求先完成 SVN 更新并基于工程目录分析；没有工程依据时只能说明待工程分析。',
     '输出普通回复时直接输出中文文本；需要上报或请求客户端操作时输出 JSON，不要使用 Markdown 代码块。',
-    'JSON 格式：{"reply":"白泽：展示给用户的中文回复","syncEvents":[{"type":"memory.created|memory.updated|logic_assertion.created|logic_assertion.updated","payload":{}}],"clientOperations":[{"id":"唯一ID","plugin":"jira|engineering","action":"search_issue|auto_fix_bugs|auto_complete_requirement|create_issue|get_project|get_create_meta|search_user|create_confirmed_issue","input":{}}]}。',
+    'JSON 格式：{"reply":"Alice：展示给用户的中文回复","syncEvents":[{"type":"memory.created|memory.updated|logic_assertion.created|logic_assertion.updated","payload":{}}],"clientOperations":[{"id":"唯一ID","plugin":"jira|engineering","action":"search_issue|auto_fix_bugs|auto_complete_requirement|create_issue|get_project|get_create_meta|search_user|create_confirmed_issue","input":{}}]}。',
     'syncEvents 只允许用于记忆修改和逻辑修改；不要把密钥、凭据、Cookie、token 放进 payload。',
-    '请用中文回答，开头使用“白泽：”。',
+    '请用中文回答，开头使用“Alice：”。',
     '',
     `用户消息：${input.text || ''}`,
     '',
@@ -430,7 +430,7 @@ function normalizeClientOperations(operations) {
 function parseLocalClaudeCodeOutput(output) {
   const text = String(output || '').trim();
   if (text === '') {
-    return { reply: '白泽：本机 Claude Code 没有返回有效结果。', syncEvents: [], clientOperations: [] };
+    return { reply: 'Alice：本机 Claude Code 没有返回有效结果。', syncEvents: [], clientOperations: [] };
   }
   try {
     const parsed = JSON.parse(stripJsonFence(text));
@@ -448,7 +448,7 @@ function parseLocalClaudeCodeOutput(output) {
 
 function buildLocalImageAnalysisPrompt(input = {}) {
   return [
-    '你是白泽客户端本机 Claude Code 图片分析助手。',
+    '你是Alice客户端本机 Claude Code 图片分析助手。',
     '请使用本机文件工具读取并分析用户上传的图片，只输出 JSON，不要输出 Markdown 代码块。',
     '不要输出 syncEvents，不要输出 clientOperations，不要写入记忆，不要调用插件。',
     '不要把本机路径、env、token、API Key、Cookie 或任何凭据写入 JSON。',
@@ -560,14 +560,14 @@ function createLocalClaudeCodeChat({ runner = createLocalClaudeCodeRunner(), ses
 
   function buildConfirmedJiraExecutionPrompt(input = {}) {
     return [
-      '你是白泽客户端本机 Claude Code Jira 执行助手。',
+      '你是Alice客户端本机 Claude Code Jira 执行助手。',
       '用户已经在客户端确认卡中点击“确认创建 Jira 单”。现在允许你调用 Jira 插件工具执行这次已确认的 operation。',
       '不要使用 Bash、curl 或本地文件寻找 Jira 凭据；只能输出 clientOperations JSON，让客户端执行本地 Jira 插件工具。',
       '你应该调用 get_project、get_create_meta、search_user、create_confirmed_issue。可以根据前一步工具返回修正 issueType id、负责人 name/accountId、自定义字段格式或移除 Jira 创建界面不支持的可选字段。',
       '同一阶段不互相依赖的工具要尽量放在同一个 clientOperations 数组里一次输出，例如多个 search_user、多个 create_confirmed_issue 可以批量请求，避免反复等待。',
       '只能创建 operation.draftImport.drafts 中已经确认的草稿；不要新增用户没有确认的 Jira 单。',
       '如果 Jira 返回错误，请分析错误并继续安全修正；如果需要用户补充项目、类型、负责人或必填字段，请用中文说明，不要硬猜。',
-      '输出 JSON，不要 Markdown 代码块。格式：{"reply":"白泽：中文状态","clientOperations":[{"id":"唯一ID","plugin":"jira","action":"get_project|get_create_meta|search_user|create_confirmed_issue","input":{}}]}。',
+      '输出 JSON，不要 Markdown 代码块。格式：{"reply":"Alice：中文状态","clientOperations":[{"id":"唯一ID","plugin":"jira","action":"get_project|get_create_meta|search_user|create_confirmed_issue","input":{}}]}。',
       '如果所有 Jira 单创建成功，直接中文总结创建结果，不要再输出 clientOperations。',
       '',
       `用户原始消息：${input.originalText || input.text || ''}`,
@@ -640,7 +640,7 @@ function createLocalClaudeCodeChat({ runner = createLocalClaudeCodeRunner(), ses
       parsed.clientOperationResults = clientOperationResults;
       prompt = buildClientOperationResultPrompt({ originalText: input.originalText || input.text, operations: parsed.clientOperations, results, mode });
     }
-    return parsed || { reply: '白泽：客户端插件操作超过最大轮次，请缩小查询条件后重试。', syncEvents: [], clientOperations: [] };
+    return parsed || { reply: 'Alice：客户端插件操作超过最大轮次，请缩小查询条件后重试。', syncEvents: [], clientOperations: [] };
   }
 
   function buildChatResult(input, parsed) {
@@ -673,7 +673,7 @@ function createLocalClaudeCodeChat({ runner = createLocalClaudeCodeRunner(), ses
 
   async function sendStream(input = {}, { signal, onEvent, executeClientOperation, localClaudeCodeEnv, mode, cwd } = {}) {
     if (typeof onEvent === 'function') {
-      onEvent({ type: 'status', message: mode === 'jira_confirmed_execution' ? '白泽正在调用本机 Claude Code 执行已确认的 Jira 操作。' : '白泽正在调用本机 Claude Code，全本地文件工具权限已启用。' });
+      onEvent({ type: 'status', message: mode === 'jira_confirmed_execution' ? 'Alice正在调用本机 Claude Code 执行已确认的 Jira 操作。' : 'Alice正在调用本机 Claude Code，全本地文件工具权限已启用。' });
     }
     const parsed = await runWithClientOperations(input, { signal, onEvent, executeClientOperation, streamFinalEvents: true, localClaudeCodeEnv, mode, cwd });
     const result = buildChatResult(input, parsed);

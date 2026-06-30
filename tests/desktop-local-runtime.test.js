@@ -13,7 +13,7 @@ describe('desktop local runtime', () => {
       localClaudeCode: {
         send: async (input) => {
           localInput = input;
-          return { provider: 'local_claude_code', reply: '白泽：本机回复。' };
+          return { provider: 'local_claude_code', reply: 'Alice：本机回复。' };
         }
       },
       chatTransport: {
@@ -40,7 +40,7 @@ describe('desktop local runtime', () => {
       }
     });
     expect(serverCalled).toBe(false);
-    expect(result).toEqual({ provider: 'local_claude_code', reply: '白泽：本机回复。' });
+    expect(result).toEqual({ provider: 'local_claude_code', reply: 'Alice：本机回复。' });
   });
 
   it('passes server Claude Code env to local Claude Code options without putting it in chat input', async () => {
@@ -64,7 +64,7 @@ describe('desktop local runtime', () => {
         send: async (input, options = {}) => {
           localInput = input;
           localOptions = options;
-          return { provider: 'local_claude_code', reply: '白泽：本机回复。' };
+          return { provider: 'local_claude_code', reply: 'Alice：本机回复。' };
         }
       }
     });
@@ -93,7 +93,7 @@ describe('desktop local runtime', () => {
         }
       }),
       localClaudeCode: {
-        send: async () => ({ provider: 'local_claude_code', reply: '白泽：本机回复。' })
+        send: async () => ({ provider: 'local_claude_code', reply: 'Alice：本机回复。' })
       },
       imageAnalyzer: async (input, options) => {
         analyzedInput = input;
@@ -117,7 +117,7 @@ describe('desktop local runtime', () => {
       getClientId: async () => 'desktop-client-1',
       getRuntimeConfig: async () => ({ enabled: true, localClaudeCode: { enabled: true, env: { ANTHROPIC_AUTH_TOKEN: 'server-token' } } }),
       localClaudeCode: {
-        send: async () => ({ provider: 'local_claude_code', reply: '白泽：本机回复。' })
+        send: async () => ({ provider: 'local_claude_code', reply: 'Alice：本机回复。' })
       },
       imageAnalyzer: async (input) => {
         analyzedInput = input;
@@ -244,7 +244,7 @@ describe('desktop local runtime', () => {
       localClaudeCode: {
         send: async (input) => {
           localInput = input;
-          return { provider: 'local_claude_code', reply: '白泽：本机回复。' };
+          return { provider: 'local_claude_code', reply: 'Alice：本机回复。' };
         }
       }
     });
@@ -270,7 +270,7 @@ describe('desktop local runtime', () => {
       localClaudeCode: {
         send: async () => ({
           provider: 'local_claude_code',
-          reply: '白泽：已记录逻辑断言。',
+          reply: 'Alice：已记录逻辑断言。',
           syncEvents: [
             { type: 'logic_assertion.created', payload: { statement: '多人负责人一对一拆单。' } },
             { type: 'memory.updated', payload: { id: 'memory-1', content: '客户端本地处理请求。' } }
@@ -323,7 +323,7 @@ describe('desktop local runtime', () => {
       localClaudeCode: {
         send: async (input, options = {}) => {
           operationResult = await options.executeClientOperation({ id: 'jira-1', plugin: 'jira', action: 'search_issue', input: { projectKey: 'BUG', maxResults: 10 } });
-          return { provider: 'local_claude_code', reply: '白泽：完成。' };
+          return { provider: 'local_claude_code', reply: 'Alice：完成。' };
         }
       },
       chatTransport: {
@@ -378,10 +378,10 @@ describe('desktop local runtime', () => {
         send: async (input, options = {}) => {
           if (options.mode === 'auto_bug_fix_execution') {
             fixCalls.push({ input, options });
-            return { provider: 'local_claude_code', reply: `白泽：已修复 ${input.conversationId.split(':').pop()}。` };
+            return { provider: 'local_claude_code', reply: `Alice：已修复 ${input.conversationId.split(':').pop()}。` };
           }
           operationResult = await options.executeClientOperation({ id: 'auto-fix-1', plugin: 'jira', action: 'auto_fix_bugs', input: { maxResults: 2 } });
-          return { provider: 'local_claude_code', reply: '白泽：已梳理出自动修复队列，请在客户端确认。', results: [operationResult], autoFixBugQueue: operationResult.autoFixBugQueue };
+          return { provider: 'local_claude_code', reply: 'Alice：已梳理出自动修复队列，请在客户端确认。', results: [operationResult], autoFixBugQueue: operationResult.autoFixBugQueue };
         }
       },
       chatTransport: {
@@ -398,8 +398,8 @@ describe('desktop local runtime', () => {
     expect(operationResult.autoFixBugQueue).toMatchObject({ status: 'awaiting_confirmation', queued: 2, selectedCount: 2, issueKeys: ['BUG-1', 'BUG-2'] });
     expect(result.autoFixBugQueue).toMatchObject({ status: 'awaiting_confirmation', queued: 2 });
     expect(fixCalls).toHaveLength(0);
-    expect(events).toContainEqual(expect.objectContaining({ type: 'status', message: '白泽正在用当前客户端绑定的 Jira 账号拉取未开始 Bug 队列。' }));
-    expect(events).toContainEqual(expect.objectContaining({ type: 'auto_fix_bug_queue_required', message: '白泽：已梳理出可自动修改的 Jira BUG 队列，请确认要修改哪些 BUG。' }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'status', message: 'Alice正在用当前客户端绑定的 Jira 账号拉取未开始 Bug 队列。' }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'auto_fix_bug_queue_required', message: 'Alice：已梳理出可自动修改的 Jira BUG 队列，请确认要修改哪些 BUG。' }));
   });
 
   it('runs only selected bugs after auto-fix queue confirmation', async () => {
@@ -432,8 +432,8 @@ describe('desktop local runtime', () => {
         sendStream: async (input, options = {}) => {
           fixCalls.push({ input, options });
           options.onEvent && options.onEvent({ type: 'status', message: 'Claude Code 正在读取文件：battle.js' });
-          options.onEvent && options.onEvent({ type: 'delta', text: '白泽：正在分析战斗逻辑。' });
-          const result = { type: 'done', provider: 'local_claude_code', reply: `白泽：已修复 ${input.conversationId.split(':').pop()}。` };
+          options.onEvent && options.onEvent({ type: 'delta', text: 'Alice：正在分析战斗逻辑。' });
+          const result = { type: 'done', provider: 'local_claude_code', reply: `Alice：已修复 ${input.conversationId.split(':').pop()}。` };
           options.onEvent && options.onEvent(result);
           return result;
         }
@@ -462,7 +462,7 @@ describe('desktop local runtime', () => {
     const changeLog = await fs.readFile(result.changeLog.filePath, 'utf8');
     expect(changeLog).toContain('# 自动修 BUG 修改日志');
     expect(changeLog).toContain('### BUG-2 第二个 Bug');
-    expect(changeLog).toContain('白泽：已修复 BUG-2。');
+    expect(changeLog).toContain('Alice：已修复 BUG-2。');
     expect(svnCalls).toEqual([{ command: 'svn', args: ['update', workspacePath] }]);
     expect(fixCalls).toHaveLength(1);
     expect(fixCalls[0].input.text).toContain('Jira Key：BUG-2');
@@ -480,8 +480,8 @@ describe('desktop local runtime', () => {
     expect(fixCalls[0].options.cwd).toBe(workspacePath);
     expect(events).toContainEqual(expect.objectContaining({ type: 'status', message: '已确认自动修 Bug 队列，正在启动本机 Claude Code。' }));
     expect(events).toContainEqual(expect.objectContaining({ type: 'status', message: 'Claude Code 正在读取文件：battle.js', issueKey: 'BUG-2' }));
-    expect(events).toContainEqual(expect.objectContaining({ type: 'delta', text: '白泽：正在分析战斗逻辑。', issueKey: 'BUG-2' }));
-    expect(events).toContainEqual(expect.objectContaining({ type: 'done', reply: '白泽：已修复 BUG-2。', issueKey: 'BUG-2' }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'delta', text: 'Alice：正在分析战斗逻辑。', issueKey: 'BUG-2' }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'done', reply: 'Alice：已修复 BUG-2。', issueKey: 'BUG-2' }));
     expect(events).toContainEqual(expect.objectContaining({ type: 'status', message: 'Bug BUG-2 已完成本机 Claude Code 修复。' }));
   });
 
@@ -507,7 +507,7 @@ describe('desktop local runtime', () => {
       localClaudeCode: {
         sendStream: async (input, options = {}) => {
           options.onEvent && options.onEvent({ type: 'status', message: 'Claude Code 正在准备修改文件：GoldBoxGamePlayMgr.cs' });
-          options.onEvent && options.onEvent({ type: 'delta', text: '白泽：已定位金库爆破加载配置。' });
+          options.onEvent && options.onEvent({ type: 'delta', text: 'Alice：已定位金库爆破加载配置。' });
           const error = new Error('本机 Claude Code 处理超时，请稍后重试。');
           error.code = 'LOCAL_CLAUDE_CODE_TIMEOUT';
           throw error;
@@ -530,7 +530,7 @@ describe('desktop local runtime', () => {
       status: 'failed',
       progress: {
         lastStatus: 'Claude Code 正在准备修改文件：GoldBoxGamePlayMgr.cs',
-        lastDelta: '白泽：已定位金库爆破加载配置。',
+        lastDelta: 'Alice：已定位金库爆破加载配置。',
         elapsedText: expect.any(String),
         timings: expect.arrayContaining([
           expect.objectContaining({ message: 'Claude Code 正在准备修改文件：GoldBoxGamePlayMgr.cs', elapsedText: expect.any(String), stepText: expect.any(String) })
@@ -570,8 +570,8 @@ describe('desktop local runtime', () => {
             action: 'create_issue',
             input: { drafts: [{ summary: '客户端需求', projectKey: 'BZ', issueType: 'Task' }] }
           });
-          options.onEvent({ type: 'done', provider: 'local_claude_code', reply: '白泽：请确认创建。', jiraOperation: operationResult.operation });
-          return { type: 'done', provider: 'local_claude_code', reply: '白泽：请确认创建。', jiraOperation: operationResult.operation };
+          options.onEvent({ type: 'done', provider: 'local_claude_code', reply: 'Alice：请确认创建。', jiraOperation: operationResult.operation });
+          return { type: 'done', provider: 'local_claude_code', reply: 'Alice：请确认创建。', jiraOperation: operationResult.operation };
         }
       },
       chatTransport: {
@@ -600,7 +600,7 @@ describe('desktop local runtime', () => {
     });
     expect(serverImportCalled).toBe(false);
     expect(operationResult).toEqual({ ok: true, plugin: 'jira', action: 'create_issue', id: 'jira-create-1', result: { count: 1, drafts: [{ summary: '客户端需求', projectKey: 'BZ', issueType: 'Task' }], operation }, operation });
-    expect(events).toContainEqual({ type: 'jira_operation_required', message: '白泽：已生成 Jira 创建确认卡，请确认是否创建。', operation });
+    expect(events).toContainEqual({ type: 'jira_operation_required', message: 'Alice：已生成 Jira 创建确认卡，请确认是否创建。', operation });
     expect(result.jiraOperation).toBe(operation);
   });
 
@@ -645,7 +645,7 @@ describe('desktop local runtime', () => {
           expect(input.operation).toBe(confirmedOperation);
           executedOperations.push(await options.executeClientOperation({ id: 'tool-1', plugin: 'jira', action: 'get_project', input: { projectKey: 'BZ' } }));
           executedOperations.push(await options.executeClientOperation({ id: 'tool-2', plugin: 'jira', action: 'create_confirmed_issue', input: { draftIndex: 0 } }));
-          return { provider: 'local_claude_code', reply: '白泽：已创建 BZ-1。', results: executedOperations };
+          return { provider: 'local_claude_code', reply: 'Alice：已创建 BZ-1。', results: executedOperations };
         }
       },
       chatTransport: {
@@ -662,7 +662,7 @@ describe('desktop local runtime', () => {
     expect(events).toContainEqual(expect.objectContaining({ type: 'status', message: '已创建 Jira 单 BZ-1。', action: 'create_confirmed_issue' }));
     expect(events).toContainEqual({ type: 'jira_operation_created', operation: createdOperation });
     expect(result.operation).toBe(createdOperation);
-    expect(result.reply).toBe('白泽：已创建 BZ-1。');
+    expect(result.reply).toBe('Alice：已创建 BZ-1。');
   });
 
   it('allows Jira client operations even when synced permission lists are empty', async () => {
@@ -675,7 +675,7 @@ describe('desktop local runtime', () => {
       localClaudeCode: {
         send: async (input, options = {}) => {
           operationResult = await options.executeClientOperation({ id: 'jira-1', plugin: 'jira', action: 'search_issue', input: { projectKey: 'BUG' } });
-          return { provider: 'local_claude_code', reply: '白泽：已查询。' };
+          return { provider: 'local_claude_code', reply: 'Alice：已查询。' };
         }
       },
       chatTransport: {
@@ -702,7 +702,7 @@ describe('desktop local runtime', () => {
       localClaudeCode: {
         send: async () => ({
           provider: 'local_claude_code',
-          reply: '白泽：普通分析完成。',
+          reply: 'Alice：普通分析完成。',
           syncEvents: [
             { type: 'audit.created', payload: { content: '普通分析审计。' } },
             { type: 'client_runtime.updated', payload: { enabled: false } },
@@ -733,7 +733,7 @@ describe('desktop local runtime', () => {
       chatTransport: {
         sendChat: async (serverUrl, input) => {
           request = { serverUrl, input };
-          return { provider: 'local_runtime', reply: '白泽：本地运行时回复。' };
+          return { provider: 'local_runtime', reply: 'Alice：本地运行时回复。' };
         }
       }
     });
@@ -759,7 +759,7 @@ describe('desktop local runtime', () => {
     expect(request.input.localAttachments).toBeUndefined();
     expect(request.input.localPath).toBeUndefined();
     expect(request.input.filePath).toBeUndefined();
-    expect(result.reply).toBe('白泽：本地运行时回复。');
+    expect(result.reply).toBe('Alice：本地运行时回复。');
   });
 
   it('streams chat events through local Claude Code when enabled by runtime config', async () => {
@@ -772,10 +772,10 @@ describe('desktop local runtime', () => {
       localClaudeCode: {
         sendStream: async (input, options = {}) => {
           localRequest = { input, hasSignal: Boolean(options.signal) };
-          options.onEvent({ type: 'status', message: '白泽正在调用本机 Claude Code。' });
-          options.onEvent({ type: 'delta', text: '白泽：' });
-          options.onEvent({ type: 'done', provider: 'local_claude_code', reply: '白泽：完成。' });
-          return { type: 'done', provider: 'local_claude_code', reply: '白泽：完成。' };
+          options.onEvent({ type: 'status', message: 'Alice正在调用本机 Claude Code。' });
+          options.onEvent({ type: 'delta', text: 'Alice：' });
+          options.onEvent({ type: 'done', provider: 'local_claude_code', reply: 'Alice：完成。' });
+          return { type: 'done', provider: 'local_claude_code', reply: 'Alice：完成。' };
         }
       }
     });
@@ -791,11 +791,11 @@ describe('desktop local runtime', () => {
       hasSignal: true
     });
     expect(events).toEqual([
-      { type: 'status', message: '白泽正在调用本机 Claude Code。' },
-      { type: 'delta', text: '白泽：' },
-      { type: 'done', provider: 'local_claude_code', reply: '白泽：完成。' }
+      { type: 'status', message: 'Alice正在调用本机 Claude Code。' },
+      { type: 'delta', text: 'Alice：' },
+      { type: 'done', provider: 'local_claude_code', reply: 'Alice：完成。' }
     ]);
-    expect(result).toMatchObject({ provider: 'local_claude_code', reply: '白泽：完成。' });
+    expect(result).toMatchObject({ provider: 'local_claude_code', reply: 'Alice：完成。' });
   });
 
   it('streams chat events through the server fallback when local Claude Code is disabled', async () => {
@@ -808,9 +808,9 @@ describe('desktop local runtime', () => {
       chatTransport: {
         sendChatStream: async (serverUrl, input, options = {}) => {
           request = { serverUrl, input, hasSignal: Boolean(options.signal) };
-          options.onEvent({ type: 'delta', text: '白泽：' });
-          options.onEvent({ type: 'done', reply: '白泽：完成。' });
-          return { type: 'done', reply: '白泽：完成。' };
+          options.onEvent({ type: 'delta', text: 'Alice：' });
+          options.onEvent({ type: 'done', reply: 'Alice：完成。' });
+          return { type: 'done', reply: 'Alice：完成。' };
         }
       }
     });
@@ -836,10 +836,10 @@ describe('desktop local runtime', () => {
     expect(request.input.localPath).toBeUndefined();
     expect(request.input.filePath).toBeUndefined();
     expect(events).toEqual([
-      { type: 'delta', text: '白泽：' },
-      { type: 'done', reply: '白泽：完成。' }
+      { type: 'delta', text: 'Alice：' },
+      { type: 'done', reply: 'Alice：完成。' }
     ]);
-    expect(result.reply).toBe('白泽：完成。');
+    expect(result.reply).toBe('Alice：完成。');
   });
 
   it('pulls control-plane status and sync events from the server', async () => {

@@ -442,7 +442,7 @@ function createLocalRuntime({ getServerUrl, getClientId, getMachineCode, getClie
 
   function buildRequirementPlanPrompt({ run, workspaceUpdate }) {
     return [
-      '你是白泽客户端本机 Claude Code 需求工程级完成规划员。',
+      '你是Alice客户端本机 Claude Code 需求工程级完成规划员。',
       '这是只读规划阶段，不允许修改任何文件，不允许执行会改变工程状态的命令。',
       '必须基于当前工程代码、配置、资源和需求内容给出工程级执行计划；如果无法读取工程或缺少关键需求信息，必须明确说明无法继续。',
       '请输出中文，包含：需求理解、工程依据来源、实施步骤、预计修改文件或模块、验证方案、风险和需要用户确认的问题。',
@@ -454,7 +454,7 @@ function createLocalRuntime({ getServerUrl, getClientId, getMachineCode, getClie
 
   function buildRequirementExecutionPrompt({ run, workspaceUpdate }) {
     return [
-      '你是白泽客户端本机 Claude Code 需求工程级执行员。',
+      '你是Alice客户端本机 Claude Code 需求工程级执行员。',
       '用户已经确认执行计划，现在允许你修改工程文件。',
       '只能实现已确认需求，不要扩大范围；不要提交代码、不要 push、不要写 Jira，除非用户之后单独确认。',
       '必须先基于当前工程状态复核计划，再修改代码、配置或资源。',
@@ -474,7 +474,7 @@ function createLocalRuntime({ getServerUrl, getClientId, getMachineCode, getClie
     const unityExePath = workspaceUpdate && workspaceUpdate.unityExePath ? workspaceUpdate.unityExePath : '';
     const validationCommand = workspaceUpdate && workspaceUpdate.validationCommand ? workspaceUpdate.validationCommand : '';
     return [
-      '你是白泽客户端本机 Claude Code Jira Bug 自动修复执行员。',
+      '你是Alice客户端本机 Claude Code Jira Bug 自动修复执行员。',
       '请只处理下面这一个 Jira Bug；完成或失败后不要继续处理其他 Bug，外层客户端会按队列调度下一个。',
       '你必须先完成 Jira Bug 工程级分析前置条件：队列级 SVN update 已由客户端在执行本 Bug 前完成；如果下面提供了已配置工程目录，必须直接从该目录开始分析，不要重新全仓探索 SVN 或 Unity 工程入口。',
       '如果当前环境无法读取已配置工程目录，或找不到与该 Bug 对应的工程依据，必须停止本 Bug 修复并明确说明无法完成工程级分析；不要伪装成已分析或已修复。',
@@ -556,7 +556,7 @@ function createLocalRuntime({ getServerUrl, getClientId, getMachineCode, getClie
       return { ok: false, code: 'LOCAL_JIRA_SERVICE_UNAVAILABLE', message: '本机 Jira 查询服务不可用，请检查客户端 Jira 绑定。' };
     }
     checkCancelled(signal);
-    emitStatus(onEvent, '白泽正在用当前客户端绑定的 Jira 账号拉取未开始 Bug 队列。', { plugin: 'jira', action: 'auto_fix_bugs' });
+    emitStatus(onEvent, 'Alice正在用当前客户端绑定的 Jira 账号拉取未开始 Bug 队列。', { plugin: 'jira', action: 'auto_fix_bugs' });
     const queue = await jiraService.searchUnstartedBugs(input);
     const issues = Array.isArray(queue.issues) ? queue.issues : [];
     const selectedIssues = selectAutoFixIssues(issues, input);
@@ -627,7 +627,7 @@ function createLocalRuntime({ getServerUrl, getClientId, getMachineCode, getClie
       checkCancelled(signal);
       const issue = selectedIssues[index];
       const progress = createAutoFixProgress();
-      emitStatus(onEvent, `白泽正在修复第 ${index + 1}/${selectedIssues.length} 个 Bug：${issue.key} ${issue.summary || ''}`.trim(), { plugin: 'jira', action: 'auto_fix_bugs', issueKey: issue.key });
+      emitStatus(onEvent, `Alice正在修复第 ${index + 1}/${selectedIssues.length} 个 Bug：${issue.key} ${issue.summary || ''}`.trim(), { plugin: 'jira', action: 'auto_fix_bugs', issueKey: issue.key });
       try {
         const result = await localChat.sendStream({
           text: buildAutoFixBugPrompt({ issue, index, total: selectedIssues.length, originalText: queue.originalText || input.originalText, workspaceUpdate }),
@@ -730,7 +730,7 @@ function createLocalRuntime({ getServerUrl, getClientId, getMachineCode, getClie
       };
     }
     const progress = createAutoFixProgress();
-    emitStatus(onEvent, '白泽正在生成需求工程级执行计划。', { plugin: 'engineering', action: 'auto_complete_requirement', runId: run.id });
+    emitStatus(onEvent, 'Alice正在生成需求工程级执行计划。', { plugin: 'engineering', action: 'auto_complete_requirement', runId: run.id });
     try {
       const result = await localChat.sendStream({
         text: buildRequirementPlanPrompt({ run, workspaceUpdate }),
@@ -782,7 +782,7 @@ function createLocalRuntime({ getServerUrl, getClientId, getMachineCode, getClie
     }
     const workspaceUpdate = run.plan.workspaceUpdate || await updateRequirementCompletionWorkspace({ signal, onEvent });
     const progress = createAutoFixProgress();
-    emitStatus(onEvent, '白泽正在按已确认计划执行需求工程修改。', { plugin: 'engineering', action: 'auto_complete_requirement', phase: 'execute', runId: run.id });
+    emitStatus(onEvent, 'Alice正在按已确认计划执行需求工程修改。', { plugin: 'engineering', action: 'auto_complete_requirement', phase: 'execute', runId: run.id });
     try {
       const result = await localChat.sendStream({
         text: buildRequirementExecutionPrompt({ run, workspaceUpdate }),
@@ -860,12 +860,12 @@ function createLocalRuntime({ getServerUrl, getClientId, getMachineCode, getClie
       if (operation.plugin === 'engineering' && operation.action === 'auto_complete_requirement') {
         const result = buildRequirementCompletionRun(chatInput, input);
         if (typeof onEvent === 'function' && result && result.status === 'awaiting_plan') {
-          onEvent({ type: 'requirement_completion_required', message: '白泽：已生成需求工程完成卡，请先生成并确认执行计划。', run: result });
+          onEvent({ type: 'requirement_completion_required', message: 'Alice：已生成需求工程完成卡，请先生成并确认执行计划。', run: result });
         }
         return { ok: result.status !== 'failed', plugin: 'engineering', action: operation.action, id: operation.id, result, requirementCompletionRun: result };
       }
       if (operation.action === 'search_issue') {
-        emitStatus(onEvent, '白泽正在执行 Jira search_issue 实时查询。', { plugin: 'jira', action: operation.action, operationId: operation.id });
+        emitStatus(onEvent, 'Alice正在执行 Jira search_issue 实时查询。', { plugin: 'jira', action: operation.action, operationId: operation.id });
         const result = await transport.searchJiraIssues(serverUrl, {
           ...input,
           clientOperation: true,
@@ -879,7 +879,7 @@ function createLocalRuntime({ getServerUrl, getClientId, getMachineCode, getClie
       if (operation.action === 'auto_fix_bugs') {
         const result = await runAutoFixBugs(chatInput, input, { signal, onEvent, localClaudeCodeEnv });
         if (typeof onEvent === 'function' && result && result.status === 'awaiting_confirmation') {
-          onEvent({ type: 'auto_fix_bug_queue_required', message: '白泽：已梳理出可自动修改的 Jira BUG 队列，请确认要修改哪些 BUG。', queue: result });
+          onEvent({ type: 'auto_fix_bug_queue_required', message: 'Alice：已梳理出可自动修改的 Jira BUG 队列，请确认要修改哪些 BUG。', queue: result });
         }
         return { ok: result.ok !== false, plugin: 'jira', action: operation.action, id: operation.id, result, autoFixBugQueue: result };
       }
@@ -887,7 +887,7 @@ function createLocalRuntime({ getServerUrl, getClientId, getMachineCode, getClie
         return { ok: false, code: 'LOCAL_JIRA_SERVICE_UNAVAILABLE', message: '本机 Jira 创建服务不可用，请检查客户端配置。' };
       }
       if (operation.action === 'create_issue') {
-        emitStatus(onEvent, '白泽正在生成 Jira 创建确认卡。', { plugin: 'jira', action: operation.action, operationId: operation.id });
+        emitStatus(onEvent, 'Alice正在生成 Jira 创建确认卡。', { plugin: 'jira', action: operation.action, operationId: operation.id });
         if (typeof jiraService.createJiraImportDraftsWithOperation !== 'function') {
           return { ok: false, code: 'LOCAL_JIRA_SERVICE_UNAVAILABLE', message: '本机 Jira 创建服务不可用，请检查客户端配置。' };
         }
@@ -901,7 +901,7 @@ function createLocalRuntime({ getServerUrl, getClientId, getMachineCode, getClie
         }, { signal });
         const operationResult = { ok: true, plugin: 'jira', action: operation.action, id: operation.id, result, operation: result.operation };
         if (typeof onEvent === 'function' && result.operation) {
-          onEvent({ type: 'jira_operation_required', message: '白泽：已生成 Jira 创建确认卡，请确认是否创建。', operation: result.operation });
+          onEvent({ type: 'jira_operation_required', message: 'Alice：已生成 Jira 创建确认卡，请确认是否创建。', operation: result.operation });
         }
         return operationResult;
       }
@@ -959,7 +959,7 @@ function createLocalRuntime({ getServerUrl, getClientId, getMachineCode, getClie
         syncedEvents.push(synced && synced.event ? synced.event : synced);
       } catch (error) {
         if (typeof onEvent === 'function') {
-          onEvent({ type: 'status', message: `白泽同步本地事件失败：${error.message || '未知错误'}` });
+          onEvent({ type: 'status', message: `Alice同步本地事件失败：${error.message || '未知错误'}` });
         }
       }
     }

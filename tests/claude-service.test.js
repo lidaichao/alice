@@ -33,13 +33,13 @@ describe('claude service', () => {
       messages: {
         create: async (input) => {
           request = input;
-          return { content: [{ type: 'text', text: '白泽：配置模型测试。' }] };
+          return { content: [{ type: 'text', text: 'Alice：配置模型测试。' }] };
         }
       }
     };
 
     await fs.mkdir(path.join(baizeRoot, 'config'), { recursive: true });
-    await fs.writeFile(path.join(baizeRoot, 'config', 'global.md'), '# 白泽全局设定\n', 'utf8');
+    await fs.writeFile(path.join(baizeRoot, 'config', 'global.md'), '# Alice全局设定\n', 'utf8');
     await fs.writeFile(path.join(baizeRoot, 'config', 'global.yaml'), '', 'utf8');
     await fs.writeFile(path.join(baizeRoot, 'config', 'claude.yaml'), [
       'provider: claude',
@@ -61,7 +61,7 @@ describe('claude service', () => {
       client
     });
 
-    expect(reply).toBe('白泽：配置模型测试。');
+    expect(reply).toBe('Alice：配置模型测试。');
     expect(request.model).toBe('claude-opus-4-7');
     expect(request.thinking).toEqual({ type: 'adaptive' });
   });
@@ -73,13 +73,13 @@ describe('claude service', () => {
       messages: {
         create: async (input) => {
           request = input;
-          return { content: [{ type: 'text', text: '白泽：完整上下文测试。' }] };
+          return { content: [{ type: 'text', text: 'Alice：完整上下文测试。' }] };
         }
       }
     };
 
     await fs.mkdir(path.join(baizeRoot, 'config'), { recursive: true });
-    await fs.writeFile(path.join(baizeRoot, 'config', 'global.md'), '# 白泽全局设定\n', 'utf8');
+    await fs.writeFile(path.join(baizeRoot, 'config', 'global.md'), '# Alice全局设定\n', 'utf8');
     await fs.writeFile(path.join(baizeRoot, 'config', 'global.yaml'), '', 'utf8');
     await fs.writeFile(path.join(baizeRoot, 'config', 'claude.yaml'), 'provider: claude\nclaude:\n  apiKey: test-key\n', 'utf8');
 
@@ -102,7 +102,7 @@ describe('claude service', () => {
       ],
       logicContext: {
         assertions: [
-          { category: 'identity', relativePath: path.join('logic', 'assertions', 'identity.md'), content: '白泽保持项目智能中枢身份。' }
+          { category: 'identity', relativePath: path.join('logic', 'assertions', 'identity.md'), content: 'Alice保持项目智能中枢身份。' }
         ],
         rules: [
           { name: 'intent-routing', relativePath: path.join('logic', 'rules', 'intent-routing.md'), content: '优先识别用户目标。' }
@@ -145,13 +145,13 @@ describe('claude service', () => {
       messages: {
         create: async (input) => {
           request = input;
-          return { content: [{ type: 'text', text: '白泽：历史上下文测试。' }] };
+          return { content: [{ type: 'text', text: 'Alice：历史上下文测试。' }] };
         }
       }
     };
 
     await fs.mkdir(path.join(baizeRoot, 'config'), { recursive: true });
-    await fs.writeFile(path.join(baizeRoot, 'config', 'global.md'), '# 白泽全局设定\n', 'utf8');
+    await fs.writeFile(path.join(baizeRoot, 'config', 'global.md'), '# Alice全局设定\n', 'utf8');
     await fs.writeFile(path.join(baizeRoot, 'config', 'global.yaml'), '', 'utf8');
     await fs.writeFile(path.join(baizeRoot, 'config', 'claude.yaml'), 'provider: claude\nclaude:\n  apiKey: test-key\n', 'utf8');
 
@@ -165,7 +165,7 @@ describe('claude service', () => {
       knowledgeResults: [],
       conversationMessages: [
         { role: 'user', text: '我是 JUMP 群英集结的项目大管家。' },
-        { role: 'assistant', text: '白泽已记录。' }
+        { role: 'assistant', text: 'Alice已记录。' }
       ],
       baizeRoot,
       client
@@ -187,9 +187,9 @@ describe('claude service', () => {
           request = input;
           const stream = new EventEmitter();
           stream.finalMessage = async () => {
-            stream.emit('text', '白泽：');
+            stream.emit('text', 'Alice：');
             stream.emit('text', '流式回复。');
-            return { content: [{ type: 'text', text: '白泽：流式回复。' }] };
+            return { content: [{ type: 'text', text: 'Alice：流式回复。' }] };
           };
           return stream;
         }
@@ -197,7 +197,7 @@ describe('claude service', () => {
     };
 
     await fs.mkdir(path.join(baizeRoot, 'config'), { recursive: true });
-    await fs.writeFile(path.join(baizeRoot, 'config', 'global.md'), '# 白泽全局设定\n', 'utf8');
+    await fs.writeFile(path.join(baizeRoot, 'config', 'global.md'), '# Alice全局设定\n', 'utf8');
     await fs.writeFile(path.join(baizeRoot, 'config', 'global.yaml'), '', 'utf8');
     await fs.writeFile(path.join(baizeRoot, 'config', 'claude.yaml'), 'provider: claude\nclaude:\n  apiKey: test-key\n', 'utf8');
 
@@ -215,8 +215,8 @@ describe('claude service', () => {
     });
 
     expect(request.model).toBe('claude-opus-4-7');
-    expect(deltas).toEqual(['白泽：', '流式回复。']);
-    expect(reply).toBe('白泽：流式回复。');
+    expect(deltas).toEqual(['Alice：', '流式回复。']);
+    expect(reply).toBe('Alice：流式回复。');
   });
 
   it('uploads xlsx files for Claude code execution Jira parsing', async () => {
@@ -409,7 +409,7 @@ describe('claude service', () => {
             content: [{
               type: 'text',
               text: JSON.stringify({
-                summary: '图片显示白泽客户端连接失败提示。',
+                summary: '图片显示Alice客户端连接失败提示。',
                 memoryCategory: 'project',
                 shouldRemember: true,
                 reason: '这是排查客户端问题的上下文。',
@@ -443,7 +443,7 @@ describe('claude service', () => {
     });
     expect(request.messages[0].content[1].text).toContain('文件名：screenshot.png');
     expect(analysis).toEqual({
-      summary: '图片显示白泽客户端连接失败提示。',
+      summary: '图片显示Alice客户端连接失败提示。',
       memoryCategory: 'project',
       shouldRemember: true,
       reason: '这是排查客户端问题的上下文。',

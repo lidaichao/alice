@@ -25,10 +25,10 @@ describe('Claude Code service', () => {
       conversationMessages: [{ role: 'user', text: '你好' }],
       conversationSummary: '用户正在检查聊天链路。',
       knowledgeResults: [{ title: 'chat', snippet: '聊天接口说明' }],
-      shallowMemoryResults: [{ category: 'project', line: '白泽是服务器中枢' }],
+      shallowMemoryResults: [{ category: 'project', line: 'Alice是服务器中枢' }],
       logicContext: {
         assertions: [{ category: 'project', content: '分析 Jira Bug 前必须更新 SVN。' }],
-        rules: [{ name: 'identity', content: '保持白泽身份' }],
+        rules: [{ name: 'identity', content: '保持Alice身份' }],
         executableRules: [{ name: 'routing-rules', content: 'rules:\n  - name: route-chat' }]
       },
       skillsContext: { skills: [{ id: 'jira', skillMarkdown: 'Jira 技能' }] },
@@ -57,9 +57,9 @@ describe('Claude Code service', () => {
     expect(prompt).toContain('必须先阅读逻辑官上下文');
     expect(prompt).toContain('用户问题：分析聊天接口');
     expect(prompt).toContain('聊天接口说明');
-    expect(prompt).toContain('白泽是服务器中枢');
+    expect(prompt).toContain('Alice是服务器中枢');
     expect(prompt).toContain('分析 Jira Bug 前必须更新 SVN');
-    expect(prompt).toContain('保持白泽身份');
+    expect(prompt).toContain('保持Alice身份');
     expect(prompt).toContain('route-chat');
     expect(prompt).toContain('Jira 技能');
     expect(prompt).toContain('附件上下文');
@@ -80,14 +80,14 @@ describe('Claude Code service', () => {
       permissionMode: 'read_only',
       runner: async (input) => {
         runnerInput = input;
-        return '白泽：Claude Code 只读分析完成。';
+        return 'Alice：Claude Code 只读分析完成。';
       },
       onDelta: (text) => deltas.push(text),
       onEvent: (event) => events.push(event)
     });
 
-    expect(reply).toBe('白泽：Claude Code 只读分析完成。');
-    expect(deltas).toEqual(['白泽：Claude Code 只读分析完成。']);
+    expect(reply).toBe('Alice：Claude Code 只读分析完成。');
+    expect(deltas).toEqual(['Alice：Claude Code 只读分析完成。']);
     expect(events).toEqual([expect.objectContaining({ type: 'status' })]);
     expect(runnerInput.prompt).toContain('分析聊天接口');
     expect(runnerInput.permissionMode).toBe('read_only');
@@ -322,7 +322,7 @@ describe('Claude Code service', () => {
     expect(timings.claudeCodeRepairAttempted).toBe(1);
     expect(typeof timings.claudeCodeRepairMs).toBe('number');
     expect(events).toEqual(expect.arrayContaining([
-      expect.objectContaining({ message: '白泽正在让 Claude Code 修复操作意图格式。' })
+      expect.objectContaining({ message: 'Alice正在让 Claude Code 修复操作意图格式。' })
     ]));
     expect(intent).toMatchObject({
       kind: 'jira_bulk_create',
@@ -432,8 +432,8 @@ describe('Claude Code service', () => {
     expect(timings.claudeCodeExecutionRecoveryAttempted).toBe(1);
     expect(typeof timings.claudeCodeExecutionRecoveryMs).toBe('number');
     expect(events).toEqual(expect.arrayContaining([
-      expect.objectContaining({ message: '白泽正在让 Claude Code 分析自己的执行失败。' }),
-      expect.objectContaining({ message: '白泽正在按 Claude Code 自诊断结果重试。' })
+      expect.objectContaining({ message: 'Alice正在让 Claude Code 分析自己的执行失败。' }),
+      expect.objectContaining({ message: 'Alice正在按 Claude Code 自诊断结果重试。' })
     ]));
     expect(intent).toMatchObject({
       kind: 'jira_bulk_create',
@@ -535,7 +535,7 @@ describe('Claude Code service', () => {
       child.stderr = new PassThrough();
       child.kill = vi.fn();
       process.nextTick(() => {
-        child.stdout.write('白泽：真实 Claude Code 只读分析完成。');
+        child.stdout.write('Alice：真实 Claude Code 只读分析完成。');
         child.stdout.end();
         child.emit('close', 0);
       });
@@ -553,7 +553,7 @@ describe('Claude Code service', () => {
       }
     });
 
-    expect(reply).toBe('白泽：真实 Claude Code 只读分析完成。');
+    expect(reply).toBe('Alice：真实 Claude Code 只读分析完成。');
     expect(spawnCall.command).toBe('claude-test');
     expect(spawnCall.args).toEqual(expect.arrayContaining([
       '--print',
@@ -582,7 +582,7 @@ describe('Claude Code service', () => {
       child.stderr = new PassThrough();
       child.kill = vi.fn();
       process.nextTick(() => {
-        child.stdout.write('白泽：BUG 工程分析完成。');
+        child.stdout.write('Alice：BUG 工程分析完成。');
         child.stdout.end();
         child.emit('close', 0);
       });
@@ -603,7 +603,7 @@ describe('Claude Code service', () => {
       }
     });
 
-    expect(reply).toBe('白泽：BUG 工程分析完成。');
+    expect(reply).toBe('Alice：BUG 工程分析完成。');
     expect(spawnCall.args).toEqual(expect.arrayContaining([
       '--tools',
       'Read,Grep,Glob,Bash',

@@ -38,8 +38,8 @@ async function readClientVersionConfig({ baizeRoot = paths.BAIZE_ROOT } = {}) {
     windows: {
       updateDir: readString(windows.updateDir) || path.join(baizeRoot, 'client-updates', 'windows'),
       latestYml: readString(windows.latestYml) || 'latest.yml',
-      installer: readString(windows.installer) || '白泽.exe',
-      blockMap: readString(windows.blockMap) || '白泽.exe.blockmap'
+      installer: readString(windows.installer) || 'Alice.exe',
+      blockMap: readString(windows.blockMap) || 'Alice.exe.blockmap'
     },
     android: {
       updateDir: readString(android.updateDir) || path.join(baizeRoot, 'client-updates', 'android'),

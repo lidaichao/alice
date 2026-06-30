@@ -123,8 +123,8 @@ describe('client version service', () => {
       'windows:',
       `  updateDir: "${updateDir.replace(/\\/g, '/')}"`,
       '  latestYml: "latest.yml"',
-      '  installer: "白泽.exe"',
-      '  blockMap: "白泽.exe.blockmap"'
+      '  installer: "Alice.exe"',
+      '  blockMap: "Alice.exe.blockmap"'
     ].join('\n'), 'utf8');
 
     await expect(getClientUpdateFile('latest.yml', { baizeRoot })).resolves.toMatchObject({ fileName: 'latest.yml' });

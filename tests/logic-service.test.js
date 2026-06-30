@@ -58,7 +58,7 @@ describe('logic service', () => {
     const { baizeRoot } = await createTestRoot();
     await fs.mkdir(path.join(baizeRoot, 'logic', 'rules'), { recursive: true });
     await fs.mkdir(path.join(baizeRoot, 'logic', 'executable'), { recursive: true });
-    await fs.writeFile(path.join(baizeRoot, 'logic', 'assertions', 'identity.md'), '# identity\n\n白泽身份断言。', 'utf8');
+    await fs.writeFile(path.join(baizeRoot, 'logic', 'assertions', 'identity.md'), '# identity\n\nAlice身份断言。', 'utf8');
     await fs.writeFile(path.join(baizeRoot, 'logic', 'rules', 'intent-routing.md'), '# 意图路由\n\n优先识别用户目标。', 'utf8');
     await fs.writeFile(path.join(baizeRoot, 'logic', 'executable', 'routing-rules.yaml'), 'rules:\n  - name: route-chat\n', 'utf8');
 
@@ -68,7 +68,7 @@ describe('logic service', () => {
       expect.objectContaining({
         category: 'identity',
         relativePath: path.join('logic', 'assertions', 'identity.md'),
-        content: expect.stringContaining('白泽身份断言')
+        content: expect.stringContaining('Alice身份断言')
       })
     ]));
     expect(context.rules).toEqual(expect.arrayContaining([

@@ -30,7 +30,7 @@ router.post('/chat/stream', requireAuth(), async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders && res.flushHeaders();
-  writeSseEvent(res, { type: 'activity', step: 'request_received', message: '白泽已收到请求。', at: new Date().toISOString() });
+  writeSseEvent(res, { type: 'activity', step: 'request_received', message: 'Alice 已收到请求。', at: new Date().toISOString() });
   const heartbeat = setInterval(() => {
     writeSseEvent(res, { type: 'heartbeat', at: new Date().toISOString() });
   }, 10000);

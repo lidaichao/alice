@@ -80,7 +80,7 @@ async function createWeComAiBotClient(options = {}) {
       }, options);
       if (result.handled) {
         const streamId = sdk.generateReqId ? sdk.generateReqId('baize') : `baize_${Date.now()}`;
-        await client.replyStream(frame, streamId, result.reply || '白泽：已收到。', true);
+        await client.replyStream(frame, streamId, result.reply || 'Alice：已收到。', true);
       }
     } catch (error) {
       console.error('[wecom-aibot] message handling failed:', error && error.message ? error.message : error);

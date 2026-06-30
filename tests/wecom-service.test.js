@@ -161,7 +161,7 @@ describe('wecom service', () => {
       '<FromUserName><![CDATA[user-1]]></FromUserName>',
       '<CreateTime>1710000000</CreateTime>',
       '<MsgType><![CDATA[text]]></MsgType>',
-      '<Content><![CDATA[白泽 能量机制]]></Content>',
+      '<Content><![CDATA[Alice 能量机制]]></Content>',
       '<MsgId>1</MsgId>',
       '<AgentID>1000002</AgentID>',
       '</xml>'
@@ -177,7 +177,7 @@ describe('wecom service', () => {
       touser: 'user-1',
       msgtype: 'text',
       agentid: 1000002,
-      text: { content: expect.stringContaining('白泽：') }
+      text: { content: expect.stringContaining('Alice：') }
     });
   });
 
@@ -205,13 +205,13 @@ describe('wecom service', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('handles Baize wake word and returns a local knowledge reply', async () => {
+  it('handles Alice wake word and returns a local knowledge reply', async () => {
     const result = await handleWeComWebhook({
       msgtype: 'text',
       from: 'user-1',
       chatid: 'chat-1',
       text: {
-        content: '白泽 能量机制'
+        content: 'Alice 能量机制'
       }
     }, { baizeRoot, claudeRouteClassifier: ordinaryChatClassifier });
 
@@ -225,7 +225,7 @@ describe('wecom service', () => {
         text: '能量机制'
       }
     });
-    expect(result.reply).toContain('白泽：');
+    expect(result.reply).toContain('Alice：');
     expect(result.reply).toContain('能量机制');
     expect(result.results).toEqual(
       expect.arrayContaining([
@@ -234,13 +234,13 @@ describe('wecom service', () => {
     );
   });
 
-  it('handles Xiaoze wake word', async () => {
+  it('handles Alice wake word (via user mention)', async () => {
     const result = await handleWeComWebhook({
       msgtype: 'text',
       userId: 'user-2',
       conversationId: 'conversation-2',
       text: {
-        content: '@小泽 战斗系统'
+        content: 'Alice 战斗系统'
       }
     }, { baizeRoot });
 

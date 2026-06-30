@@ -133,7 +133,7 @@ describe('desktop local Jira service', () => {
       fetchImpl: async (url, options) => {
         requests.push({ url, options });
         if (url.endsWith('/rest/api/2/project/BZ')) {
-          return jsonResponse({ id: '10000', key: 'BZ', name: '白泽', issueTypes: [{ id: '10001', name: '需求' }] });
+          return jsonResponse({ id: '10000', key: 'BZ', name: 'Alice', issueTypes: [{ id: '10001', name: '需求' }] });
         }
         return jsonResponse({ id: '10001', key: 'BZ-1', self: 'http://jira.test/rest/api/2/issue/10001' });
       }
@@ -153,7 +153,7 @@ describe('desktop local Jira service', () => {
       conversationId: 'conversation-1'
     });
 
-    expect(project).toEqual({ id: '10000', key: 'BZ', name: '白泽', issueTypes: [{ id: '10001', name: '需求', subtask: false }] });
+    expect(project).toEqual({ id: '10000', key: 'BZ', name: 'Alice', issueTypes: [{ id: '10001', name: '需求', subtask: false }] });
     expect(result.operation.status).toBe('created');
     expect(result.operation.createdIssues).toEqual([expect.objectContaining({ key: 'BZ-1', summary: '创建需求单' })]);
     expect(requests[0].url).toBe('http://jira.test/rest/api/2/project/BZ');

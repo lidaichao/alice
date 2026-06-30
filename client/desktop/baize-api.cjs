@@ -10,7 +10,7 @@ function normalizeServerUrl(serverUrl = DEFAULT_SERVER_URL) {
 
     return url.origin;
   } catch (error) {
-    const invalidUrlError = new Error('请输入有效的白泽服务器地址，例如 https://baize.baizerobotai.site。');
+    const invalidUrlError = new Error('请输入有效的Alice服务器地址，例如 https://baize.baizerobotai.site。');
     invalidUrlError.code = 'INVALID_SERVER_URL';
     throw invalidUrlError;
   }
@@ -29,7 +29,7 @@ async function readJsonResponse(response) {
   try {
     return JSON.parse(text);
   } catch (error) {
-    const parseError = new Error('白泽服务器返回了无效的 JSON。');
+    const parseError = new Error('Alice服务器返回了无效的 JSON。');
     parseError.code = 'INVALID_SERVER_RESPONSE';
     throw parseError;
   }
@@ -37,11 +37,11 @@ async function readJsonResponse(response) {
 
 function translateApiErrorMessage(message, status) {
   if (message === 'Route not found.') {
-    return '白泽服务器版本过旧，缺少当前客户端需要的接口。请重启服务器或更新服务器后再试。';
+    return 'Alice服务器版本过旧，缺少当前客户端需要的接口。请重启服务器或更新服务器后再试。';
   }
 
   if (message === 'Internal server error.') {
-    return '白泽服务器内部错误，请稍后重试或查看服务器日志。';
+    return 'Alice服务器内部错误，请稍后重试或查看服务器日志。';
   }
 
   if (message === 'text is required.') {
@@ -49,10 +49,10 @@ function translateApiErrorMessage(message, status) {
   }
 
   if (status === 404) {
-    return '白泽服务器没有找到这个接口，请确认服务器已更新并重启。';
+    return 'Alice服务器没有找到这个接口，请确认服务器已更新并重启。';
   }
 
-  return message || `白泽服务器请求失败：HTTP ${status}`;
+  return message || `Alice服务器请求失败：HTTP ${status}`;
 }
 
 function throwApiError(payload, response) {
@@ -94,7 +94,7 @@ async function requestJson(serverUrl, pathname, { method = 'GET', body, fetchImp
       throw cancelError;
     }
     const details = error && error.message ? `（${requestUrl}，${error.message}）` : `（${requestUrl}）`;
-    const connectionError = new Error(`无法连接白泽服务器。请确认服务器已启动后重试。${details}`);
+    const connectionError = new Error(`无法连接Alice服务器。请确认服务器已启动后重试。${details}`);
     connectionError.code = 'BAIZE_SERVER_UNREACHABLE';
     throw connectionError;
   }
@@ -241,7 +241,7 @@ async function sendChatStream(serverUrl, { text, userId = 'desktop-user', conver
       cancelError.code = 'BAIZE_REQUEST_CANCELLED';
       throw cancelError;
     }
-    const connectionError = new Error('无法连接白泽服务器。请确认服务器已启动后重试。');
+    const connectionError = new Error('无法连接Alice服务器。请确认服务器已启动后重试。');
     connectionError.code = 'BAIZE_SERVER_UNREACHABLE';
     throw connectionError;
   }
@@ -274,7 +274,7 @@ async function sendChatStream(serverUrl, { text, userId = 'desktop-user', conver
       result = event;
     }
     if (event.type === 'error') {
-      const streamError = new Error(event.message || '白泽流式回复失败。');
+      const streamError = new Error(event.message || 'Alice流式回复失败。');
       streamError.code = event.code || 'BAIZE_STREAM_ERROR';
       throw streamError;
     }
