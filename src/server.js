@@ -36,6 +36,16 @@ const BUG_ANALYSIS_TICK_MS = 60 * 1000;
 const UNITY_BUILD_TICK_MS = 60 * 1000;
 
 function startServer({ host = process.env.HOST || '0.0.0.0', port = Number(process.env.PORT || 3000), bugAnalysisTickMs = BUG_ANALYSIS_TICK_MS, unityBuildTickMs = UNITY_BUILD_TICK_MS } = {}) {
+  process.on('unhandledRejection', (reason, promise) => {
+    const message = reason instanceof Error ? reason.stack : String(reason);
+    console.error('[fatal] unhandledRejection:', message);
+  });
+
+  process.on('uncaughtException', (error) => {
+    console.error('[fatal] uncaughtException:', error && error.stack ? error.stack : error);
+    process.exitCode = 1;
+  });
+
   const app = createApp();
   const server = app.listen(port, host, () => {
     const address = server.address();
