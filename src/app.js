@@ -1,4 +1,5 @@
 const express = require('express');
+const helmet = require('helmet');
 const healthRoutes = require('./routes/health.routes');
 const configRoutes = require('./routes/config.routes');
 const authRoutes = require('./routes/auth.routes');
@@ -24,6 +25,10 @@ function createApp() {
   app.use(attachmentsRoutes);
   app.use(speechRoutes);
   app.use(express.json({ limit: '256kb' }));
+  app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false
+  }));
   app.use(healthRoutes);
   app.use(configRoutes);
   app.use(authRoutes);
