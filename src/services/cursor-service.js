@@ -153,7 +153,7 @@ async function generateCursorReply(input = {}) {
     apiKey: config.apiKey,
     model: { id: config.model || DEFAULT_MODEL },
     local: { cwd: config.workspacePath || paths.BAIZE_ROOT },
-    mode: 'ask'
+    mode: 'agent'
   });
 
   if (typeof onTiming === 'function') {
@@ -177,7 +177,7 @@ async function generateCursorReplyStream(input = {}) {
     apiKey: config.apiKey,
     model: { id: config.model || DEFAULT_MODEL },
     local: { cwd: config.workspacePath || paths.BAIZE_ROOT },
-    mode: 'ask'
+    mode: 'agent'
   });
 
   try {
