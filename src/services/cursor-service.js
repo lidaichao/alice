@@ -5,7 +5,7 @@ const { getCursorConfig, getGlobalConfig } = require('./config-service');
 
 const CURSOR_ME_URL = 'https://api.cursor.com/v1/me';
 const DEFAULT_MODEL = 'composer-2.5';
-const MAX_HISTORY_MESSAGES = 40;
+const MAX_HISTORY_MESSAGES = 15;  // AL-431: 缩减 historical context 体积
 
 function configurationError(message) {
   const error = new Error(message);
@@ -109,13 +109,15 @@ async function buildUserPrompt(input = {}) {
     logicContext = {},
     skillsContext = {},
     conversationMessages = [],
-    conversationSummary
+    conversationSummary,
+    routeType
   } = input;
   const globalConfig = await getGlobalConfig({ baizeRoot: input.baizeRoot });
   const summaryText = conversationSummary && conversationSummary.trim() !== ''
     ? conversationSummary.trim()
     : '暂无会话摘要。';
   const historyText = formatConversationHistory(conversationMessages);
+  const isOrdinaryChat = routeType === 'ordinary_chat';
   return [
     formatSystemPrompt(globalConfig),
     `入口平台：${message.platform}`,
@@ -124,8 +126,8 @@ async function buildUserPrompt(input = {}) {
     `会话摘要：\n${summaryText}`,
     `本地知识库上下文：\n${formatKnowledgeContext(knowledgeResults)}`,
     `浅层记忆上下文：\n${formatShallowMemoryContext(shallowMemoryResults)}`,
-    `逻辑断言与规则上下文：\n${formatLogicContext(logicContext)}`,
-    `技能上下文：\n${formatSkillsContext(skillsContext)}`,
+    isOrdinaryChat ? '' : `逻辑断言与规则上下文：\n${formatLogicContext(logicContext)}`,
+    isOrdinaryChat ? '' : `技能上下文：\n${formatSkillsContext(skillsContext)}`,
     historyText ? `会话历史：\n${historyText}` : '',
     `用户问题：${message.text}`,
     '请结合以上上下文，用中文直接回答当前用户问题。'

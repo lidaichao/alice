@@ -1972,6 +1972,7 @@ async function handleChatMessage(input = {}, {
         conversationMessages: historyMessages,
         conversationSummary: conversation.manager && conversation.manager.summary,
         baizeRoot,
+        routeType: route.intent && route.intent.route,
         onTiming: (name, value) => {
           timings[name] = value;
         }
@@ -2433,6 +2434,7 @@ async function handleChatMessageStream(input = {}, {
         conversationMessages: historyMessages,
         conversationSummary: conversation.manager && conversation.manager.summary,
         baizeRoot,
+        routeType: route.intent && route.intent.route,
         onDelta: (text) => emit({ type: 'delta', text }),
         onTiming: (name, value) => {
           timings[name] = value;
