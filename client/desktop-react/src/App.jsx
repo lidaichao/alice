@@ -1,5 +1,5 @@
 import React from 'react';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { ConfigProvider, theme } from 'antd';
 import { useAliceChat } from './hooks/useAliceChat.js';
 import { useAliceConversations } from './hooks/useAliceConversations.js';
@@ -21,6 +21,14 @@ function ChatApp() {
     activeKey: convKey,
     onChange: (key) => setConvKey(key)
   });
+
+  const [clientId, setClientId] = useState('');
+
+  useEffect(() => {
+    if (typeof window.baize?.getClientId === 'function') {
+      window.baize.getClientId().then(setClientId).catch(() => setClientId(''));
+    }
+  }, []);
 
   const handleSend = useCallback((value) => {
     if (!value || !value.text) return;
@@ -53,7 +61,12 @@ function ChatApp() {
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '0 16px' }}>
         {hasMessages ? (
-          <ChatMessages messages={messages} isRequesting={isRequesting} />
+          <ChatMessages
+            messages={messages}
+            isRequesting={isRequesting}
+            conversationId={convKey}
+            clientId={clientId}
+          />
         ) : (
           <ChatWelcome />
         )}
