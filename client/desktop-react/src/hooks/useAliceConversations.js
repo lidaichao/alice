@@ -3,11 +3,6 @@ import { useXConversations } from '@ant-design/x-sdk';
 
 /**
  * useAliceConversations — 封装 useXConversations 桥接 window.baize IPC
- *
- * @param {Object}  [options]
- * @param {string}  [options.activeKey]  当前激活的 conversation key
- * @param {Function}[options.onChange]   切换对话回调 (key)
- * @returns {Object} useXConversations 返回值 + activeKey
  */
 export function useAliceConversations({ activeKey, onChange } = {}) {
   const [ready, setReady] = useState(false);
@@ -22,9 +17,11 @@ export function useAliceConversations({ activeKey, onChange } = {}) {
     defaultActiveConversationKey: activeKey
   });
 
-  // 首次加载：从 IPC 拉取对话列表
   useEffect(() => {
-    if (typeof window.baize?.listConversations !== 'function') return;
+    if (typeof window.baize?.listConversations !== 'function') {
+      setReady(true);
+      return;
+    }
 
     window.baize.listConversations()
       .then((list) => {
@@ -39,7 +36,6 @@ export function useAliceConversations({ activeKey, onChange } = {}) {
       .finally(() => setReady(true));
   }, []);
 
-  // 新建对话
   const handleCreate = useCallback(async () => {
     if (typeof window.baize?.createConversation !== 'function') return;
     try {
@@ -50,7 +46,6 @@ export function useAliceConversations({ activeKey, onChange } = {}) {
     } catch {}
   }, [addConversation, onChange]);
 
-  // 删除对话
   const handleRemove = useCallback(async (key) => {
     if (typeof window.baize?.deleteConversation !== 'function') return;
     try {

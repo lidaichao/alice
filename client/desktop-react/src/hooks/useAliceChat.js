@@ -1,17 +1,26 @@
 import { useXChat } from '@ant-design/x-sdk';
 
 /**
- * AliceV2 Hub 自定义 ChatProvider
+ * AliceV2 Hub 自定义 ChatAgent
  *
  * 桥接 Electron IPC (window.baize.chatStream) → useXChat 数据流。
  * 不创建新的 HTTP fetch 通道，复用现有 preload.cjs IPC。
  */
-class AliceChatProvider {
-  async request({ messages, ...params }, { onUpdate, onSuccess, onError, signal }) {
+class AliceChatAgent {
+  /**
+   * @param {Object}   input        - 请求入参
+   * @param {Object}   input.params - useXChat 传递的参数
+   * @param {Object}   calls        - 回调 { onUpdate, onSuccess, onError }
+   * @param {Object}   calls.onUpdate
+   * @param {Object}   calls.onSuccess
+   * @param {Object}   calls.onError
+   * @param {AbortSignal} [signal]
+   */
+  async request({ params, message }, { onUpdate, onSuccess, onError, signal }) {
     const input = {
-      text: params.text || '',
-      conversationId: params.conversationId || '',
-      clientId: params.clientId || ''
+      text: params?.text || message?.content || '',
+      conversationId: params?.conversationId || '',
+      clientId: params?.clientId || ''
     };
 
     // Abort 监听
@@ -64,7 +73,7 @@ class AliceChatProvider {
  */
 export function useAliceChat(options = {}) {
   return useXChat({
-    provider: new AliceChatProvider(),
+    defaultAgent: new AliceChatAgent(),
     conversationKey: options.conversationId || `alice-${Date.now()}`,
     requestPlaceholder: {
       role: 'assistant',

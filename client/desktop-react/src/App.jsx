@@ -1,3 +1,4 @@
+import React from 'react';
 import { useState, useCallback } from 'react';
 import { ConfigProvider, theme } from 'antd';
 import { useAliceChat } from './hooks/useAliceChat.js';
