@@ -1522,7 +1522,13 @@ async function resolveChatRoute({ message, conversation, historyMessages, result
       attachments,
       historyMessages
     });
-    return { ...localRoute, pendingJiraOperation };
+    // AliceV2 P0 修复：本地规则命中非 cursor 路由（如 Jira 搜索）→ 直接用
+    // 本地规则 miss（provider 仍为 'cursor'）→ 不 return，继续走 AI 分类器兜底
+    // 避免 previously: 本地 miss 直接 return → ordinary_chat → Cursor Agent 慢速 Tool 调用 Jira（35-72s）
+    if (localRoute.provider !== 'cursor') {
+      return { ...localRoute, pendingJiraOperation };
+    }
+    // 本地规则 miss — fall through 到下方 claudeRouteClassifier
   }
 
   if (explicitProvider) {
