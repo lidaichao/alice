@@ -94,15 +94,15 @@ function describeError(error) {
   }
 
   if (cleanMessage === 'Route not found.') {
-    return '白泽服务器版本过旧，缺少当前客户端需要的接口。请重启服务器或更新服务器后再试。';
+    return 'Alice服务器版本过旧，缺少当前客户端需要的接口。请重启服务器或更新服务器后再试。';
   }
 
   if (cleanMessage === 'Internal server error.') {
-    return '白泽服务器内部错误，请稍后重试或查看服务器日志。';
+    return 'Alice服务器内部错误，请稍后重试或查看服务器日志。';
   }
 
   if (cleanMessage.includes('fetch failed') || cleanMessage.includes('ECONNREFUSED')) {
-    return '无法连接白泽服务器。请确认服务器已启动后重试。';
+    return '无法连接Alice服务器。请确认服务器已启动后重试。';
   }
 
   return cleanMessage;
@@ -122,7 +122,7 @@ function formatTime(value) {
 
 function updateReplyTimer() {
   const seconds = Math.max(0, Math.floor((Date.now() - state.replyStartedAt) / 1000));
-  elements.replyTimer.textContent = `等待白泽回复：${seconds} 秒`;
+  elements.replyTimer.textContent = `等待Alice回复：${seconds} 秒`;
 }
 
 function startReplyTimer() {
@@ -229,7 +229,7 @@ function renderMessage(message) {
 
   const label = document.createElement('div');
   label.className = 'message-label';
-  label.textContent = message.role === 'user' ? '你' : '白泽';
+  label.textContent = message.role === 'user' ? '你' : 'Alice';
   article.appendChild(label);
 
   const body = document.createElement('div');
@@ -292,7 +292,7 @@ function renderAttachmentCard(container, attachment) {
 
   const summary = document.createElement('div');
   summary.className = 'operation-summary';
-  summary.textContent = attachment.analysis && attachment.analysis.summary ? attachment.analysis.summary : '白泽已收到文件。';
+  summary.textContent = attachment.analysis && attachment.analysis.summary ? attachment.analysis.summary : 'Alice已收到文件。';
   card.appendChild(summary);
 
   const reason = document.createElement('div');
@@ -314,7 +314,7 @@ function renderAttachmentCard(container, attachment) {
 
   const status = document.createElement('div');
   status.className = 'operation-status';
-  status.textContent = attachment.memory && attachment.memory.status === 'remembered' ? '已加入记忆区。' : '请确认是否加入白泽记忆区。';
+  status.textContent = attachment.memory && attachment.memory.status === 'remembered' ? '已加入记忆区。' : '请确认是否加入Alice记忆区。';
   card.appendChild(status);
 
   if (attachment.memory && attachment.memory.status === 'remembered') {
@@ -524,7 +524,7 @@ function renderJiraRecoveryPanel(card, operation) {
 
   const summary = document.createElement('div');
   summary.className = 'operation-summary';
-  summary.textContent = recovery.summary || '白泽已分析这次 Jira 创建失败。';
+  summary.textContent = recovery.summary || 'Alice已分析这次 Jira 创建失败。';
   card.appendChild(summary);
 
   if (operation.error) {
@@ -855,7 +855,7 @@ function renderClaudeCodeOperationCard(container, operation) {
 
   const summary = document.createElement('div');
   summary.className = 'operation-summary';
-  summary.textContent = '白泽可以让服务器端 Claude Code 生成补丁草案，但不会直接修改你的本地文件。';
+  summary.textContent = 'Alice可以让服务器端 Claude Code 生成补丁草案，但不会直接修改你的本地文件。';
   card.appendChild(summary);
 
   const actions = document.createElement('div');
@@ -917,7 +917,7 @@ function renderStreamingAssistantMessage() {
 
   const label = document.createElement('div');
   label.className = 'message-label';
-  label.textContent = '白泽';
+  label.textContent = 'Alice';
   article.appendChild(label);
 
   const activity = document.createElement('div');
@@ -1028,7 +1028,7 @@ function finalizeAssistantActivity(assistantBody) {
 
 async function renderActiveConversation() {
   const active = currentConversation();
-  elements.activeConversationTitle.textContent = active ? active.title || '新会话' : '白泽';
+  elements.activeConversationTitle.textContent = active ? active.title || '新会话' : 'Alice';
   elements.messages.replaceChildren();
 
   if (!active) {
@@ -1280,7 +1280,7 @@ function renderUploadProgress(uploads) {
 
   const label = document.createElement('div');
   label.className = 'message-label';
-  label.textContent = '白泽';
+  label.textContent = 'Alice';
   article.appendChild(label);
 
   const card = document.createElement('div');
