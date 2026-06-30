@@ -39,6 +39,7 @@ const request = require('supertest');
 const { createApp } = require('../src/app');
 const { createPendingOperation } = require('../src/services/pending-operation-service');
 const { createJiraCreateOperation } = require('../src/services/jira-operation-service');
+const { resetCounters } = require('../src/middleware/rate-limiter');
 
 const memoryCategories = ['programming', 'design', 'art', 'general', 'pm', 'project'];
 const logicCategories = ['programming', 'design', 'art', 'general', 'pm', 'project', 'identity'];
@@ -114,6 +115,7 @@ async function seedApiRoot() {
 
 describe('baize local hub API', () => {
   beforeEach(async () => {
+    resetCounters();
     clearClaudeEnv();
     await seedApiRoot();
   });

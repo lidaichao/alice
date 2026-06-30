@@ -2,6 +2,7 @@ const express = require('express');
 const { ok } = require('../lib/response');
 const { registerUser, loginUser, logoutToken, updateUserJiraDefaults } = require('../services/auth-service');
 const { readBearerToken, requireAuth } = require('../middleware/auth');
+const { rateLimiter } = require('../middleware/rate-limiter');
 
 const router = express.Router();
 
@@ -13,7 +14,7 @@ function publicSession(session) {
   return safeSession;
 }
 
-router.post('/auth/register', async (req, res, next) => {
+router.post('/auth/register', rateLimiter('register'), async (req, res, next) => {
   try {
     const result = await registerUser(req.body || {});
     res.json(ok({
@@ -26,7 +27,7 @@ router.post('/auth/register', async (req, res, next) => {
   }
 });
 
-router.post('/auth/login', async (req, res, next) => {
+router.post('/auth/login', rateLimiter('login'), async (req, res, next) => {
   try {
     const result = await loginUser(req.body || {});
     res.json(ok({
