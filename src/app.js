@@ -27,7 +27,8 @@ function createApp() {
   app.use(express.json({ limit: '256kb' }));
   app.use(helmet({
     contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false
+    crossOriginEmbedderPolicy: false,
+    frameguard: { action: 'deny' }
   }));
   app.use(healthRoutes);
   app.use(configRoutes);
