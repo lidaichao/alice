@@ -2,7 +2,7 @@
   "name": "baize-local-hub",
   "version": "0.2.36",
   "private": true,
-  "description": "白泽 Phase 1 本地知识中枢服务",
+  "description": "Alice Phase 1 本地知识中枢服务",
   "author": "zenghaorang <774348172@qq.com>",
   "main": "client/desktop/main.cjs",
   "type": "commonjs",
@@ -35,12 +35,12 @@
   },
   "build": {
     "appId": "com.baize.desktop",
-    "productName": "白泽",
+    "productName": "Alice",
     "npmRebuild": false,
     "directories": {
       "output": "dist/desktop"
     },
-    "artifactName": "白泽.${ext}",
+    "artifactName": "Alice.${ext}",
     "files": [
       "client/desktop/**/*",
       "package.json"
@@ -63,7 +63,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "白泽"
+      "shortcutName": "Alice"
     }
   }
 }

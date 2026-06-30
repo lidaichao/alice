@@ -1,0 +1,1 @@
+-rwxr-xr-x 1 Administrator 197121 217738606 Jun 30 17:19 dist/desktop/Alice.exe

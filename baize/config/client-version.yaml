@@ -8,8 +8,8 @@ releaseNotes: |
 windows:
   updateDir: "baize/client-updates/windows"
   latestYml: "latest.yml"
-  installer: "白泽.exe"
-  blockMap: "白泽.exe.blockmap"
+  installer: "Alice.exe"
+  blockMap: "Alice.exe.blockmap"
 android:
   updateDir: "baize/client-updates/android"
   apk: "baize-mobile.apk"

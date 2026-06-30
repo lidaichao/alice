@@ -1,0 +1,1 @@
+H:/workbuddy/aliceV2/scripts/_rebrand2-evidence.sh: line 6: rg: command not found

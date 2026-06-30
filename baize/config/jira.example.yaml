@@ -10,7 +10,8 @@ password: ""
 # authType: bearer
 # apiToken: ""
 defaults:
-  projectKey: "BAIZE"
+  projectKey: ""
+  # projectKey: "AL"（按团队实际 Jira 项目填写）
   issueType: "Task"
 fields:
   storyPoints: "customfield_10016"
